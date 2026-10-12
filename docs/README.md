@@ -42,6 +42,4 @@ npm run dev
 
 ### Diretrizes de Contribuição na Documentação
 
-- Mantenha a documentação estritamente fiel às funcionalidades implementadas no código.
-- Após alterar rotas ou variáveis de ambiente no Gateway, execute sempre `npm run check:docs` para verificar a consistência de links, rotas e inventários.
-- Para acompanhar os marcos técnicos e o status de implementação, consulte o [IMPLEMENTATION-CHECKLIST.md](IMPLEMENTATION-CHECKLIST.md).
+- Para acompanhar os marcos técnicos e o status de implementação, consulte a página [Estado dos Recursos](https://docs.maivw.com/status/).
