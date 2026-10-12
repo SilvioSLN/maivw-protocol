@@ -1,0 +1,285 @@
+/* ==========================================================================
+   MAIVW Protocol Docs — Design System (Portal Identity)
+   Baseado na identidade visual do Portal MAIVW:
+   Carmim (#850009 / #a00920), Mineral Claro (#faf9f7) e Grafite Noturno (#080607).
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   Tipografia Oficial (Inter & Outfit)
+   -------------------------------------------------------------------------- */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url(/fonts/inter-0.woff2) format("woff2");
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url(/fonts/inter-1.woff2) format("woff2");
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url(/fonts/inter-2.woff2) format("woff2");
+  unicode-range: U+1F00-1FFF;
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url(/fonts/inter-3.woff2) format("woff2");
+  unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url(/fonts/inter-4.woff2) format("woff2");
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url(/fonts/inter-5.woff2) format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url(/fonts/inter-6.woff2) format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Outfit";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url(/fonts/outfit-0.woff2) format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Outfit";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url(/fonts/outfit-1.woff2) format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* --------------------------------------------------------------------------
+   Tokens de Cores & Variáveis do Starlight (Dark Mode Padrão)
+   -------------------------------------------------------------------------- */
+:root {
+  /* Fontes */
+  --sl-font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --sl-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+
+  /* Escala Noturna (Mineral Obsidian) */
+  --sl-color-white: #faf8f9;
+  --sl-color-gray-1: #e8e4e7;
+  --sl-color-gray-2: #aca6ac;
+  --sl-color-gray-3: #786872;
+  --sl-color-gray-4: #49333d;
+  --sl-color-gray-5: #271c22;
+  --sl-color-gray-6: #151013;
+  --sl-color-black: #080607;
+
+  /* Cores de Destaque Carmim (MAIVW Red) */
+  --sl-color-accent-low: #290c13;
+  --sl-color-accent: #e52850;
+  --sl-color-accent-high: #ff6e8a;
+
+  /* Aplicações de Fundo & Superfície */
+  --sl-color-bg: #080607;
+  --sl-color-bg-nav: rgba(13, 9, 11, 0.92);
+  --sl-color-bg-sidebar: #0f0a0d;
+  --sl-color-bg-inline-code: #1e1418;
+  --sl-color-text: var(--sl-color-gray-2);
+  --sl-color-text-accent: #ff6e8a;
+  --sl-color-hairline-light: #271c22;
+  --sl-color-hairline: #1c1317;
+  --sl-color-hairline-shade: #080607;
+
+  /* Sombras */
+  --sl-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --sl-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
+  --sl-shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.7);
+}
+
+/* --------------------------------------------------------------------------
+   Tokens de Cores (Light Mode - Branco Mineral & Papel)
+   -------------------------------------------------------------------------- */
+:root[data-theme="light"],
+[data-theme="light"] ::backdrop {
+  --sl-color-white: #18191b;
+  --sl-color-gray-1: #282527;
+  --sl-color-gray-2: #4f474b;
+  --sl-color-gray-3: #676166;
+  --sl-color-gray-4: #8e858a;
+  --sl-color-gray-5: #d8d3d0;
+  --sl-color-gray-6: #eeebe8;
+  --sl-color-gray-7: #f5f4f2;
+  --sl-color-black: #faf9f7;
+
+  /* Carmim Corporativo */
+  --sl-color-accent-low: #fdeef1;
+  --sl-color-accent: #a00920;
+  --sl-color-accent-high: #750009;
+
+  /* Superfícies */
+  --sl-color-bg: #faf9f7;
+  --sl-color-bg-nav: rgba(250, 249, 247, 0.96);
+  --sl-color-bg-sidebar: #f5f4f2;
+  --sl-color-bg-inline-code: #eee9e7;
+  --sl-color-text: #2c2729;
+  --sl-color-text-accent: #850009;
+  --sl-color-hairline-light: #e5e0dc;
+  --sl-color-hairline: #e2ded9;
+  --sl-color-hairline-shade: #d5d0cb;
+}
+
+/* --------------------------------------------------------------------------
+   Ajustes Globais de Estilo & Tipografia
+   -------------------------------------------------------------------------- */
+h1, h2, h3, h4, h5, h6, .site-title, .hero h1 {
+  font-family: "Outfit", var(--sl-font);
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+
+/* Logo & Título na Barra de Navegação */
+.site-title {
+  gap: 0.85rem !important;
+}
+
+.site-title img {
+  height: 32px !important;
+  width: auto;
+  object-fit: contain;
+}
+
+.site-title span {
+  font-family: "Outfit", sans-serif;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--sl-color-accent);
+  background: var(--sl-color-accent-low);
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--sl-color-accent);
+  box-shadow: 0 0 12px rgba(229, 40, 80, 0.15);
+}
+
+/* Hero Imagem com acabamento Squircle e Glow */
+.hero > img {
+  border-radius: 24px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4), 0 0 40px rgba(160, 9, 32, 0.25);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.hero > img:hover {
+  transform: translateY(-3px) scale(1.02);
+  box-shadow: 0 20px 56px rgba(0, 0, 0, 0.5), 0 0 50px rgba(229, 40, 80, 0.35);
+}
+
+/* Header com efeito de vidro (Glassmorphism sutil) */
+header.header {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--sl-color-hairline-light);
+}
+
+/* Botões de Ação Hero */
+.hero .action.primary {
+  background: #a40b28 !important;
+  border-color: #a40b28 !important;
+  color: #ffffff !important;
+  border-radius: 6px !important;
+  font-weight: 600 !important;
+  box-shadow: 0 4px 14px rgba(164, 11, 40, 0.35) !important;
+  transition: all 0.18s ease-in-out !important;
+}
+
+.hero .action.primary:hover {
+  background: #bc1234 !important;
+  border-color: #bc1234 !important;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(188, 18, 52, 0.45) !important;
+}
+
+.hero .action.secondary {
+  border-radius: 6px !important;
+  font-weight: 600 !important;
+  border: 1px solid var(--sl-color-hairline-light) !important;
+  background: var(--sl-color-gray-6) !important;
+  color: var(--sl-color-white) !important;
+  transition: all 0.18s ease-in-out !important;
+}
+
+.hero .action.secondary:hover {
+  background: var(--sl-color-gray-5) !important;
+  border-color: var(--sl-color-accent) !important;
+  color: var(--sl-color-accent-high) !important;
+}
+
+/* Cards de Pilares e Recursos */
+.card {
+  border-radius: 10px !important;
+  border: 1px solid var(--sl-color-hairline-light) !important;
+  background: var(--sl-color-bg-sidebar) !important;
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+
+.card:hover {
+  border-color: var(--sl-color-accent) !important;
+  transform: translateY(-2px);
+}
+
+.card .title {
+  font-family: "Outfit", sans-serif !important;
+  color: var(--sl-color-white) !important;
+}
+
+/* Links da Sidebar */
+.sidebar-pane {
+  border-inline-end: 1px solid var(--sl-color-hairline-light) !important;
+}
+
+nav a[aria-current="page"] {
+  background: var(--sl-color-accent-low) !important;
+  color: var(--sl-color-accent-high) !important;
+  font-weight: 600 !important;
+  border-left: 2px solid var(--sl-color-accent);
+}
+
+/* Scrollbar personalizado moderno */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(160, 9, 32, 0.25);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(229, 40, 80, 0.45);
+}
