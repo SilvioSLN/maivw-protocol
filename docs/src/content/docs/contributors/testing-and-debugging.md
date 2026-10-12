@@ -1,95 +1,43 @@
 ---
-title: Testes e Depuração
-description: Como executar suítes de testes unitários, testes de contratos inteligentes com Foundry e depurar serviços localmente.
+title: Testes e diagnóstico
+description: Verificações reproduzíveis e limites da cobertura atual.
 ---
 
-Garantir a integridade criptográfica e a estabilidade do nó requer testes contínuos em diferentes camadas do sistema. Este guia apresenta como rodar testes e depurar problemas no **MAIVW Protocol**.
-
----
-
-## ⚡ 1. Testes de Contratos na Blockchain (Foundry / Forge)
-
-Os contratos de identidade, registro, herança wildcard e arbitragem são validados usando o **Foundry**:
+Execute cada bloco a partir da raiz do repositório, em terminais ou subshells separados.
 
 ```bash
-cd contracts
-forge test -vvv
+(cd gateway && npm test && npm run build)
+(cd contracts && forge test -vvv)
+(cd docs && npm run check:docs && npm run build)
 ```
 
-### O que os testes de contratos cobrem:
-- Registro de domínios corporativos com chave pública e prazo de voucher do oráculo.
-- Atualização autorizada de endpoint HTTP/P2P versus tentativas de alteração não autorizadas (revert).
-- Resolução e herança de subdomínio via camada Lens.
-- Bloqueio de domínios infratores e execução de `slashDomain` pelo oráculo.
-- Consumo e limites de gas na rede Base L2.
+Prepare dependências e Prisma conforme [setup local](/contributors/local-setup/). `npm test` usa o test runner do Node com `tsx`; o padrão inclui os arquivos `.test.ts` diretamente em `gateway/test/`.
 
----
+## Cobertura
 
-## 🔬 2. Testes Automatizados do Gateway (Node / tsx)
+O Gateway possui testes de KMS, oráculo, julgamento semântico, roteamento, parsing de configuração e saúde. Os testes de health verificam dependências offline, timeout, recuperação e saldo desconhecido. Mocks não substituem ensaio real de RPC, Redis e PostgreSQL.
 
-O Gateway utiliza TypeScript e o test runner nativo do Node.js executado via `tsx`:
+Contratos têm testes de registro, economia, mirror, governança, upgrades e invariantes. A existência desses testes não demonstra uma auditoria externa concluída.
 
-```bash
-cd gateway
-npm test
-```
+`check:docs` verifica URLs locais, slugs da navegação, inventário de rotas e cobertura das variáveis do schema. A análise de rotas é estática e usa os registros literais `app.get/post/...`; ela não prova autenticação, validação dos exemplos nem comportamento em runtime.
 
-### Principais suítes de teste existentes (`gateway/test/`):
-- **`GcpKmsAccount.test.ts`**: Assinatura criptográfica via Google Cloud KMS / Cloud HSM com decodificação ASN.1 DER para r/s normalizado.
-- **`OracleService.test.ts`**: Emissão de vouchers de atestação EIP-712 e checagem de saldo do oráculo.
-- **`RoutingPoolService.test.ts`**: Roteamento dinâmico multi-cluster, circuit breaker e Weighted Round-Robin.
-- **`SemanticJudge.test.ts`**: Classificador semântico heurístico e por inteligência artificial para detecção de Tag Spoofing.
+## Teste integrado
 
----
+Siga a instalação, verifique `/health` e faça envio entre dois nós controlados e para um destino SMTP de teste. Confirme conteúdo, assinatura, anexos e persistência após recriação. Registre rede, revisão, configuração sem segredos e resultado. Teste também rejeições e recuperação de dependências.
 
-## 🎬 3. Teste Integrado com Docker Compose
+Não execute testes de deploy contra mainnet nem use carteira com fundos reais como conta de fixture.
 
-Para validar toda a stack operando em conjunto:
+## Logs e banco
 
 ```bash
-# 1. Suba todos os serviços
-docker compose up -d
-
-# 2. Verifique o status dos containers
-docker compose ps
-
-# 3. Teste o endpoint de saúde do Gateway
-curl http://localhost:3001/health
-```
-
-Acesse o Webmail em `http://localhost:3002` e o Dashboard em `http://localhost:3000` para validar o fluxo de envio e recebimento de e-mails.
-
----
-
-## 🔍 4. Depuração e Inspeção de Logs
-
-Quando estiver investigando comportamentos anômalos em containers ou durante desenvolvimento:
-
-### Inspecionar logs do Gateway
-```bash
-docker compose logs -f gateway
-```
-
-### Inspecionar logs do Webmail
-```bash
-docker compose logs -f webmaivw
-```
-
-### Depurar o Banco PostgreSQL
-```bash
-# Acessar console psql interativo do banco do nó
+docker compose logs --tail=100 gateway
 docker compose exec postgres psql -U postgres -d maivw_reputation
 ```
 
-Consultas úteis:
 ```sql
--- Verificar mensagens recebidas e enviadas
-SELECT id, "messageId", "from", "to", "subject", "msgClass", status, "receivedAt" 
-FROM "Message" 
-ORDER BY "receivedAt" DESC 
-LIMIT 10;
-
--- Verificar histórico de reputação por domínio
-SELECT domain, "subIdentityId", "reputationScore", "isBlocked", strikes 
-FROM "Reputation";
+SELECT id, "messageId", "from", "to", subject, "msgClass", status, "receivedAt"
+FROM "Message" ORDER BY "receivedAt" DESC LIMIT 10;
+SELECT domain, "subIdentityId", "reputationScore", "isBlocked", strikes FROM "Reputation";
 ```
+
+Os logs e consultas podem conter conteúdo de mensagens e dados pessoais. Use dados de teste e remova segredos de evidências compartilhadas.

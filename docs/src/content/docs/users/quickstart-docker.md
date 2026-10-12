@@ -1,146 +1,62 @@
 ---
-title: Subir Nó com Docker Compose
-description: Guia passo a passo para instalar, configurar e iniciar um nó completo do MAIVW Protocol via Docker Compose.
+title: Instalação com Docker para piloto
+description: Suba um nó controlado com PostgreSQL, Redis e contrato EVM configurado.
 ---
 
-O **MAIVW Protocol** foi projetado para que qualquer empresa, desenvolvedor ou entusiasta possa operar um **nó soberano e autônomo** de comunicação em minutos, sem depender de nenhuma infraestrutura proprietária ou serviços de nuvem centralizados.
+Este procedimento usa uma testnet e mantém as portas no loopback do host. Não é um guia de liberação para produção; confira as [limitações atuais](/status/).
 
-Este guia orienta a implantação em servidores Linux (Ubuntu/Debian, CentOS/Rocky, Arch) ou ambientes locais utilizando **Docker Compose**.
+## Pré-requisitos
 
----
+Docker com Compose v2, Git e OpenSSL; portas locais 3000, 3001, 3002, 5432 e 6379 disponíveis. Dimensionamento depende da carga; não há benchmark que comprove um mínimo universal.
 
-## 📋 Pré-requisitos de Sistema
+Você também precisa de RPC acessível, endereço do **proxy Registry** na mesma rede e assinante do oráculo. O modo `local` exige uma chave EVM mesmo quando o onboarding consulta um oráculo remoto. Para emitir provas locais, o assinante deve ser autorizado pelo contrato e ter saldo de teste. Veja [contratos e deploy](/contracts/registry/).
 
-| Recurso | Requisito Mínimo (Testes/PME) | Requisito Recomendado (Produção) |
-| :--- | :--- | :--- |
-| **CPU** | 2 vCPUs | 4 vCPUs ou mais |
-| **Memória RAM** | 4 GB | 8 GB |
-| **Armazenamento** | 20 GB SSD | 50 GB NVMe |
-| **Sistema Operacional** | Linux x86_64 / arm64 | Ubuntu 22.04+ LTS / Debian 12 |
-| **Docker** | Engine v24.0+ | Docker v26.0+ |
-| **Docker Compose** | Plugin Compose v2.20+ | Plugin Compose v2.26+ |
-
----
-
-## 1. Clonar o Repositório do Protocolo
-
-Clone o repositório oficial da pilha aberta do MAIVW:
+## Preparar configuração
 
 ```bash
-git clone https://github.com/SilvioSLN/maivw-protocol.git maivw-protocol
+git clone https://github.com/SilvioSLN/maivw-protocol.git
 cd maivw-protocol
-```
-
-As aplicações do protocolo ficam localizadas diretamente na raiz do repositório:
-- **`gateway/`**: Nó de roteamento P2P, atestador criptográfico e API Fastify.
-- **`webmaivw/`**: Interface webmail corporativa e painel de administração (Next.js).
-- **`dashboard/`**: Monitor de observabilidade e métricas on-chain.
-- **`contracts/`**: Códigos dos contratos inteligentes Solidity (Base L2).
-- **`docs/`**: Documentação técnica do protocolo (Astro Starlight).
-- **`docker-compose.yml`**: Orquestrador de contêineres e bancos de dados.
-
----
-
-## 2. Configurar o Arquivo de Ambiente (`.env`)
-
-Crie o arquivo de configuração copiando o modelo de exemplo:
-
-```bash
 cp .env.example .env
+openssl rand -hex 32
 ```
 
-### Gerando Chaves de Criptografia Seguras
+Execute a geração três vezes e atribua valores distintos a `JWT_SECRET`, `MASTER_SECRET_KEY` e `INTERNAL_SERVICE_KEY` no `.env`. Preencha:
 
-Execute os comandos abaixo para gerar segredos randômicos e injetá-los no `.env`:
+| Campo | Valor a configurar |
+| --- | --- |
+| `RPC_URL`, `CHAIN_ID` | RPC e ID da mesma rede; exemplo padrão: Base Sepolia, `84532` |
+| `REGISTRY_CONTRACT_ADDRESS` | Endereço real do proxy; não copie um endereço de Anvil para testnet |
+| `BASE_REGISTRY_ADDRESS` | Mesmo proxy se usar Base nos caminhos multichain |
+| `ORACLE_PRIVATE_KEY` | Chave EVM válida do assinante local; não publique nem reutilize chave de teste em produção |
+| `SENDER_DOMAIN`, `MAIVW_CORE_DOMAIN` | Identidade/configuração de domínio deste nó |
+| `DEFAULT_P2P_ENDPOINT` | URL HTTPS concreta e acessível ao outro nó, terminando em `/api/v1/inbox` |
+| `POSTGRES_PASSWORD` | Senha do banco; atualize também `DATABASE_URL` para uso fora do Docker |
+| `NEXT_PUBLIC_GATEWAY_URL` | URL do Gateway acessível pelo navegador |
+| `NEXT_PUBLIC_RPC_URL`, `NEXT_PUBLIC_CHAIN_ID`, `NEXT_PUBLIC_REGISTRY_CONTRACT_ADDRESS` | Configuração pública coerente com a rede escolhida |
+
+O Compose carrega `.env` no Gateway e substitui os hosts de PostgreSQL e Redis pelos nomes dos serviços. Alterar `POSTGRES_PASSWORD` depois de criar o banco não troca automaticamente a senha no PostgreSQL existente.
+
+## Iniciar e verificar
 
 ```bash
-# Gera segredos de 256 bits para JWT e criptografia de sessões
-JWT_SECRET=$(openssl rand -hex 32)
-MASTER_SECRET_KEY=$(openssl rand -hex 32)
-INTERNAL_SERVICE_KEY=$(openssl rand -hex 32)
-
-# Atualiza automaticamente no arquivo .env
-sed -i "s/^JWT_SECRET=.*/JWT_SECRET=$JWT_SECRET/" .env
-sed -i "s/^MASTER_SECRET_KEY=.*/MASTER_SECRET_KEY=$MASTER_SECRET_KEY/" .env
-sed -i "s/^INTERNAL_SERVICE_KEY=.*/INTERNAL_SERVICE_KEY=$INTERNAL_SERVICE_KEY/" .env
-```
-
-### Variáveis Principais no `.env`
-
-Abra o arquivo `.env` no seu editor favorito e configure as credenciais da rede:
-
-```ini
-# Configuração da Blockchain (Base Sepolia para testes ou Base Mainnet)
-RPC_URL=https://sepolia.base.org
-CHAIN_ID=84532
-REGISTRY_CONTRACT_ADDRESS=0x5FbDB2315678afecb367f032d93F642f64180aa3
-BASE_REGISTRY_LENS_ADDRESS=0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512
-
-# Banco de Dados e Cache (alinhados ao docker-compose.yml)
-POSTGRES_PASSWORD=postgres
-DATABASE_URL=postgresql://postgres:postgres@postgres:5432/maivw_reputation?schema=public
-REDIS_URL=redis://redis:6379
-```
-
----
-
-## 3. Subir os Contêineres
-
-Execute o Docker Compose para baixar as imagens e iniciar os serviços em segundo plano:
-
-```bash
-docker compose up -d
-```
-
-### O que está sendo executado?
-
-```
-┌────────────────────────────────────────────────────────┐
-│                   SEU NÓ MAIVW (Docker)                │
-├─────────────────┬───────────────────┬──────────────────┤
-│ Serviço         │ Porta Interna/Host│ Função           │
-├─────────────────┼───────────────────┼──────────────────┤
-│ postgres        │ 5432              │ Banco de Dados   │
-│ redis           │ 6379              │ Filas de Mensagem│
-│ gateway         │ 3001              │ API REST & P2P   │
-│ webmaivw        │ 3002              │ Webmail & Admin  │
-│ dashboard       │ 3000              │ Monitor On-Chain │
-└─────────────────┴───────────────────┴──────────────────┘
-```
-
----
-
-## 4. Verificar se Todos os Serviços Estão Saudáveis
-
-Para conferir o status de execução de cada container:
-
-```bash
+docker compose config --quiet
+docker compose up -d --build
 docker compose ps
+curl -i http://localhost:3001/health
 ```
 
-Todos os serviços devem exibir o estado `Up` ou `healthy`.
+`/health` responde `200` quando as consultas de banco, Redis e Registry completam; retorna `503` e `status: "degraded"` se alguma falhar ou exceder o prazo. O saldo do oráculo aparece separadamente e não certifica sua autorização. `/health/live` só informa se o processo HTTP responde.
 
-Para testar o endpoint de saúde do **Gateway**:
+O frontend pode aguardar o Gateway ficar saudável. Confira logs se houver espera persistente:
 
 ```bash
-curl http://localhost:3001/health
+docker compose logs --tail=100 gateway
 ```
 
-Você deverá receber uma resposta com status positivo:
-```json
-{
-  "status": "ok",
-  "service": "maivw-gateway",
-  "timestamp": "2026-10-11T...",
-  "blockchain": "online",
-  "redis": "online"
-}
-```
+Abra Webmail em `http://localhost:3002` e Dashboard em `http://localhost:3000`. Em servidor remoto, use túnel SSH ou rede administrativa privada; `localhost` no navegador é o computador do usuário.
 
----
+## Domínio e primeiro teste
 
-## 5. Próximo Passo
+Cadastre a conta administrativa em `/signup`, siga o onboarding com [DNS TXT](/users/dns-domain-setup/) e crie uma caixa postal. Valide dois nós de teste, assinatura e persistência antes de usar dados reais. Para destinos SMTP, configure o provedor em `/settings` e teste a ponte separadamente.
 
-Agora que seu nó local está em execução, você precisa **vincular o seu domínio de e-mail institucional** no Cartório On-Chain.
-
-👉 Siga o guia: [Configuração de Domínio & DNS TXT](/users/dns-domain-setup/)
+O Compose não fornece servidor SMTP de entrada na porta 25, Anvil nem proxy TLS. Veja [operação e exposição de rede](/self-hosting/operations/).

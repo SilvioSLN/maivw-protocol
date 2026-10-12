@@ -1,119 +1,41 @@
 ---
-title: Configuração de Domínio & Prova DNS TXT
-description: Como comprovar a posse soberana do seu domínio e registrá-lo no Cartório On-Chain através de um registro DNS TXT.
+title: Domínio e DNS
+description: Desafio TXT, endpoint P2P e distinção de DNS para e-mail legado.
 ---
 
-No protocolo MAIVW, você nunca precisa "comprar" ou alugar um domínio dentro de uma plataforma Web3 proprietária. **O seu domínio de internet existente (ex: `.com.br`, `.com`, `.org`) é a âncora final da sua identidade soberana**.
+O TXT é uma etapa do registro de identidade. Ele não cria um servidor de e-mail nem torna um Gateway acessível automaticamente.
 
-Para conectar seu domínio ao ecossistema MAIVW, você precisa demonstrar criptograficamente a sua titularidade por meio de um mecanismo chamado **Proof of Ownership (PoO)**.
+## Antes de começar
 
----
+Prepare nó e contrato na mesma rede e cadastre a conta administrativa. Nesta versão, a emissão de prova funciona no nó configurado como autoridade do Registry; o fluxo remoto está suspenso. Defina uma URL concreta em `DEFAULT_P2P_ENDPOINT`. O onboarding também aceita endpoint explícito; confirme o endereço que será enviado à transação.
 
-## 🧭 Como Funciona a Vinculação?
+## Publicar o desafio
 
-```
-┌────────────────────────────────────────────────────────┐
-│ 1. VOCÊ CONFIGURA O DNS PÚBLICO                       │
-│    Adiciona uma entrada TXT no seu provedor            │
-│    (Cloudflare, Registro.br, GoDaddy, Route53, etc.)   │
-└───────────────────────────┬────────────────────────────┘
-                            │
-                            ▼
-┌────────────────────────────────────────────────────────┐
-│ 2. O ORÁCULO MAIVW VALIDA O REGISTRO DNS              │
-│    Consulta os servidores oficiais da ICANN/DNS e      │
-│    assina um laudo criptográfico (Voucher ECDSA)       │
-└───────────────────────────┬────────────────────────────┘
-                            │
-                            ▼
-┌────────────────────────────────────────────────────────┐
-│ 3. ANCORAGEM ON-CHAIN NO CARTÓRIO (Base L2)            │
-│    Seu nó submete o laudo ao contrato na blockchain,   │
-│    gravando seu Endpoint e Chave Pública oficial       │
-└────────────────────────────────────────────────────────┘
-```
+1. Abra `/onboarding` no Webmail e informe o domínio.
+2. Copie o valor retornado pelo desafio. Ele vale por 30 minutos e é vinculado ao seu usuário e domínio; se expirar, gere outro e atualize o TXT.
+3. No provedor DNS, crie:
 
-Esse processo garante que **nenhuma outra pessoa possa registrar o seu domínio na blockchain**, evitando completamente ataques de sequestro de identidade (*domain squatting*).
+| Campo | Valor |
+| --- | --- |
+| Tipo | `TXT` |
+| Nome | `_maivw-verify` na zona do domínio |
+| Conteúdo | `maivw-verification=TOKEN_FORNECIDO_PELO_ONBOARDING` |
+| TTL | Conforme sua política de DNS |
 
----
-
-## 🛠️ Passo 1: Obter as Informações no WebMaivw
-
-1. Acesse o painel do seu nó local:
-   👉 **[http://localhost:3002/onboarding](http://localhost:3002/onboarding)**
-2. Digite o domínio que você deseja conectar (exemplo: `minhaempresa.com.br`).
-3. O sistema gerará o token de verificação criptográfico único do domínio e exibirá os dados que você deve cadastrar no seu provedor DNS:
-   - **Nome do Registro:** `_maivw-verify` (ou `_maivw-verify.minhaempresa.com.br`)
-   - **Tipo:** `TXT`
-   - **Valor:** `maivw-verification=a50c83f25438b8192a014e7dc2095f32` *(token exclusivo gerado pelo seu nó)*
-
-> [!TIP]
-> Esse registro funciona como a **Prova de Posse Obrigatória (PoO)**. O oráculo do MAIVW valida que apenas o detentor real da zona DNS tem autoridade para registrar ou vincular chaves àquele domínio.
-
----
-
-## 🌐 Passo 2: Cadastrar o Registro TXT no seu Provedor DNS
-
-Acesse a zona de controle DNS de onde você gerencia o domínio:
-
-### 1. Cloudflare
-1. Abra o painel do domínio na **Cloudflare** e vá em **DNS** > **Records**.
-2. Clique em **Add record**.
-3. Selecione o Tipo: `TXT`.
-4. Em **Name**, digite: `_maivw-verify`.
-5. Em **Content**, cole o valor retornado: `maivw-verification=a50c83f25438b8192a014e7dc2095f32`.
-6. Deixe o **TTL** em `Auto` e clique em **Save**.
-
-### 2. Registro.br
-1. Acesse sua conta no **Registro.br** e abra o domínio.
-2. Na seção **DNS**, clique em **Editar Zona**.
-3. Clique em **+ Nova Entrada**.
-4. No primeiro campo (Nome), preencha: `_maivw-verify`.
-5. Escolha o tipo: `TXT`.
-6. No campo de dados (Texto), cole o valor entre aspas: `"maivw-verification=a50c83f25438b8192a014e7dc2095f32"`.
-7. Clique em **Salvar**.
-
-### 3. AWS Route 53
-1. Acesse o **Route 53** > **Hosted zones** e selecione sua zona.
-2. Clique em **Create record**.
-3. Em **Record name**, insira `_maivw-verify`.
-4. Em **Record type**, selecione `TXT`.
-5. Em **Value**, cole a string com aspas duplas: `"maivw-verification=a50c83f25438b8192a014e7dc2095f32"`.
-6. Clique em **Create records**.
-
----
-
-## 🔍 Passo 3: Testar a Propagação do DNS
-
-Antes de submeter a validação, confira no seu terminal se a entrada TXT já se propagou publicamente pelo comando `dig`:
+Cloudflare, Registro.br e Route 53 usam interfaces diferentes. Confira se o painel adiciona automaticamente o sufixo do domínio; evite criar `_maivw-verify.example.com.example.com`. Use a representação de aspas exigida pelo seu provedor, preservando o conteúdo do TXT.
 
 ```bash
-dig +short TXT _maivw-verify.minhaempresa.com.br
+dig +short TXT _maivw-verify.example.com
 ```
 
-Você deverá ver como resposta a sua string de verificação:
-```text
-"maivw-verification=a50c83f25438b8192a014e7dc2095f32"
-```
+Volte ao onboarding e solicite verificação real. O registro pode seguir o caminho de relayer ou carteira Web3; confirme rede, taxa e transação. Simulação DNS é rejeitada. O domínio só é ativado após conferir recibo, contrato, domínio, chave e endpoint. PIX/cartão/voucher e delegação remota estão suspensos; veja [contrato de onboarding](/api/accounts/).
 
----
+## Endpoint P2P
 
-## 🏛️ Passo 4: Concluir a Validação e Registro On-Chain
+Configure A/AAAA do hostname do Gateway, proxy e certificado HTTPS. O TXT de posse e o registro on-chain não configuram esses elementos. Uma URL em rede privada só funciona se o emissor tiver conectividade e configuração compatíveis.
 
-Volte à tela do **WebMaivw** (`/onboarding`) e clique no botão **"Verificar DNS e Registrar no Cartório"**:
+## SMTP e coexistência
 
-1. O Gateway entrará em contato com o **Oráculo MAIVW**, que fará uma consulta autoritativa no DNS mundial para ler `_maivw-verify`.
-2. Uma vez confirmado o token, o Oráculo emite um atestado criptográfico (`oracleProof`).
-3. O Gateway despacha a transação para o contrato na blockchain na rede **Base**.
-4. Assim que a transação for minerada (geralmente menos de 2 segundos na Base L2), seu domínio estará oficialmente **ATIVO** na rede mundial MAIVW!
+MX, SPF, DKIM e DMARC pertencem ao caminho legado. Siga a configuração do provedor realmente contratado. Não substitua os registros existentes por sugestões genéricas do onboarding sem validar o serviço de entrada. O Compose não fornece MTA escutando na porta 25.
 
----
-
-## 🔄 Passo 5: Herança Automática vs. Subdomínios Autônomos
-
-> [!NOTE]
-> **Você só precisa registrar o domínio principal uma vez para toda a organização.**
-
-O MAIVW possui suporte nativo à **Herança Hierárquica de Subdomínios**:
-- **Herança Automática:** Se você registrou `minhaempresa.com.br`, subdomínios como `suporte.minhaempresa.com.br` ou `financeiro.minhaempresa.com.br` herdam a chave pública, o endpoint e a reputação automaticamente sem que você precise pagar gas novamente na blockchain.
-- **Subdomínios Autônomos com Chave e Reputação Própria:** Caso um departamento específico precise de um endpoint diferente ou de uma chave exclusiva (por exemplo, `diretoria.minhaempresa.com.br`), **basta registrar o subdomínio completo diretamente no painel e pagar as taxas de registro**. Ele passará pelo mesmo processo de validação, ganhando um painel exclusivo, par de chaves próprio e pontuação de reputação individual no protocolo.
+Subdomínios podem usar a resolução de domínio pai do Gateway; isso não cria caixas automaticamente nem garante herança de toda a reputação. Registre explicitamente um subdomínio que precise de identidade independente.

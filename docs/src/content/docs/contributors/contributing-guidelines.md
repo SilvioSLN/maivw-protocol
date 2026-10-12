@@ -11,7 +11,7 @@ Agradecemos o seu interesse em contribuir para o **MAIVW Protocol**! Como um pro
 
 Toda contribuição para o protocolo aberto deve respeitar os seguintes princípios:
 
-1. **Privacidade e Soberania em Primeiro Lugar**: Nenhuma alteração deve introduzir dependências obrigatórias de terceiros centralizados, telemetria invasiva ou vazamento de metadados em texto puro.
+1. **Privacidade e Soberania em Primeiro Lugar**: Documente dependências externas, circulação de conteúdo e metadados e limites de acesso; não introduza telemetria invasiva.
 2. **Determinismo Criptográfico**: Qualquer manipulação de envelopes de e-mail, assinaturas ou chaves deve seguir especificações matemáticas comprovadas e ser amplamente testada.
 3. **Compatibilidade Gradual**: Melhorias no protocolo P2P não devem quebrar o suporte à interoperabilidade SMTP com o ecossistema existente da internet.
 
@@ -42,10 +42,10 @@ Toda contribuição para o protocolo aberto deve respeitar os seguintes princíp
 4. Execute os testes antes de abrir o Pull Request:
    ```bash
    # Testes dos contratos na blockchain
-   cd contracts && forge test -vvv
+   (cd contracts && forge test -vvv)
 
    # Testes automatizados do Gateway
-   cd gateway && npm test
+   (cd gateway && npm test && npm run build)
    ```
 
 ---

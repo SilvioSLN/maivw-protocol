@@ -1,49 +1,29 @@
-# Starlight Starter Kit: Basics
+# Documentação do MAIVW
 
-[![Built with Starlight](https://astro.badg.es/v2/built-with-starlight/tiny.svg)](https://starlight.astro.build)
+Site estático em Astro/Starlight. O conteúdo público fica em `src/content/docs/`; o menu é definido em `astro.config.mjs`.
 
-```
-pnpm create astro@latest -- --template starlight
-```
+## Manutenção
 
-> 🧑‍🚀 **Seasoned astronaut?** Delete this file. Have fun!
+Na pasta `docs/`:
 
-## 🚀 Project Structure
-
-Inside of your Astro + Starlight project, you'll see the following folders and files:
-
-```
-.
-├── public/
-├── src/
-│   ├── assets/
-│   ├── content/
-│   │   └── docs/
-│   └── content.config.ts
-├── astro.config.mjs
-├── package.json
-└── tsconfig.json
+```bash
+npm install
+npm run check:docs
+npm run build
+npm run preview
 ```
 
-Starlight looks for `.md` or `.mdx` files in the `src/content/docs/` directory. Each file is exposed as a route based on its file name.
+Para o servidor de desenvolvimento, siga `AGENTS.md`: `npx astro dev --background`; consulte `npx astro dev status`, `logs` e `stop` para gerenciá-lo.
 
-Images can be added to `src/assets/` and embedded in Markdown with a relative link.
+O build gera `dist/`. O domínio configurado em `site` define URLs canônicas e sitemap; gerar o build não publica o site.
 
-Static assets, like favicons, can be placed in the `public/` directory.
+## Consistência com o código
 
-## 🧞 Commands
+- Documente o comportamento implementado, separando recursos experimentais e pendências em `status.md`.
+- Não anuncie E2EE, mTLS automático, assinatura integral, auditoria concluída ou métricas sem evidência.
+- Atualize configuração e referência quando mudar variáveis de ambiente.
+- Após alterar rotas, execute `npm run docs:routes`, revise o inventário e atualize exemplos/autenticação manualmente.
+- `check:docs` verifica links locais entre páginas, navegação, rotas literais e variáveis do schema. Não testa links externos, autenticação, âncoras nem execução dos exemplos.
+- As páginas antigas de setup, DNS e handshake mantêm URLs e encaminham ao conteúdo canônico; não duplique procedimentos nelas.
 
-All commands are run from the root of the project, from a terminal:
-
-| Command                   | Action                                           |
-| :------------------------ | :----------------------------------------------- |
-| `pnpm install`             | Installs dependencies                            |
-| `pnpm dev`             | Starts local dev server at `localhost:4321`      |
-| `pnpm build`           | Build your production site to `./dist/`          |
-| `pnpm preview`         | Preview your build locally, before deploying     |
-| `pnpm astro ...`       | Run CLI commands like `astro add`, `astro check` |
-| `pnpm astro -- --help` | Get help using the Astro CLI                     |
-
-## 👀 Want to learn more?
-
-Check out [Starlight’s docs](https://starlight.astro.build/), read [the Astro documentation](https://docs.astro.build), or jump into the [Astro Discord server](https://astro.build/chat).
+O trabalho em andamento está em [IMPLEMENTATION-CHECKLIST.md](IMPLEMENTATION-CHECKLIST.md), fora da coleção pública.

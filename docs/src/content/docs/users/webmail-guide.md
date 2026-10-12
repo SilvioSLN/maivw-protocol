@@ -1,97 +1,35 @@
 ---
-title: Guia de Uso do Webmail (WebMaivw)
-description: Como navegar pelo WebMaivw, gerenciar caixas postais corporativas, compor e-mails com classes de mensagem e usufruir da segurança em sandbox.
+title: Guia do Webmail
+description: Contas administrativas, caixas postais e uso do cliente no piloto.
 ---
 
-O **WebMaivw** é a interface webmail do protocolo MAIVW. Ele combina a facilidade de clientes de e-mail modernos (como Gmail e Superhuman) com a segurança criptográfica de um nó soberano Web3.
+Acesse o Webmail local em `http://localhost:3002`, após preparar o Gateway. Leia as [limitações atuais](/status/) antes de usar dados reais.
 
-Acesse o cliente localmente em:
-👉 **[http://localhost:3002](http://localhost:3002)**
+## Contas
 
----
+A conta administrativa criada em `/signup` gerencia domínios, caixas e integrações. A caixa postal de colaborador usa seu próprio login e acessa `/inbox`. O papel exibido na interface não comprova isolamento uniforme no backend; a revisão de autorização permanece pendente.
 
-## 👥 Perfis de Acesso: Administrador vs. Colaborador
+## Envio e leitura
 
-O sistema possui separação estrita de papéis para garantir a segurança da infraestrutura corporativa:
+Componha uma mensagem, preencha destinatário, assunto e conteúdo e selecione a classe adequada:
 
-### 1. Administrador da Organização (`role: "admin"`)
-* Cria a conta principal no cadastro inicial (`/signup`).
-* Acessa o **Console Multi-Domínio** (`/admin`).
-* Adiciona e renova domínios no Cartório On-Chain.
-* Cria, bloqueia e define senhas para as caixas de e-mail dos colaboradores.
-* Configura rotas de Dark Endpoint, credenciais SMTP de contingência e Webhooks.
+| Classe | Uso |
+| --- | --- |
+| `TX_CODE` | Códigos e autenticação |
+| `TX_RECEIPT` | Recibos e comprovantes |
+| `SUPPORT` | Atendimento |
+| `CONVERSATION` | Conversa direta |
+| `MARKETING` | Campanhas |
+| `COLD_OUTREACH` | Prospecção |
 
-### 2. Colaborador / Usuário Corporativo (`role: "user"`)
-* Acessa diretamente o **Webmail** (`/inbox`).
-* Utiliza seu endereço de e-mail institucional (ex: `financeiro@minhaempresa.com.br`).
-* Envia e recebe e-mails corporativos assinados com a chave criptográfica do domínio.
-* Não possui permissão para alterar contratos, rotacionar chaves de infraestrutura ou deletar caixas de colegas.
+O Gateway escolhe P2P ou caminho SMTP conforme resolução e configuração. Uma classe não garante prioridade, ausência de spam ou segurança do conteúdo. Aceite de envio não significa leitura pelo destinatário.
 
----
+Anexos usam upload JSON/Base64 e armazenamento no Gateway. Há diferença entre o limite do handler e o limite HTTP; consulte [API](/api/gateway/) antes de depender de arquivos grandes.
 
-## ✉️ Composição de Mensagens e Classes de Envio
+O cliente possui composição HTML, resposta e encaminhamento. Eles não preservam automaticamente uma cadeia verificável de assinaturas dos autores anteriores. Revise remetentes e conteúdo antes de encaminhar.
 
-Ao clicar em **"Nova Mensagem"**, o editor de e-mail corporativo abre com recursos avançados de formatação e segurança:
+## Proteções e limites
 
-### 1. Seleção da Classe de Mensagem (`MessageClass`)
-Para combater spam e garantir que mensagens prioritárias cheguem com selo de verificação imediato, o protocolo exige que o remetente defina a classe da mensagem:
+O visualizador usa sanitização e iframe isolado; imagens externas podem passar pelo proxy do nó. URLs de rastreamento ainda podem permitir correlação. O servidor tem acesso ao conteúdo e às chaves operacionais: não há E2EE no cliente.
 
-| Classe (`msgClass`) | Finalidade | Exemplo de Uso |
-| :--- | :--- | :--- |
-| **`TX_CODE`** | Alertas urgentes de acesso e segurança | Códigos temporários, OTP, tokens de verificação 2FA. |
-| **`TX_RECEIPT`** | Documentos financeiros e fiscais críticos | Recibos de pagamento, notas fiscais, faturas. |
-| **`SUPPORT`** | Atendimento técnico e pós-venda | Respostas a chamados, tickets de suporte. |
-| **`CONVERSATION`** | Comunicação interpessoal direta | Diálogos e alinhamentos individuais entre pessoas. |
-| **`MARKETING`** | Comunicações promocionais e informativas | Campanhas de marketing, newsletters, ofertas. |
-| **`COLD_OUTREACH`** | Prospecção comercial B2B | Primeiro contato de vendas com novos clientes. |
-
-> [!NOTE]
-> O Gateway audita o corpo da mensagem contra a classe selecionada. Se um remetente tentar disfarçar uma oferta promocional com o selo de `TX_CODE`, a mensagem pode sofrer soft-bounce (406) ou ser denunciada por *Tag Spoofing*.
-
-### 2. Editor Rico & Anexos
-- Formatação rica em HTML com listas, links, negrito, itálico e blocos de citação.
-- Upload de anexos de até 25 MB por mensagem, mantidos criptografados em trânsito.
-
----
-
-## 🚀 Roteamento Inteligente Dual-Stack: O Que Acontece ao Enviar?
-
-Quando você clica em **Enviar**, o Gateway analisa automaticamente o domínio do destinatário:
-
-```
-                     Destinatário: bob@parceiro.com.br
-                                     │
-                      Consulta Cartório On-Chain (Base)
-                                     │
-                 ┌───────────────────┴───────────────────┐
-                 ▼                                       ▼
-        [ Possui Nó MAIVW? ]                    [ E-mail Tradicional? ]
-                 │                                       │
-                 ▼ SIM                                   ▼ NÃO
-      • Entrega Direta P2P                    • Fallback SMTP Seguro
-      • Assinatura EIP-191 ECDSA              • Entrega via servidor de saída
-      • Latência média: ~35ms                 • Suporte a Gmail, Outlook, etc.
-      • Custo de Gas: R$ 0,00                 • Custo de Gas: R$ 0,00
-      • Selo Verde: 100% Autêntico            • Tráfego legado padrão
-```
-
-Você não precisa adivinhar se a outra empresa já usa o MAIVW: o sistema escolhe a rota mais segura e rápida de forma 100% transparente.
-
----
-
-## 🛡️ Leitura Segura de E-mails com Sandboxed Iframe
-
-No e-mail convencional, abrir um e-mail HTML pode expor seu endereço IP real, baixar pixels de rastreamento invasivos ou até executar scripts nocivos.
-
-No WebMaivw, **toda mensagem recebida é renderizada dentro de um Iframe Isolado por Sandbox**:
-
-1. **Scripts Maliciosos Bloqueados:** O iframe não permite a execução de JavaScript arbitrário no contexto da sua aplicação web.
-2. **Isolamento de Estilos:** Códigos CSS complexos de e-mails de terceiros não quebram o layout do seu Webmail nem alteram fontes da interface principal.
-3. **Proxy de Imagens Seguro (`/api/proxy/image`):** Imagens e ícones de redes sociais externos são carregados através do proxy do seu nó, impedindo que o remetente descubra a localização geográfica ou o IP do usuário que leu o e-mail.
-
----
-
-## 🔁 Encaminhamento e Respostas Inteligentes
-
-- **Resposta Rápida (`Reply`):** Mantém a thread da conversa, citando o remetente original e preservando o contexto de autenticação da cadeia de mensagens.
-- **Encaminhamento (`Forward`):** Mantém o cabeçalho padronizado da mensagem original (`---------- Mensagem Encaminhada ----------`), preserva o HTML rico original na íntegra e carrega automaticamente os anexos para que você possa despachá-los para o novo destinatário sem perda de qualidade.
+Configuração SMTP fica em `/settings`; chaves de integração e seus registros ficam na área de desenvolvedor. Não compartilhe token administrativo ou API key por mensagem.

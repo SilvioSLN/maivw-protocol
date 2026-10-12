@@ -8,7 +8,9 @@
     "start": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
-    "astro": "astro"
+    "astro": "astro",
+    "check:docs": "node scripts/check-docs.mjs",
+    "docs:routes": "node scripts/check-docs.mjs --write-routes"
   },
   "dependencies": {
     "@astrojs/starlight": "^0.42.6",
