@@ -1,62 +1,70 @@
 ---
-title: Instalação com Docker para piloto
-description: Suba um nó controlado com PostgreSQL, Redis e contrato EVM configurado.
+title: Instalação com Docker
+description: Rode uma demonstração local completa ou configure um nó em Testnet.
 ---
 
-Este procedimento usa uma testnet e mantém as portas no loopback do host. Não é um guia de liberação para produção; confira as [limitações atuais](/status/).
+O repositório oferece dois caminhos separados: uma demonstração local com Anvil e contrato implantado automaticamente, e um Compose para uma Testnet EVM com configuração própria. O projeto continua em desenvolvimento; confira as [limitações atuais](/status/) antes de usar dados importantes.
 
-## Pré-requisitos
+## Demonstração local
 
-Docker com Compose v2, Git e OpenSSL; portas locais 3000, 3001, 3002, 5432 e 6379 disponíveis. Dimensionamento depende da carga; não há benchmark que comprove um mínimo universal.
-
-Você também precisa de RPC acessível, endereço do **proxy Registry** na mesma rede e assinante do oráculo. O modo `local` exige uma chave EVM mesmo quando o onboarding consulta um oráculo remoto. Para emitir provas locais, o assinante deve ser autorizado pelo contrato e ter saldo de teste. Veja [contratos e deploy](/contracts/registry/).
-
-## Preparar configuração
+Pré-requisitos: Git, Docker com Compose v2 e as portas `50443`, `51443`, `52443`, `53443`, `54443` e `55443` livres no host.
 
 ```bash
-git clone https://github.com/SilvioSLN/maivw-protocol.git
+git clone --recurse-submodules https://github.com/SilvioSLN/maivw-protocol.git
 cd maivw-protocol
-cp .env.example .env
-openssl rand -hex 32
-```
-
-Execute a geração três vezes e atribua valores distintos a `JWT_SECRET`, `MASTER_SECRET_KEY` e `INTERNAL_SERVICE_KEY` no `.env`. Preencha:
-
-| Campo | Valor a configurar |
-| --- | --- |
-| `RPC_URL`, `CHAIN_ID` | RPC e ID da mesma rede; exemplo padrão: Base Sepolia, `84532` |
-| `REGISTRY_CONTRACT_ADDRESS` | Endereço real do proxy; não copie um endereço de Anvil para testnet |
-| `BASE_REGISTRY_ADDRESS` | Mesmo proxy se usar Base nos caminhos multichain |
-| `ORACLE_PRIVATE_KEY` | Chave EVM válida do assinante local; não publique nem reutilize chave de teste em produção |
-| `SENDER_DOMAIN`, `MAIVW_CORE_DOMAIN` | Identidade/configuração de domínio deste nó |
-| `DEFAULT_P2P_ENDPOINT` | URL HTTPS concreta e acessível ao outro nó, terminando em `/api/v1/inbox` |
-| `POSTGRES_PASSWORD` | Senha do banco; atualize também `DATABASE_URL` para uso fora do Docker |
-| `NEXT_PUBLIC_GATEWAY_URL` | URL do Gateway acessível pelo navegador |
-| `NEXT_PUBLIC_RPC_URL`, `NEXT_PUBLIC_CHAIN_ID`, `NEXT_PUBLIC_REGISTRY_CONTRACT_ADDRESS` | Configuração pública coerente com a rede escolhida |
-
-O Compose carrega `.env` no Gateway e substitui os hosts de PostgreSQL e Redis pelos nomes dos serviços. Alterar `POSTGRES_PASSWORD` depois de criar o banco não troca automaticamente a senha no PostgreSQL existente.
-
-## Iniciar e verificar
-
-```bash
-docker compose config --quiet
 docker compose up -d --build
 docker compose ps
-curl -i http://localhost:3001/health
+curl -i http://localhost:51443/health
 ```
 
-`/health` responde `200` quando as consultas de banco, Redis e Registry completam; retorna `503` e `status: "degraded"` se alguma falhar ou exceder o prazo. O saldo do oráculo aparece separadamente e não certifica sua autorização. `/health/live` só informa se o processo HTTP responde.
+O Compose inicia PostgreSQL, Redis, Anvil, implanta o `MAIVWRegistry`, grava o endereço do proxy em um volume e só então inicia o Gateway e as interfaces. O estado do Anvil fica no volume `anvil-state`; reiniciar a stack preserva o contrato. O primeiro build precisa de internet para baixar imagens e dependências. Depois que esses artefatos estão no cache, o funcionamento da demonstração não depende de RPC, DNS, Firebase, Resend ou oráculo externos.
 
-O frontend pode aguardar o Gateway ficar saudável. Confira logs se houver espera persistente:
+Abra:
+
+- Dashboard: `http://localhost:50443`
+- Gateway: `http://localhost:51443`
+- WebMaivw: `http://localhost:52443`
+- RPC do Anvil para a carteira: `http://localhost:55443`
+
+Crie a conta administrativa em `/signup` usando o convite local `local-demo-admin-invite-change-before-testnet-2026`. Cadastre um domínio como `empresa.local`. Nesse modo, o Gateway informa `dnsMode: local-demo`, aprova o desafio DNS sem consulta pública e sugere o endpoint interno `http://gateway:3001/api/v1/inbox`.
+
+As chaves do Anvil e os segredos `local-demo-*` são públicos. A validação do Gateway rejeita esses valores fora da rede local `31337` conectada a `anvil`, `localhost` ou loopback.
+
+## Testnet
+
+Implante antes o proxy `MAIVWRegistry` na Testnet escolhida e garanta que a carteira do oráculo configurada no contrato tenha saldo de teste. Em seguida:
 
 ```bash
-docker compose logs --tail=100 gateway
+cp .env.testnet.example .env.testnet
+# Edite todos os campos CHANGE_ME e as URLs example.com.
+docker compose -f compose.testnet.yml --env-file .env.testnet config --quiet
+docker compose -f compose.testnet.yml --env-file .env.testnet up -d --build
 ```
 
-Abra Webmail em `http://localhost:3002` e Dashboard em `http://localhost:3000`. Em servidor remoto, use túnel SSH ou rede administrativa privada; `localhost` no navegador é o computador do usuário.
+Os campos principais são:
 
-## Domínio e primeiro teste
+| Campo | Exigência |
+| --- | --- |
+| `RPC_URL`, `CHAIN_ID` | RPC e ID da mesma Testnet |
+| `REGISTRY_CONTRACT_ADDRESS` | Endereço do proxy, com bytecode na rede configurada |
+| `ORACLE_PRIVATE_KEY` | Assinante igual ao `oracleNode` do Registry, ou configure GCP KMS |
+| `JWT_SECRET`, `MASTER_SECRET_KEY`, `INTERNAL_SERVICE_KEY`, `ADMIN_REGISTRATION_TOKEN` | Quatro segredos diferentes, gerados pelo operador |
+| `SENDER_DOMAIN`, `MAIVW_CORE_DOMAIN` | Domínios reais do nó |
+| `DEFAULT_P2P_ENDPOINT` | URL HTTPS pública terminando em `/api/v1/inbox` |
+| `NEXT_PUBLIC_GATEWAY_URL`, `NEXT_PUBLIC_WEBMAIVW_URL`, `NEXT_PUBLIC_RPC_URL` | URLs acessíveis pelo navegador |
 
-Cadastre a conta administrativa em `/signup`, siga o onboarding com [DNS TXT](/users/dns-domain-setup/) e crie uma caixa postal. Valide dois nós de teste, assinatura e persistência antes de usar dados reais. Para destinos SMTP, configure o provedor em `/settings` e teste a ponte separadamente.
+Gere cada segredo separadamente com `openssl rand -hex 32`. Nunca copie a chave da conta #0 do Anvil ou os valores da demonstração para Testnet. O Gateway falha ao iniciar se detectar esses padrões, Registry ausente ou endpoint P2P sem HTTPS.
 
-O Compose não fornece servidor SMTP de entrada na porta 25, Anvil nem proxy TLS. Veja [operação e exposição de rede](/self-hosting/operations/).
+As portas continuam presas ao loopback. Para acesso remoto, coloque proxy TLS e controle de acesso à frente dos serviços. Alterações em `NEXT_PUBLIC_*` exigem novo build das interfaces.
+
+## Verificação e diagnóstico
+
+`/health` responde `200` quando PostgreSQL, Redis e Registry respondem; retorna `503` se algum deles falhar. `/health/live` confirma apenas que o processo HTTP está vivo.
+
+```bash
+docker compose logs --tail=100 contracts-deployer gateway
+docker compose restart gateway
+docker compose down
+```
+
+O Compose não fornece SMTP de entrada na porta 25 nem proxy TLS. A demonstração local serve para conhecer o fluxo; Testnet ainda requer DNS público, endpoint HTTPS, contrato e operação do nó.

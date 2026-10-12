@@ -21,8 +21,8 @@ A Lens oferece `getCompanies`, `getAllCompanies` e `getEnrichedProfiles`: pagina
 
 | Ambiente | Chain ID | Orientação |
 | --- | --- | --- |
-| Anvil | `31337` | Rede local iniciada separadamente; não há explorer HTTP no RPC |
-| Base Sepolia | `84532` | Ambiente padrão de piloto no `.env.example` |
+| Anvil | `31337` | Rede e deploy automáticos no Compose local; o RPC não é um explorer |
+| Base Sepolia | `84532` | Exemplo em `.env.testnet.example` |
 | Arbitrum Sepolia | `421614` | Integrações de espelhamento a validar |
 | Polygon Amoy | `80002` | Integrações de espelhamento a validar |
 | Base Mainnet | `8453` | Exige validação de produção; não é o padrão deste guia |
@@ -31,16 +31,24 @@ Esta documentação não certifica endereços de deploy público. Obtenha o ende
 
 ## Deploy local
 
-Com Foundry instalado, inicie `anvil --chain-id 31337` em outro terminal. Use uma conta de teste fornecida pelo Anvil, sem fundos reais, e execute a partir de `contracts/`:
+O caminho recomendado implanta automaticamente após o Anvil ficar saudável:
+
+```bash
+docker compose up -d --build
+docker compose logs contracts-deployer
+docker compose exec contracts-deployer cat /deploy-output/contract-address.txt
+```
+
+Para executar manualmente com Foundry, inicie um Anvil e, a partir de `contracts/`:
 
 ```bash
 forge build
 # DEPLOYER_PRIVATE_KEY deve estar exportada no ambiente deste processo.
-forge script script/Deploy.s.sol:DeployScript --rpc-url http://localhost:8545 --broadcast
+forge script script/Deploy.s.sol:DeployScript --rpc-url http://localhost:55443 --broadcast
 ```
 
-Copie o endereço impresso como `PROXY (Endereco Oficial)` para `REGISTRY_CONTRACT_ADDRESS`. O script local define o deployer como oráculo; para esse teste, configure `ORACLE_PRIVATE_KEY` com a mesma conta. A rede local tem taxas e saldos artificiais.
+O script local define o deployer como oráculo. O Compose usa a conta pública #0 do Anvil para ambos e rejeita essa chave fora do ambiente local. A rede local tem taxas e saldos artificiais.
 
-Para testnet, o script reconhece as redes listadas no código; use RPC, saldo de teste e chave próprios. Para produção, revise `DeployMainnet.s.sol`, `config/mainnet.json`, governança, permissões e auditoria antes de transmitir qualquer transação. Não replique automaticamente os parâmetros locais.
+Para Testnet, implante conscientemente com RPC, saldo e chave próprios, copie o endereço do **proxy** para `.env.testnet` e use `compose.testnet.yml`. Para produção, revise `DeployMainnet.s.sol`, `config/mainnet.json`, governança, permissões e auditoria antes de transmitir qualquer transação. Não replique os parâmetros locais.
 
 `registerIntentBatch` existe no contrato, mas o envio atual não o invoca para produzir o header de intenção. Veja a [especificação P2P](/developers/p2p-handshake-spec/).

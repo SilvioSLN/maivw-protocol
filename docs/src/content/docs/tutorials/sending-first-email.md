@@ -14,7 +14,7 @@ Entre com a conta da caixa postal em `/inbox`, componha uma mensagem, escolha de
 Gere uma chave na área de desenvolvedor ou siga [contas e API keys](/api/accounts/). Configure `MAIVW_API_TOKEN` no seu ambiente sem colocá-la no código-fonte.
 
 ```bash
-curl -sS http://localhost:3001/api/v1/send   -H "Authorization: Bearer $MAIVW_API_TOKEN"   -H 'Content-Type: application/json'   -d '{"from":"alice@example.com","to":"bob@example.org","subject":"Teste","msgClass":"CONVERSATION","content":{"text":"Mensagem de teste"}}'
+curl -sS http://localhost:51443/api/v1/send   -H "Authorization: Bearer $MAIVW_API_TOKEN"   -H 'Content-Type: application/json'   -d '{"from":"alice@example.com","to":"bob@example.org","subject":"Teste","msgClass":"CONVERSATION","content":{"text":"Mensagem de teste"}}'
 ```
 
 Os endereços são exemplos: substitua por contas do piloto. Confira `success`, `messageId` e `route` na resposta e verifique a mensagem no receptor.
@@ -26,7 +26,7 @@ O exemplo usa `fetch` nativo, sem dependência adicional:
 ```typescript
 const token = process.env.MAIVW_API_TOKEN;
 if (!token) throw new Error("Configure MAIVW_API_TOKEN");
-const base = process.env.MAIVW_GATEWAY_URL || "http://localhost:3001";
+const base = process.env.MAIVW_GATEWAY_URL || "http://localhost:51443";
 const response = await fetch(`${base}/api/v1/send`, {
   method: "POST",
   headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },

@@ -12,7 +12,7 @@ Estas rotas estão inventariadas em [rotas do Gateway](/api/routes/). O fluxo at
 `POST /api/v1/auth/login` recebe `email` e `password`. Use o token retornado no cabeçalho Bearer. `GET /api/v1/auth/me` lê a sessão autenticada. `POST /api/v1/auth/google` exige `idToken` Firebase válido, não revogado, com e-mail verificado e provedor Google ou GitHub. E-mail/nome enviados pelo cliente não comprovam identidade. Novos administradores também precisam de `registrationToken`; contas existentes não precisam de convite. Configure seu próprio projeto Firebase.
 
 ```bash
-curl -sS http://localhost:3001/api/v1/auth/login   -H 'Content-Type: application/json'   -d '{"email":"admin@example.com","password":"SENHA_DO_PILOTO"}'
+curl -sS http://localhost:51443/api/v1/auth/login   -H 'Content-Type: application/json'   -d '{"email":"admin@example.com","password":"SENHA_DO_PILOTO"}'
 ```
 
 O cadastro administrativo fica fechado quando `ADMIN_REGISTRATION_TOKEN` não está configurado. O operador gera um segredo de pelo menos 32 caracteres (por exemplo, `openssl rand -hex 32`), configura o Gateway, entrega o convite por canal privado e remove a variável após o cadastro, reiniciando o serviço. O convite é reutilizável enquanto configurado.
@@ -51,7 +51,7 @@ Se o relayer transmitir a transação mas não confirmar em 15 segundos, retorna
 Para gerar API key, envie JWT administrativo:
 
 ```bash
-curl -sS http://localhost:3001/api/v1/api-keys   -H "Authorization: Bearer $MAIVW_ADMIN_TOKEN"   -H 'Content-Type: application/json'   -d '{"domainId":1,"name":"Integracao piloto","environment":"staging"}'
+curl -sS http://localhost:51443/api/v1/api-keys   -H "Authorization: Bearer $MAIVW_ADMIN_TOKEN"   -H 'Content-Type: application/json'   -d '{"domainId":1,"name":"Integracao piloto","environment":"staging"}'
 ```
 
 Substitua `domainId` pelo domínio pertencente à conta. O retorno `201` inclui `apiKey`, exibida uma vez. `environment` aceita `production` ou `staging`; isso seleciona o prefixo, não cria ambientes isolados. Liste metadados com `GET /api/v1/api-keys` e revogue com `DELETE /api/v1/api-keys/:id`.

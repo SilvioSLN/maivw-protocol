@@ -7,11 +7,12 @@ O MAIVW está em desenvolvimento. Antes de instalar, consulte o [estado dos recu
 
 | Objetivo | Guia |
 | --- | --- |
-| Rodar um piloto com Docker e contrato em testnet | [Instalação com Docker](/users/quickstart-docker/) |
-| Desenvolver Gateway e contratos com Anvil local | [Ambiente de desenvolvimento](/contributors/local-setup/) |
+| Rodar a demonstração local completa | [Instalação com Docker](/users/quickstart-docker/#demonstracao-local) |
+| Configurar um nó em Testnet | [Instalação com Docker](/users/quickstart-docker/#testnet) |
+| Desenvolver componentes separadamente | [Ambiente de desenvolvimento](/contributors/local-setup/) |
 | Entender componentes e confiança | [Arquitetura](/architecture/overview/) |
 | Integrar uma aplicação | [API](/api/gateway/) e [primeiro envio](/tutorials/sending-first-email/) |
 
-A instalação exige configurar segredos, contrato e assinante de oráculo. O Compose não cria automaticamente um contrato nem uma rede blockchain. Não há garantia de instalação completa em cinco minutos.
+A demonstração local cria o Anvil e implanta o contrato automaticamente. Testnet exige segredos, endereço do proxy já implantado, assinante autorizado, DNS e endpoint HTTPS próprios.
 
 Depois da instalação, configure [domínio e DNS](/users/dns-domain-setup/), crie a caixa postal e teste envio e recebimento. Antes de qualquer uso com dados importantes, prepare [backup e restauração](/self-hosting/operations/).

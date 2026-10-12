@@ -3,9 +3,9 @@ title: Variáveis de ambiente
 description: Configuração do Gateway, Compose, frontend e integrações opcionais.
 ---
 
-A referência cobre o schema em `gateway/src/config.ts` e variáveis lidas diretamente por outros módulos. Defaults abaixo são do **código**, salvo indicação explícita. O `.env.example` escolhe Base Sepolia para piloto; o código ainda usa Anvil como fallback quando não recebe rede.
+A referência cobre o schema em `gateway/src/config.ts` e variáveis lidas diretamente por outros módulos. Defaults abaixo são do **código**, salvo indicação explícita. O `.env.example` contém overrides opcionais da demonstração; `.env.testnet.example` é o modelo para Base Sepolia.
 
-O Compose carrega `.env` no Gateway e sobrescreve conexões internas. O modo dev do Gateway carrega `../.env`. Interfaces usam `.env.local` ou argumentos de build. Valores opcionais vazios são tratados como ausentes por `loadConfig`; leituras diretas de `process.env` seguem o comportamento do módulo.
+O Compose local declara sua configuração diretamente e funciona sem `.env`. O Compose de Testnet recebe valores com `--env-file .env.testnet`. O modo dev do Gateway carrega `../.env`. Interfaces usam `.env.local` ou argumentos de build. Valores opcionais vazios são tratados como ausentes por `loadConfig`.
 
 ## Gateway, dados e segredos
 
@@ -24,7 +24,7 @@ O Compose carrega `.env` no Gateway e sobrescreve conexões internas. O modo dev
 | `MAIVW_CORE_DOMAIN` | `maivw.org` | Sugestões de DNS e endpoint no onboarding; não substitui `SENDER_DOMAIN` |
 | `PLATFORM_INGRESS_HOSTS` | Vazio | Lista adicional de hosts reconhecidos no roteamento |
 | `IS_CLOUD` | `false` | Aceita `true` ou `false`; não transforma o Compose em serviço de nuvem |
-| `DEFAULT_P2P_ENDPOINT` | Opcional | URL concreta; sem ela o onboarding atual usa `https://mw.<MAIVW_CORE_DOMAIN>/api/v1/inbox` |
+| `DEFAULT_P2P_ENDPOINT` | Opcional | URL concreta; HTTP é aceito somente no Anvil local, outras redes exigem HTTPS |
 | `TLS_CERT_PATH` | Opcional (default `data/certs/node.crt`) | Caminho do certificado público TLS X.509 em formato PEM |
 | `TLS_KEY_PATH` | Opcional (default `data/certs/node.key`) | Caminho da chave privada TLS correspondente ao certificado |
 | `MTLS_STRICT_MODE` | `false` | Se `true`, impõe verificação estrita de mTLS mesmo para nós sem ancoragem |
@@ -36,10 +36,10 @@ Não troque `MASTER_SECRET_KEY` em banco existente sem recifrar chaves e credenc
 
 | Variável | Padrão / exigência | Uso |
 | --- | --- | --- |
-| `RPC_URL` | `http://localhost:8545` no código; Sepolia no exemplo | RPC principal |
-| `CHAIN_ID` | `31337` no código; `84532` no exemplo | Rede principal |
-| `REGISTRY_CONTRACT_ADDRESS` | Sem default | Endereço do proxy; fallback opcional para `/deploy-output/contract-address.txt`, não montado pelo Compose atual |
-| `BASE_RPC_URL` | `https://sepolia.base.org` | Caminhos Base/multichain |
+| `RPC_URL` | `http://localhost:8545`; Compose usa `http://anvil:8545` | RPC principal |
+| `CHAIN_ID` | `31337`; modelo de Testnet usa `84532` | Rede principal |
+| `REGISTRY_CONTRACT_ADDRESS` | Automático no Compose local; obrigatório fora dele | Endereço do proxy; o local lê `/deploy-output/contract-address.txt` |
+| `BASE_RPC_URL` | `http://localhost:8545`; Testnet deve configurar | Caminhos Base/multichain |
 | `BASE_REGISTRY_ADDRESS` | Opcional | Registro Base; não substitui globalmente `REGISTRY_CONTRACT_ADDRESS` |
 | `ARBITRUM_RPC_URL` | `https://sepolia-rollup.arbitrum.io/rpc` | Caminhos Arbitrum |
 | `ARBITRUM_REGISTRY_ADDRESS` | Opcional | Registry da rede correspondente |
@@ -56,7 +56,7 @@ Não troque `MASTER_SECRET_KEY` em banco existente sem recifrar chaves e credenc
 | `COMPANY_B_PRIVATE_KEY` | Opcional | Campo legado/teste; não é pré-requisito do piloto |
 | `PROVIDER_PRIVATE_KEY` | Opcional | Campo legado/teste; não é pré-requisito do piloto |
 
-`BASE_REGISTRY_LENS_ADDRESS` não é consumida pelo Gateway atual. Configure redes e endereços a partir de deploy verificável, sem reutilizar endereços de exemplo.
+`BASE_REGISTRY_LENS_ADDRESS` não é consumida pelo Gateway atual. Fora do Anvil local, a inicialização rejeita Registry ausente, segredos `local-demo-*`, chave pública #0 do Anvil e endpoint P2P HTTP.
 
 ## SMTP, juiz e módulos com configuração direta
 
@@ -79,7 +79,7 @@ O processador de anexos também usa `NEXT_PUBLIC_GATEWAY_URL` como fallback. Par
 | Variável | Uso |
 | --- | --- |
 | `NEXT_PUBLIC_GATEWAY_URL` | API acessível pelo navegador |
-| `NEXT_PUBLIC_RPC_URL` | RPC público no ambiente de build; alguns fluxos têm redes fixas em `webmaivw/src/lib/web3.ts` |
+| `NEXT_PUBLIC_RPC_URL` | RPC público no ambiente de build; o Anvil usa `http://localhost:55443` |
 | `NEXT_PUBLIC_CHAIN_ID` | Rede da interface nos caminhos que consomem a variável |
 | `NEXT_PUBLIC_REGISTRY_CONTRACT_ADDRESS` | Proxy configurado para operações da interface |
 | `NEXT_PUBLIC_WEBMAIVW_URL` | Links do Dashboard para Webmail |

@@ -3,7 +3,7 @@ title: API do Gateway
 description: Mensagens, anexos, autenticação e diagnóstico da implementação atual.
 ---
 
-Base local: `http://localhost:3001`. Envie JSON, salvo indicação explícita. Os exemplos usam placeholders e exigem identidades, contratos e credenciais configurados.
+Base do Compose local: `http://localhost:51443`. Envie JSON, salvo indicação explícita. Os exemplos usam placeholders e exigem identidades, contratos e credenciais configurados.
 
 Veja também [contas e onboarding](/api/accounts/), [SMTP e administração](/api/operations/) e o [inventário de rotas](/api/routes/).
 
