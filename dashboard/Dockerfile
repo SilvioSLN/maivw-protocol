@@ -1,0 +1,38 @@
+FROM node:22-alpine
+
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+WORKDIR /app
+
+COPY package.json ./
+
+# Install deps with ignore-scripts to prevent pnpm 10+ build script errors
+RUN pnpm config set ignore-scripts true && pnpm install
+
+COPY tsconfig.json next.config.mjs ./
+COPY public/ public/
+COPY src/ src/
+
+# Build-time env vars
+ARG NEXT_PUBLIC_GATEWAY_URL=https://api-test.maivw.com
+ARG NEXT_PUBLIC_DASHBOARD_URL=https://dash-test-01.maivw.com
+ARG NEXT_PUBLIC_WEBMAIVW_URL=https://webmail-test.maivw.com
+ARG NEXT_PUBLIC_RPC_URL=https://anvil-test.maivw.com
+ARG NEXT_PUBLIC_CHAIN_ID=84532
+ARG NEXT_PUBLIC_REGISTRY_CONTRACT_ADDRESS=
+ARG NEXT_PUBLIC_PAYMENT_API_URL=https://api-payment.maivw.com
+
+ENV NEXT_PUBLIC_GATEWAY_URL=$NEXT_PUBLIC_GATEWAY_URL
+ENV NEXT_PUBLIC_DASHBOARD_URL=$NEXT_PUBLIC_DASHBOARD_URL
+ENV NEXT_PUBLIC_WEBMAIVW_URL=$NEXT_PUBLIC_WEBMAIVW_URL
+ENV NEXT_PUBLIC_RPC_URL=$NEXT_PUBLIC_RPC_URL
+ENV NEXT_PUBLIC_CHAIN_ID=$NEXT_PUBLIC_CHAIN_ID
+ENV NEXT_PUBLIC_REGISTRY_CONTRACT_ADDRESS=$NEXT_PUBLIC_REGISTRY_CONTRACT_ADDRESS
+ENV NEXT_PUBLIC_PAYMENT_API_URL=$NEXT_PUBLIC_PAYMENT_API_URL
+
+RUN pnpm run build
+
+ENV NODE_ENV=production
+EXPOSE 3000
+
+CMD ["pnpm", "run", "start"]
