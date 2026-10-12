@@ -80,6 +80,7 @@ export default function OnboardingPage() {
   // On-Chain Registration Stage
   const [isRegisteringOnChain, setIsRegisteringOnChain] = useState(false);
   const [onChainError, setOnChainError] = useState<string | null>(null);
+  const [pendingRegistration, setPendingRegistration] = useState<{ domainId: number; txHash: string; endpointUrl: string; targetChainId: number } | null>(null);
   const [targetChainId, setTargetChainId] = useState<number>(84532);
   const [showAdvancedNetwork, setShowAdvancedNetwork] = useState<boolean>(false);
   const [onChainData, setOnChainData] = useState<{
@@ -93,7 +94,7 @@ export default function OnboardingPage() {
   } | null>(null);
 
   // Payment & Settlement States
-  const [paymentMethod, setPaymentMethod] = useState<"pix" | "card" | "voucher" | "web3">("pix");
+  const [paymentMethod, setPaymentMethod] = useState<"pix" | "card" | "voucher" | "web3">("web3");
   const [isCreatingPayment, setIsCreatingPayment] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const [pixOrder, setPixOrder] = useState<{
@@ -121,6 +122,7 @@ export default function OnboardingPage() {
 
   // Self-Hosted Mode & P2P Inbound Endpoint States
   const [nodeMode, setNodeMode] = useState<{
+    chainId: number;
     isCloud: boolean;
     isSelfHosted: boolean;
     isOracleAuthority: boolean;
@@ -142,6 +144,7 @@ export default function OnboardingPage() {
         if (res.ok) {
           const data = await res.json();
           setNodeMode(data);
+          if (Number.isInteger(data.chainId)) setTargetChainId(data.chainId);
         }
       } catch {
         // Fallback para autodetecção local
@@ -225,7 +228,7 @@ export default function OnboardingPage() {
     try {
       const res = await fetch(`${gatewayUrl}/api/v1/onboarding/challenge`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${user?.token || localStorage.getItem("maivw_token") || ""}` },
         body: JSON.stringify({
           domainName: clean,
           userId: user?.id || 1,
@@ -259,7 +262,7 @@ export default function OnboardingPage() {
     try {
       const res = await fetch(`${gatewayUrl}/api/v1/onboarding/check-dns`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${user?.token || localStorage.getItem("maivw_token") || ""}` },
         body: JSON.stringify({
           domainName: domainName.trim().toLowerCase(),
           token: challengeToken,
@@ -511,7 +514,27 @@ export default function OnboardingPage() {
     }
   };
 
+  const retryPendingRegistration = async () => {
+    if (!pendingRegistration) return;
+    setIsRegisteringOnChain(true);
+    try {
+      const res = await fetch(`${gatewayUrl}/api/v1/onboarding/finalize-web3-registration`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${user?.token || localStorage.getItem("maivw_token") || ""}` },
+        body: JSON.stringify(pendingRegistration),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Confirmação ainda indisponível");
+      setOnChainData({ ...data.blockchain, domainId: data.domain.id });
+      setPendingRegistration(null);
+      setStage("complete");
+    } catch (error: any) {
+      setOnChainError(`${error.message}. Clique novamente para conferir a mesma transação.`);
+    } finally { setIsRegisteringOnChain(false); }
+  };
+
   const handleRegisterWeb3Direct = async () => {
+    if (pendingRegistration) return retryPendingRegistration();
     if (!challengeToken || !user?.id) return;
 
     const trimmedEndpoint = p2pEndpoint.trim();
@@ -540,7 +563,7 @@ export default function OnboardingPage() {
       setWeb3StatusStep("Solicitando atestado criptográfico ECDSA do Oráculo...");
       const proofRes = await fetch(`${gatewayUrl}/api/v1/onboarding/claim-proof`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${user?.token || localStorage.getItem("maivw_token") || ""}` },
         body: JSON.stringify({
           domainName: domainName.trim().toLowerCase(),
           userId: user.id,
@@ -548,7 +571,6 @@ export default function OnboardingPage() {
           callerAddress: caller,
           endpointUrl: trimmedEndpoint || undefined,
           targetChainId,
-          simulateDns: true,
         }),
       });
 
@@ -582,12 +604,14 @@ export default function OnboardingPage() {
         valueWei: proofData.standardFeeWei,
       });
 
+      setPendingRegistration({ domainId: proofData.domainId, txHash, endpointUrl: proofData.endpointUrl, targetChainId: proofData.chainId });
+
       // 6. Finalizar e ancorar o registro no Gateway
       setStepperStep(4);
       setWeb3StatusStep("Confirmando registro e ancoragem do domínio...");
       const finalizeRes = await fetch(`${gatewayUrl}/api/v1/onboarding/finalize-web3-registration`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${user?.token || localStorage.getItem("maivw_token") || ""}` },
         body: JSON.stringify({
           domainId: proofData.domainId,
           txHash,
@@ -601,6 +625,7 @@ export default function OnboardingPage() {
         throw new Error(finalizeData.message || finalizeData.error || "Falha ao finalizar registro pós-transação");
       }
 
+      setPendingRegistration(null);
       setOnChainData({
         txHash: finalizeData.blockchain.txHash,
         basescanUrl: finalizeData.blockchain.basescanUrl,
@@ -625,6 +650,7 @@ export default function OnboardingPage() {
 
   // STAGE: ON-CHAIN REGISTRATION (BASE SEPOLIA)
   const handleRegisterOnChain = async () => {
+    if (pendingRegistration) return retryPendingRegistration();
     if (!challengeToken || !user?.id) return;
 
     const trimmedEndpoint = p2pEndpoint.trim();
@@ -652,13 +678,12 @@ export default function OnboardingPage() {
 
       const res = await fetch(`${gatewayUrl}/api/v1/onboarding/verify-and-register`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${user?.token || localStorage.getItem("maivw_token") || ""}` },
         body: JSON.stringify({
           domainName: domainName.trim().toLowerCase(),
           userId: user.id,
           token: challengeToken,
           endpointUrl: trimmedEndpoint || undefined,
-          simulateDns: true,
           targetChainId,
         }),
       });
@@ -666,6 +691,7 @@ export default function OnboardingPage() {
       const data = await res.json();
 
       if (!res.ok) {
+        if (data.txHash && data.domainId) setPendingRegistration({ domainId: data.domainId, txHash: data.txHash, endpointUrl: trimmedEndpoint || p2pEndpoint, targetChainId });
         setOnChainError(data.message || data.error || "Falha na transação on-chain");
         setStepperStep(0);
         return;
@@ -1412,7 +1438,7 @@ export default function OnboardingPage() {
                       </div>
                       <div>
                         <div className="font-bold text-white text-[11px]">Checkout Seguro</div>
-                        <div className="text-[10px] text-neutral-400">Criptografia SSL de ponta a ponta</div>
+                        <div className="text-[10px] text-neutral-400">Conexão HTTPS</div>
                       </div>
                     </div>
 
@@ -1421,8 +1447,8 @@ export default function OnboardingPage() {
                         <Zap className="w-4 h-4" />
                       </div>
                       <div>
-                        <div className="font-bold text-white text-[11px]">Ativação Instantânea</div>
-                        <div className="text-[10px] text-neutral-400">Processamento bancário em segundos</div>
+                        <div className="font-bold text-white text-[11px]">Confirmação na rede</div>
+                        <div className="text-[10px] text-neutral-400">Ativação após confirmação da transação</div>
                       </div>
                     </div>
 
@@ -1432,7 +1458,7 @@ export default function OnboardingPage() {
                       </div>
                       <div>
                         <div className="font-bold text-white text-[11px]">Domínio Exclusivo</div>
-                        <div className="text-[10px] text-neutral-400">Registro soberano garantido</div>
+                        <div className="text-[10px] text-neutral-400">Prova de posse e registro na rede</div>
                       </div>
                     </div>
                   </div>
@@ -1449,49 +1475,14 @@ export default function OnboardingPage() {
                         Posse Verificada ✓
                       </span>
                       <span className="px-2.5 py-1 rounded-full bg-white/[0.04] text-neutral-300 border border-white/[0.08] text-[11px] font-mono">
-                        R$ 55,00 ($10 USD)
+                        Taxa consultada na etapa Web3
                       </span>
                     </div>
                   </div>
 
-                  {/* Main Payment Method Selector Tabs */}
-                  <div className="mb-6">
-                    <div className="text-left text-xs font-semibold text-neutral-300 mb-2.5">
-                      Selecione a forma de pagamento:
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {[
-                        { id: "pix", label: "PIX Instantâneo", desc: "Aprovação em segundos via QR Code", icon: <QrCode className="w-4 h-4" />, badge: "Recomendado" },
-                        { id: "card", label: "Cartão de Crédito", desc: "Processamento global seguro", icon: <CreditCard className="w-4 h-4" />, badge: "Até 12x" },
-                      ].map((tab) => {
-                        const isSelected = paymentMethod === tab.id;
-                        return (
-                          <button
-                            key={tab.id}
-                            type="button"
-                            onClick={() => {
-                              setPaymentMethod(tab.id as any);
-                              setPaymentError(null);
-                            }}
-                            className={`p-4 rounded-2xl border text-left transition relative cursor-pointer ${isSelected
-                              ? "bg-gradient-to-b from-red-950/40 to-black border-red-500/60 ring-1 ring-red-500/30 text-white shadow-lg shadow-red-950/50"
-                              : "bg-white/[0.02] border-white/[0.06] hover:border-white/20 text-neutral-400 hover:text-white"
-                              }`}
-                          >
-                            <div className="flex items-center justify-between mb-1.5">
-                              <span className={isSelected ? "text-red-400" : "text-neutral-400"}>{tab.icon}</span>
-                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${isSelected ? "bg-red-500/20 text-red-300 border border-red-500/30" : "bg-white/[0.06] text-neutral-400"
-                                }`}>
-                                {tab.badge}
-                              </span>
-                            </div>
-                            <div className="text-sm font-bold text-white">{tab.label}</div>
-                            <div className="text-[11px] text-neutral-400 mt-0.5">{tab.desc}</div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
+                  <p className="mb-6 text-sm text-neutral-400">
+                    PIX, cartão e voucher estão temporariamente indisponíveis. O registro por carteira Web3 exige um nó autorizado.
+                  </p>
 
               {/* Error Alert */}
               {paymentError && (
@@ -1870,7 +1861,7 @@ export default function OnboardingPage() {
                   onClick={() => setShowAdvancedPayment(!showAdvancedPayment)}
                   className="text-xs text-neutral-400 hover:text-neutral-200 inline-flex items-center gap-1.5 transition cursor-pointer"
                 >
-                  <span>Possui um Voucher corporativo ou deseja usar Carteira Web3? Opções avançadas</span>
+                  <span>Opções da carteira Web3 e rede</span>
                   {showAdvancedPayment ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                 </button>
 
@@ -1880,8 +1871,7 @@ export default function OnboardingPage() {
                       <button
                         type="button"
                         onClick={() => {
-                          setPaymentMethod("voucher");
-                          setPaymentError(null);
+                          setPaymentError("Provisionamento por voucher temporariamente indisponível.");
                         }}
                         className={`p-3 rounded-xl border text-xs font-semibold flex items-center justify-center gap-2 transition cursor-pointer ${paymentMethod === "voucher"
                           ? "bg-amber-950/40 border-amber-500/50 text-amber-200"
@@ -1889,7 +1879,7 @@ export default function OnboardingPage() {
                           }`}
                       >
                         <Ticket className="w-4 h-4" />
-                        <span>Usar Voucher Corporativo</span>
+                        <span>Voucher indisponível</span>
                       </button>
                       <button
                         type="button"
@@ -1926,7 +1916,8 @@ export default function OnboardingPage() {
                               { id: 84532, name: "Base Sepolia", desc: "L2 Coinbase • Padrão", badge: "Padrão" },
                               { id: 421614, name: "Arbitrum Sepolia", desc: "Nitro Rollup", badge: "Nitro" },
                               { id: 80002, name: "Polygon Amoy", desc: "AggLayer EVM", badge: "Amoy" },
-                            ].map((net) => (
+                              { id: 31337, name: "Anvil Local", desc: "Ambiente local", badge: "Local" },
+                            ].filter(net => net.id === nodeMode?.chainId).map((net) => (
                               <div
                                 key={net.id}
                                 onClick={() => setTargetChainId(net.id)}
