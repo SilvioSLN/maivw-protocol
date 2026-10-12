@@ -1,34 +1,36 @@
 ---
-title: Filosofia & Arquitetura
-description: Como o protocolo MAIVW redefine a comunicação corporativa e assíncrona com descentralização e criptografia.
+title: Visão geral da arquitetura
+description: Componentes, responsabilidades e fronteiras de confiança do MAIVW.
 ---
 
-O e-mail tradicional (baseado em SMTP concebido na década de 1980) sofre de problemas crônicos estruturais:
-- **Centralização oligopólica**: Mais de 70% das caixas de entrada globais estão concentradas em apenas dois provedores (Google e Microsoft), que impõem regras arbitrárias de filtragem e posse de dados.
-- **Insegurança inerente**: E-mails trafegam em texto puro por padrão entre servidores intermediários, salvo quando encapsulados por TLS de salto a salto.
-- **Spoofing e Phishing crônicos**: Mecanismos como SPF, DKIM e DMARC foram adicionados como remendos e continuam sujeitos a falhas e sequestro de DNS.
+O MAIVW combina um registro EVM de domínios com transporte HTTP entre Gateways e uma ponte para e-mail legado. O objetivo é permitir operação própria da infraestrutura e descoberta de identidades sem depender exclusivamente do endereço IP do remetente.
 
-O **MAIVW Protocol** foi desenhado do zero para solucionar esses problemas combinando arquitetura Peer-to-Peer, criptografia ponta a ponta e verificação on-chain.
+## Componentes
 
-## Princípios de Design
+| Componente | Responsabilidade |
+| --- | --- |
+| `contracts/` | Registry atualizável por proxy UUPS, governança, stakes e Lens de leitura |
+| `gateway/` | API Fastify, assinatura, descoberta, entrega P2P, SMTP e armazenamento |
+| `webmaivw/` | Webmail, onboarding e administração em Next.js |
+| `dashboard/` | Consultas de status, métricas e dados do Registry |
+| `docs/` | Documentação Astro/Starlight |
+| PostgreSQL | Usuários, domínios, mensagens, configurações e cofre de chaves |
+| Redis | Cache e coordenação de roteamento |
+| Diretório de anexos | Arquivos e metadados persistidos fora do PostgreSQL |
 
-### 1. Soberania Absoluta (Self-Sovereign)
-Sua organização ou nó pessoal é dono total do banco de dados, das chaves de criptografia e da infraestrutura de roteamento. Nenhum terceiro pode revogar seu acesso, censurar suas mensagens ou analisar seus dados para anúncios.
+## Fluxo de uma mensagem
 
-### 2. Criptografia Ponta a Ponta por Padrão
-Toda mensagem originada na rede MAIVW é:
-1. Assinada pela chave privada ECDSA do remetente (garantia matemática de autoria e não-repúdio).
-2. Criptografada com a chave pública PGP/ECC do destinatário antes de sair da máquina de envio.
-3. Decodificada exclusivamente no dispositivo do destinatário final.
+1. O usuário ou integração envia conteúdo ao Gateway de origem.
+2. O Gateway resolve o domínio, considerando registro, rotas privadas e pools configurados.
+3. Para P2P, assina `text` e `html` com a chave do domínio e envia JSON ao receptor.
+4. O receptor verifica assinatura, identidade e suas políticas e persiste a mensagem.
+5. A resposta HTTP informa aceite pelo Gateway. Não é um recibo assinado pelo destinatário nem prova de leitura.
+6. Para destinos legados, o Gateway usa o adaptador de saída configurado.
 
-Servidores e nós intermediários visualizam apenas envelopes de roteamento opacos com metadados mínimos necessários para entrega.
+## Fronteiras de confiança
 
-### 3. Reputação Descentralizada On-Chain (Base L2)
-Em vez de depender de listas de reputação centralizadas e opacas (como Spamhaus ou filtros proprietários de Big Techs), o MAIVW utiliza contratos na blockchain na rede Base:
-- Nós registram seus identificadores, chaves e endpoints públicos no cartório on-chain.
-- Histórico auditável e prova matemática de posse garantem proteção anti-spam sem violar a privacidade do conteúdo.
+O operador controla banco, anexos e chaves do Gateway. As mensagens não são E2EE: os Gateways processam conteúdo legível. HTTPS deve proteger o transporte público, e seu certificado precisa ser configurado no proxy. O Compose não instala certificados.
 
-### 4. Interoperabilidade Híbrida
-A rede não exige que o mundo inteiro migre para o MAIVW de um dia para o outro. Através do **Gateway Híbrido**:
-- Se o destinatário estiver na rede MAIVW: o envio é 100% P2P direto, ultra-rápido e com criptografia E2E.
-- Se o destinatário for um e-mail tradicional (`@gmail.com`, `@outlook.com`): o Gateway encaminha via SMTP seguro de saída, mantendo total compatibilidade retroativa.
+O Registry pode ser atualizado por governança, e suas chaves e endpoints podem mudar por operações autorizadas. Descrevê-lo como identidade absolutamente imutável esconderia essas permissões.
+
+Consulte o [estado dos recursos](/status/), a [especificação P2P](/developers/p2p-handshake-spec/) e a [matriz de segurança](/developers/security-matrix/).

@@ -1,52 +1,46 @@
 ---
-title: Cartório On-Chain & Identidade Descentralizada
-description: Arquitetura dos contratos inteligentes de registro, governança e resolução implantados na blockchain.
+title: Registry, Lens e governança
+description: Contratos, estados, permissões e implantação por ambiente.
 ---
 
-O protocolo MAIVW utiliza contratos na blockchain na rede **Base (Ethereum L2)** e redes compatíveis para ancorar a identidade de domínios, chaves públicas criptográficas, endpoints de entrega e reputação anti-fraude.
+O repositório contém `MAIVWRegistry.sol` e `MAIVWRegistryLens.sol`. O Registry é implantado atrás de proxy UUPS: configure no Gateway o endereço do **proxy**, não o da implementação nem o da Lens.
 
-## Contratos na Blockchain
+## Estados e permissões
 
-### 1. Contrato Central de Cartório (Registry)
-Contrato mestre na blockchain (padrão UUPS Upgradeable) que mantém o registro canônico de todos os domínios corporativos e provedores da rede.
+Os estados incluem `ACTIVE`, `SUSPENDED`, `SLASHED` e `REVOKED`, além do estado inicial sem registro. `publicKey` é o endereço EVM do assinante operacional; `adminKey` administra a identidade. O contrato permite separar essas chaves, mas alguns fluxos de onboarding atribuem o mesmo endereço às duas — não há separação física automática.
 
-#### Estados de um Domínio (`DomainStatus`)
-- **`ACTIVE` (1)**: Domínio verificado e apto a enviar e receber mensagens na rede.
-- **`SUSPENDED` (2)**: Suspenso temporariamente por falta de caução/saldo (reativável via `topUpBalance`).
-- **`SLASHED` (3)**: Penalizado por violações graves comprovadas de spam ou phishing (`slashDomain`).
-- **`REVOKED` (4)**: Desativado administrativamente ou mirror cancelado.
+A governança inclui owner, guardian, oráculo, pausa e operações com timelocks. Consulte `contracts/SECURITY.md`, o código e os testes de governança. Atualizabilidade e poderes administrativos devem fazer parte do modelo de confiança.
 
-#### Modelo de Segurança de Chaves Duplas
-Cada domínio registrado possui separação estrita de chaves:
-- **`publicKey` (Hot Key)**: Chave operacional utilizada pelo Gateway para assinar envelopes de mensagens e responder a handshakes P2P.
-- **`adminKey` (Cold Key)**: Chave administrativa (geralmente uma hardware wallet ou multisig) com permissão exclusiva para alterar endpoints (`updateEndpoint`), rotacionar chaves de operação (`updatePublicKey`) ou transferir a titularidade do domínio.
+Tiers `STARTUP`, `GROWTH` e `ENTERPRISE` definem caução, volume e penalidade conforme configuração. Não representam SLA de infraestrutura. Recuperação, slashing, retiradas e espelhamento possuem pré-condições próprias.
 
-#### Tiers de Provedores (`ProviderTier`)
-Para provedores multi-tenant que operam múltiplos domínios ou alto volume:
-- **`STARTUP`**: Caução de entrada para pequenas organizações.
-- **`GROWTH`**: Limite diário expandido de mensagens com caução intermediária.
-- **`ENTERPRISE`**: SLA e limites corporativos para envio massivo confiável.
+## Função da Lens
 
-#### Escalabilidade via Merkle Trees On-Chain
-Para remetentes que disparam mensagens para múltiplos destinatários, o contrato suporta **`registerIntentBatch`**:
-- O remetente registra apenas a raiz da Merkle Tree (32 bytes) na blockchain com custo mínimo de gas.
-- O envelope de cada destinatário inclui sua prova Merkle individual, validada matematicamente pelo nó receptor.
+A Lens oferece `getCompanies`, `getAllCompanies` e `getEnrichedProfiles`: paginação, agregação e leitura enriquecida. A herança hierárquica de subdomínios está no `LedgerService` do Gateway. A variável `BASE_REGISTRY_LENS_ADDRESS` não é consumida pela configuração atual do Gateway.
 
-### 2. Contrato de Consulta e Resolução (RegistryLens)
-Contrato auxiliar de visualização sem custo de gas (*view-only*).
+## Redes e endereços
 
-- Permite que Gateways realizem **consultas em lote (batch)** de múltiplos domínios e chaves em uma única chamada RPC.
-- Executa a **resolução hierárquica e herança wildcard** de subdomínios.
-- Reduz a latência de verificação no handshake P2P para menos de 50ms.
+| Ambiente | Chain ID | Orientação |
+| --- | --- | --- |
+| Anvil | `31337` | Rede local iniciada separadamente; não há explorer HTTP no RPC |
+| Base Sepolia | `84532` | Ambiente padrão de piloto no `.env.example` |
+| Arbitrum Sepolia | `421614` | Integrações de espelhamento a validar |
+| Polygon Amoy | `80002` | Integrações de espelhamento a validar |
+| Base Mainnet | `8453` | Exige validação de produção; não é o padrão deste guia |
 
----
+Esta documentação não certifica endereços de deploy público. Obtenha o endereço e a evidência de implantação da rede desejada ou faça seu próprio deploy de teste.
 
-## Redes & Deployments
+## Deploy local
 
-| Rede | Chain ID | Finalidade | Explorer |
-| :--- | :--- | :--- | :--- |
-| **Base Sepolia (Testnet)** | `84532` | Rede de Testes Primária | [sepolia.basescan.org](https://sepolia.basescan.org) |
-| **Base Mainnet** | `8453` | Produção / L2 Oficial | [basescan.org](https://basescan.org) |
-| **Arbitrum Sepolia** | `421614` | Espelhamento Multi-Chain | [sepolia.arbiscan.io](https://sepolia.arbiscan.io) |
-| **Polygon Amoy** | `80002` | Espelhamento Multi-Chain | [amoy.polygonscan.com](https://amoy.polygonscan.com) |
-| **Anvil Local** | `31337` | Desenvolvimento Local | `http://localhost:8545` |
+Com Foundry instalado, inicie `anvil --chain-id 31337` em outro terminal. Use uma conta de teste fornecida pelo Anvil, sem fundos reais, e execute a partir de `contracts/`:
+
+```bash
+forge build
+# DEPLOYER_PRIVATE_KEY deve estar exportada no ambiente deste processo.
+forge script script/Deploy.s.sol:DeployScript --rpc-url http://localhost:8545 --broadcast
+```
+
+Copie o endereço impresso como `PROXY (Endereco Oficial)` para `REGISTRY_CONTRACT_ADDRESS`. O script local define o deployer como oráculo; para esse teste, configure `ORACLE_PRIVATE_KEY` com a mesma conta. A rede local tem taxas e saldos artificiais.
+
+Para testnet, o script reconhece as redes listadas no código; use RPC, saldo de teste e chave próprios. Para produção, revise `DeployMainnet.s.sol`, `config/mainnet.json`, governança, permissões e auditoria antes de transmitir qualquer transação. Não replique automaticamente os parâmetros locais.
+
+`registerIntentBatch` existe no contrato, mas o envio atual não o invoca para produzir o header de intenção. Veja a [especificação P2P](/developers/p2p-handshake-spec/).

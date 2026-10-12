@@ -1,64 +1,29 @@
 ---
 title: MAIVW Protocol
-description: Protocolo P2P descentralizado, soberano e com criptografia de ponta a ponta para comunicação corporativa.
+description: Registro EVM de domínios, Gateway de mensagens e Webmail para operação própria.
 template: splash
 hero:
-  tagline: O protocolo aberto de comunicação assíncrona corporativa. Zero-trust, P2P, sem monopólio de Big Techs e com reputação on-chain na Base.
+  tagline: Identidade de domínio on-chain, transporte P2P e integração com e-mail legado. Projeto em desenvolvimento para pilotos controlados.
   image:
     dark: ../../assets/brand/monogram-badge.png
     light: ../../assets/brand/monogram-red.png
-    alt: MAIVW Protocol Monogram
+    alt: MAIVW Protocol
   actions:
-    - text: Guia Rápido (Quickstart)
+    - text: Começar
       link: /quickstart/
       icon: right-arrow
-    - text: Subir com Docker
-      link: /self-hosting/docker/
-      icon: rocket
+    - text: Estado dos recursos
+      link: /status/
+      icon: open-book
       variant: secondary
-    - text: Ver no GitHub
-      link: https://github.com/SilvioSLN/maivw-protocol
-      icon: external
-      variant: minimal
 ---
 
-import { Card, CardGrid } from '@astrojs/starlight/components';
+O MAIVW reúne contratos de identidade EVM, Gateway Fastify, Webmail e Dashboard. O operador mantém banco, anexos e chaves do nó, com integrações de blockchain, DNS, oráculo e SMTP conforme sua configuração.
 
-## 💡 O que significa MAIVW?
+As mensagens P2P são assinadas no Gateway. **A implementação atual não fornece criptografia ponta a ponta nem assinatura do envelope completo.** Consulte o [estado dos recursos](/status/) antes de instalar ou integrar.
 
-A palavra **MAIVW** é a sigla oficial para **Mathematical Authenticated Identity & Verifiable Workspace**:
-
-- **M — Mathematical (Matemática):** Fundamentado em provas matemáticas determinísticas e criptografia assimétrica de curva elíptica (secp256k1).
-- **A — Authenticated (Autenticada):** Toda mensagem é assinada criptograficamente na origem pela chave privada do domínio (ECDSA), garantindo autoria irrefutável e não-repúdio.
-- **I — Identity (Identidade):** A posse do seu domínio DNS do mundo real é a âncora final de identidade, desacoplada de servidores de Big Techs e livre de aprisionamento (*vendor lock-in*).
-- **V — Verifiable (Verificável):** Qualquer nó participante valida de forma autônoma a integridade, as chaves e a reputação on-chain do remetente sem depender de intermediários centralizados.
-- **W — Workspace (Espaço de Trabalho):** Um ambiente corporativo de comunicação assíncrona soberano, descentralizado e auditável.
-
----
-
-## Pilares do Protocolo
-
-<CardGrid stagger>
-  <Card title="Soberania de Dados & Self-Hosted" icon="laptop">
-    Suba seu próprio nó de e-mail em minutos com Docker. Suas mensagens, chaves e caixas postais nunca passam por servidores de terceiros ou provedores proprietários.
-  </Card>
-  <Card title="Criptografia de Ponta a Ponta" icon="shieldCheck">
-    Todas as mensagens entre nós MAIVW são assinadas digitalmente e criptografadas na origem (ECDSA + PGP), garantindo inviolabilidade e não-repúdio.
-  </Card>
-  <Card title="Reputação On-Chain na Base" icon="open-book">
-    Elimine spams e phishing através de registro imutável no contrato na blockchain na rede Base (Ethereum L2).
-  </Card>
-  <Card title="Ponte Híbrida SMTP" icon="random">
-    Comunicação nativa P2P de alta performance entre nós MAIVW, com fallback e compatibilidade bidirecional com a rede de e-mail tradicional (Gmail, Outlook).
-  </Card>
-</CardGrid>
-
-## Componentes do Ecossistema
-
-O repositório do protocolo fornece a suíte completa necessária para operar como nó independente ou organização corporativa:
-
-1. **Gateway (`/gateway`)**: Motor central em Node.js/Fastify responsável por roteamento P2P, resolução DNS e contratos, verificação de chaves e pontes SMTP.
-2. **WebMaivw (`/webmaivw`)**: Interface de webmail moderna construída em Next.js 15, com visualização segura em sandboxed iframe, composição em rich HTML e gestão de identidade.
-3. **Contratos na Blockchain (`/contracts`)**: Contratos em Solidity para registro e auditoria pública de nós, domínios e chaves na Base.
-4. **Dashboard de Observabilidade (`/dashboard`)**: Monitoramento on-chain de nós, eventos de reputação e métricas da rede.
-5. **Documentação Técnica (`/docs`)**: Documentação oficial construída com Astro Starlight.
+- [Instalação com Docker](/users/quickstart-docker/)
+- [Arquitetura e confiança](/architecture/overview/)
+- [API do Gateway](/api/gateway/)
+- [Ambiente de desenvolvimento](/contributors/local-setup/)
+- [Operação e backup](/self-hosting/operations/)

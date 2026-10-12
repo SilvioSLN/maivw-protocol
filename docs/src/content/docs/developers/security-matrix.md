@@ -1,76 +1,35 @@
 ---
-title: Matriz de Segurança Criptográfica & Comparativo SMTP
-description: Análise comparativa entre o modelo clássico (SMTP, SPF, DKIM, DMARC) e as garantias criptográficas do MAIVW Protocol.
+title: Garantias e limites de segurança
+description: Proteções presentes no código e limitações que precisam ser consideradas.
 ---
 
-O e-mail tradicional foi concebido na década de 1980 sem nenhuma camada nativa de autenticação. Ao longo dos anos, foram adicionados remendos (*patches*) como SPF, DKIM e DMARC na tentativa de reduzir fraudes. No entanto, esses mecanismos ainda dependem de confiança em servidores intermediários, DNS não assinado e são vulneráveis a uma série de ataques modernos.
+Esta matriz descreve mecanismos existentes, sem equivaler a uma auditoria independente.
 
-O **MAIVW Protocol** substitui a confiança presumida por **provas matemáticas verificáveis**.
+| Camada | Mecanismo atual | O que não garante |
+| --- | --- | --- |
+| Autoria do conteúdo | EIP-191 verificado contra endereço registrado | Identidade da pessoa física, integridade de todos os campos ou proteção contra replay |
+| Transporte | HTTP no Gateway; HTTPS configurável no proxy | TLS 1.3 forçado em todos os caminhos ou mTLS automático |
+| Chaves em repouso | Cofre AES-256-GCM com segredo do nó | Proteção contra operador que possua banco e segredo |
+| Conteúdo da mensagem | JSON e persistência no servidor | E2EE, PGP ou decifragem exclusiva no dispositivo final |
+| HTML no cliente | Sanitização e iframe com sandbox | Imunidade a falhas de navegador, links maliciosos ou engenharia social |
+| Imagens externas | Proxy do Webmail | Ausência de rastreamento por URL individual ou horário de requisição |
+| Identidade de domínio | Registro EVM e atestação de oráculo | Segurança absoluta do DNS, oráculo, carteira e governança |
+| Administração | Verificações em parte das rotas | Isolamento uniforme entre organizações |
 
----
+## Assinatura não é criptografia
 
-## 📊 Matriz Comparativa: SMTP Clássico vs. MAIVW Protocol
+A implementação assina `JSON.stringify({ text: content.text, html: content.html || "" })`. Destinatário, assunto, classe, ID e anexos não estão cobertos. Uma futura ampliação precisa versionar o protocolo e prever migração entre nós; alterar apenas o exemplo documental não resolve a lacuna.
 
-| Vetor de Segurança | SMTP Tradicional (SPF / DKIM / DMARC) | MAIVW Protocol (On-Chain + P2P) |
-| :--- | :--- | :--- |
-| **Identidade da Origem** | Baseada em reputação de IP e cabeçalhos de texto (`From:`) | Chave criptográfica `secp256k1` ancorada na Base L2 |
-| **Integridade da Mensagem** | DKIM cobre apenas cabeçalhos selecionados; suscetível a replaying | Assinatura completa do payload (EIP-191 / Keccak-256) |
-| **Interceptação MITM** | STARTTLS vulnerável a downgrade stripping em trânsito | Conexão direta HTTPS mTLS + Criptografia E2E AES-256-GCM |
-| **Resistência a Spoofing** | Parcial (requer DMARC `p=reject` estrito, raramente adotado) | **Absoluta:** Assinatura digital impossível de forjar |
-| **Privacidade do Usuário** | Pixels de rastreamento expõem IP real e geolocalização do leitor | Sandboxed Iframe + Proxy de Imagem reverso nativo |
-| **Dependência de Terceiros** | Provedores gigantes (Google, Microsoft) decidem quem entrega | Descentralizado; qualquer nó auditável entrega diretamente |
-| **Custo por Transação** | Mensalidades caras por usuário em SaaS proprietário | **Zero gas para mensagens P2P**; gas ínfimo na L2 para registro |
+## HTTPS, rotas privadas e mTLS
 
----
+O Compose escuta no loopback do host. TLS público depende de um proxy configurado pelo operador. Rotas stealth usam configuração bilateral e token compartilhado; isso não prova posse de certificado X.509. Uma implantação mTLS exige configurar tanto o proxy receptor quanto o cliente HTTP emissor e testar a integração.
 
-## 🛡️ Mitigação de Ataques Cibernéticos no MAIVW
+## Privacidade do proxy de imagens
 
-### 1. Phishing & Domain Spoofing
-- **No SMTP:** Um invasor pode disparar e-mails forjando o cabeçalho `From: seguranca@banco.com.br` a partir de um servidor comprometido caso as políticas de DMARC estejam frouxas ou mal configuradas.
-- **No MAIVW:** O receptor executa a recuperação da chave assinadora no momento em que o pacote chega na porta do Gateway. Se a chave resultante não corresponder rigorosamente à chave pública gravada no contrato na blockchain para aquele domínio, a requisição é **rejeitada com código 401** antes de tocar em qualquer caixa postal.
+O proxy substitui a origem da requisição HTTP pela do servidor. URLs exclusivas ainda podem permitir correlação e o provedor da imagem observa quando recebe uma requisição. O servidor proxy também conhece a URL. A política contra SSRF, redirecionamentos e resolução DNS precisa de revisão adicional.
 
-### 2. STARTTLS Stripping & Ataques Man-in-the-Middle
-- **No SMTP:** Durante a negociação entre MTAs, invasores de rede podem interceptar a conexão e remover a instrução `STARTTLS`, forçando a transmissão da mensagem em texto claro desprotegido.
-- **No MAIVW:** O transporte ocorre por HTTPS forçado com TLS 1.3 ou **mTLS (Mutual TLS)**. Além da camada de transporte, o próprio payload da mensagem pode estar cifrado em **AES-256-GCM** com a chave pública do nó de destino.
+## Antes de exposição pública
 
-### 3. Tag Spoofing (Falso E-mail Transacional)
-- **O Ataque:** Remetentes maliciosos etiquetam campanhas de spam/marketing como `TX_CODE` ou `TX_RECEIPT` para furar filtros de spam e obter taxa de abertura imediata.
-- **Defesa do Protocolo:** Se um remetente acumular denúncias de abuso comprovado no tribunal de oráculos, o domínio acumula strikes e pode sofrer suspensão ou slashing no contrato na blockchain, acarretando perda do selo de verificação e bloqueio P2P imediato.
+As limitações de autenticação, onboarding, assinatura e anexos estão listadas em [estado dos recursos](/status/). A separação visual entre administrador e colaborador não substitui autorização no backend. Até concluir essa revisão, mantenha o piloto em rede restrita.
 
----
-
-## 🔒 Proteção no Cliente: Sandboxed Iframe & Proxy de Imagens
-
-O visualizador de e-mails (`EmailContentViewer.tsx`) implementa múltiplas barreiras de isolamento no navegador:
-
-```
-┌────────────────────────────────────────────────────────┐
-│                   NAVEGADOR DO USUÁRIO                 │
-├────────────────────────────────────────────────────────┤
-│ Contexto WebMaivw (Sessão, Chaves de Carteira, Cookies) │
-│                                                        │
-│   ┌────────────────────────────────────────────────┐   │
-│   │  AutoResizingIframe Isolado                    │   │
-│   │  sandbox="allow-popups                         │   │
-│   │           allow-popups-to-escape-sandbox       │   │
-│   │           allow-same-origin"                   │   │
-│   │                                                │   │
-│   │  [ Conteúdo HTML do E-mail ]                   │   │
-│   │  - Sem acesso ao LocalStorage da aplicação pai │   │
-│   │  - Imagens carregadas via /api/proxy/image     │   │
-│   │  - Sem vazamento de IP real ou cookies         │   │
-│   └────────────────────────────────────────────────┘   │
-└────────────────────────────────────────────────────────┘
-```
-
-- **Isolamento de Scripts:** Nenhuma tag `<script>` presente no corpo do e-mail é autorizada a rodar no contexto de controle da aplicação.
-- **Proxy de Imagens (`/api/proxy/image`):** Requisições a imagens externas são intermediadas pelo backend do próprio nó. O remetente nunca obtém o IP, User-Agent ou horário de abertura do destinatário.
-- **Bypass de Bloqueios CORP:** Imagens de provedores externos que utilizam o cabeçalho `Cross-Origin-Resource-Policy: same-origin` são convertidas e entregues sem quebra de exibição.
-
----
-
-## 🕶️ Dark Endpoints para Comunicação Interbancária
-
-Para redes de alta sensibilidade (ex: liquidação financeira, comunicação entre cartórios ou judiciário), o MAIVW suporta o modo **Dark Endpoint**:
-- O endereço do Gateway pode ser configurado em uma rede privada (VPN corporativa, VPC peering ou rede Tor).
-- O acesso exige **mTLS (Mutual TLS)**, exigindo que o remetente apresente um certificado X.509 assinado por uma Autoridade Certificadora previamente homologada, unindo a soberania on-chain à privacidade corporativa física.
+O modelo específico dos contratos está em `contracts/SECURITY.md`; sua existência não certifica a segurança do Gateway ou do Webmail.

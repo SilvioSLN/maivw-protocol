@@ -1,136 +1,54 @@
 ---
-title: Configuração do Ambiente de Desenvolvimento
-description: Guia passo a passo para clonar, configurar variáveis de ambiente e rodar o MAIVW Protocol localmente para desenvolvimento.
+title: Ambiente de desenvolvimento
+description: Execute serviços locais com variáveis carregadas e banco preparado.
 ---
 
-Este guia é voltado para engenheiros e desenvolvedores que desejam contribuir com o código-fonte do **MAIVW Protocol**, rodar testes locais, depurar serviços e estender os contratos ou o gateway.
+Use Node.js 22.12+ (ou versão compatível com o Astro instalado), npm, Docker/Compose e Foundry para contratos. Cada pasta tem seu próprio `package.json`; não há instalação única na raiz.
 
----
-
-## 💻 1. Pré-requisitos do Sistema
-
-Antes de iniciar, certifique-se de ter as seguintes ferramentas instaladas na sua máquina:
-
-| Ferramenta | Versão Mínima | Finalidade |
-| :--- | :--- | :--- |
-| **Node.js** | `>= 20.0.0` (LTS recomendada) | Execução do Gateway e Webmail |
-| **npm** ou **pnpm** | npm 10+ / pnpm 9+ | Gerenciador de pacotes das aplicações |
-| **Docker & Compose** | Docker 24+, Compose v2 | Containers auxiliares (Postgres, Redis) ou stack completo |
-| **Foundry / Forge** | Última versão estável | Compilação e testes dos contratos na blockchain |
-| **Git** | `>= 2.30` | Controle de versão |
-
----
-
-## 📦 2. Clonando e Estrutura do Repositório
-
-Clone o repositório principal:
+## Preparar o ambiente
 
 ```bash
-git clone https://github.com/SilvioSLN/maivw-protocol.git maivw-protocol
+git clone https://github.com/SilvioSLN/maivw-protocol.git
 cd maivw-protocol
-```
-
-O repositório do protocolo organiza os serviços de forma modular e independente na raiz:
-- **`gateway/`**: Backend Fastify, orquestrador P2P e verificação criptográfica.
-- **`webmaivw/`**: Interface webmail corporativa (Next.js 15).
-- **`dashboard/`**: Monitor de observabilidade do nó e cartório on-chain (Next.js).
-- **`contracts/`**: Contratos inteligentes em Solidity (Foundry).
-- **`docs/`**: Documentação técnica com Astro Starlight.
-
-Instale as dependências nos serviços em que for trabalhar:
-```bash
-# Gateway
-cd gateway && npm install && cd ..
-
-# WebMaivw
-cd webmaivw && npm install && cd ..
-
-# Dashboard
-cd dashboard && npm install && cd ..
-
-# Docs
-cd docs && npm install && cd ..
-```
-
----
-
-## ⚙️ 3. Configuração de Variáveis de Ambiente
-
-O projeto possui um arquivo de modelo `.env.example`. Copie-o para `.env` na raiz:
-
-```bash
 cp .env.example .env
-```
-
-Gere segredos aleatórios para as chaves criptográficas:
-
-```bash
-JWT_SECRET=$(openssl rand -hex 32)
-MASTER_SECRET_KEY=$(openssl rand -hex 32)
-INTERNAL_SERVICE_KEY=$(openssl rand -hex 32)
-
-sed -i "s/^JWT_SECRET=.*/JWT_SECRET=$JWT_SECRET/" .env
-sed -i "s/^MASTER_SECRET_KEY=.*/MASTER_SECRET_KEY=$MASTER_SECRET_KEY/" .env
-sed -i "s/^INTERNAL_SERVICE_KEY=.*/INTERNAL_SERVICE_KEY=$INTERNAL_SERVICE_KEY/" .env
-```
-
----
-
-## 🚀 4. Inicializando a Infraestrutura de Suporte
-
-Você pode subir a infraestrutura de banco de dados e cache em segundo plano utilizando o Docker Compose:
-
-```bash
 docker compose up -d postgres redis
 ```
 
-Verifique se os containers estão saudáveis:
+Preencha os três segredos e a chave do oráculo conforme [instalação](/users/quickstart-docker/). Para Anvil, inicie `anvil --chain-id 31337` em outro terminal e faça o [deploy local](/contracts/registry/). Configure no `.env` `CHAIN_ID=31337`, `RPC_URL=http://localhost:8545`, o proxy implantado e o assinante do oráculo. O Anvil não é iniciado pelo Compose.
 
-```bash
-docker compose ps
-```
+Nesse fluxo o Gateway roda no host, portanto `localhost:8545` está correto. Não use a mesma URL dentro de um container para alcançar o host.
 
-Se preferir subir a blockchain local para testes dos contratos, execute o Anvil em um terminal dedicado:
-```bash
-anvil --chain-id 31337
-```
+## Gateway
 
----
+Execute cada bloco na pasta indicada, partindo da raiz do repositório:
 
-## 🛠️ 5. Executando os Serviços em Modo Dev
-
-Com a infraestrutura rodando, você pode inicializar os serviços individualmente com hot-reload a partir de suas pastas:
-
-### Gateway (Fastify)
 ```bash
 cd gateway
+npm install
+npx prisma generate
+node --env-file=../.env node_modules/prisma/build/index.js db push
 npm run dev
-# O Gateway responderá em http://localhost:3001
 ```
 
-### Webmail (WebMaivw)
-```bash
-cd webmaivw
-npm run dev
-# O Webmail estará acessível em http://localhost:3002
+`npm run dev` carrega `.env` da raiz antes de importar os módulos do Gateway. `db push` é apropriado para o banco de desenvolvimento; para evolução de produção, é necessário planejar migrations e backup.
+
+## Interfaces
+
+Instale dependências de `webmaivw/` e `dashboard/` separadamente. Crie `.env.local` em cada aplicação com as variáveis públicas necessárias, por exemplo:
+
+```ini
+NEXT_PUBLIC_GATEWAY_URL=http://localhost:3001
+NEXT_PUBLIC_RPC_URL=http://localhost:8545
+NEXT_PUBLIC_CHAIN_ID=31337
+NEXT_PUBLIC_REGISTRY_CONTRACT_ADDRESS=ENDERECO_REAL_DO_PROXY
 ```
 
-### Dashboard de Observabilidade
-```bash
-cd dashboard
-npm run dev
-# O Dashboard estará acessível em http://localhost:3000
-```
+O endereço acima é um placeholder. **Não copie o `.env` inteiro do Gateway para o frontend**. Nunca prefixe uma chave privada com `NEXT_PUBLIC_`.
 
-### Documentação (Starlight)
-```bash
-cd docs
-npm run dev
-# A documentação estará acessível em http://localhost:4321
-```
+Em terminais separados, rode `npm install` e `npm run dev` em cada aplicação. Webmail usa porta 3002 e Dashboard 3000. Integrações Firebase e pagamento são opcionais e exigem configuração própria; não use fallbacks remotos como evidência de instalação independente.
 
-### Testar os Contratos com Foundry
-```bash
-cd contracts
-forge test -vvv
-```
+## Contratos e documentação
+
+As bibliotecas Solidity ficam em `contracts/lib/`. Confira a presença de OpenZeppelin, OpenZeppelin Upgradeable e forge-std antes de `forge build` e `forge test`. Não atualize essas bibliotecas implicitamente durante um teste.
+
+Em `docs/`, execute `npm install`, `npm run check:docs` e `npm run build`. O README dessa pasta explica a manutenção do site.

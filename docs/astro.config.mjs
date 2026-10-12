@@ -23,56 +23,43 @@ export default defineConfig({
 				{ icon: 'github', label: 'GitHub', href: 'https://github.com/SilvioSLN/maivw-protocol' }
 			],
 			sidebar: [
-				{
-					label: 'Início',
-					items: [
-						{ label: 'Introdução & Visão Geral', slug: 'index' },
-						{ label: 'Guia Rápido (Quickstart)', slug: 'quickstart' },
-					],
-				},
-				{
-					label: '1. Usuários & Operadores',
-					items: [
-						{ label: 'Início Rápido com Docker', slug: 'users/quickstart-docker' },
-						{ label: 'Configuração de Domínio & DNS', slug: 'users/dns-domain-setup' },
-						{ label: 'Guia do Webmail Soberano', slug: 'users/webmail-guide' },
-						{ label: 'Diagnóstico & Troubleshooting', slug: 'users/troubleshooting' },
-						{ label: 'Deploy com Docker Compose', slug: 'self-hosting/docker' },
-						{ label: 'Variáveis de Ambiente', slug: 'self-hosting/env-vars' },
-					],
-				},
-				{
-					label: '2. Desenvolvedores & Arquitetura',
-					items: [
-						{ label: 'Especificação da Arquitetura', slug: 'developers/architecture-spec' },
-						{ label: 'Matriz de Segurança', slug: 'developers/security-matrix' },
-						{ label: 'Especificação do Handshake P2P', slug: 'developers/p2p-handshake-spec' },
-						{ label: 'Oráculos & Arbitragem On-Chain', slug: 'developers/oracle-arbitration' },
-						{ label: 'Economia de Gas & Staking', slug: 'developers/gas-economics' },
-						{ label: 'Gateway REST API', slug: 'api/gateway' },
-						{ label: 'Cartório On-Chain & Contratos', slug: 'contracts/registry' },
-						{ label: 'Filosofia & Arquitetura Geral', slug: 'architecture/overview' },
-						{ label: 'Handshake & Roteamento P2P', slug: 'architecture/p2p-handshake' },
-					],
-				},
-				{
-					label: '3. Contribuidores & Open Source',
-					items: [
-						{ label: 'Setup do Ambiente Local', slug: 'contributors/local-setup' },
-						{ label: 'Visão Geral da Base de Código', slug: 'contributors/codebase-overview' },
-						{ label: 'Testes & Depuração', slug: 'contributors/testing-and-debugging' },
-						{ label: 'Diretrizes de Contribuição', slug: 'contributors/contributing-guidelines' },
-					],
-				},
-				{
-					label: '4. Tutoriais Práticos',
-					items: [
-						{ label: 'Setup do Nó Passo a Passo', slug: 'tutorials/node-setup' },
-						{ label: 'Apontamento DNS Completo', slug: 'tutorials/dns-configuration' },
-						{ label: 'Enviando Primeiro E-mail', slug: 'tutorials/sending-first-email' },
-						{ label: 'Migração Corporativa & Coexistência', slug: 'tutorials/enterprise-migration' },
-					],
-				},
+				{ label: 'Início', items: [
+					{ label: 'Introdução', slug: 'index' },
+					{ label: 'Começar', slug: 'quickstart' },
+					{ label: 'Estado dos recursos', slug: 'status' },
+				] },
+				{ label: 'Usuários e operação', items: [
+					{ label: 'Instalação com Docker', slug: 'users/quickstart-docker' },
+					{ label: 'Domínio e DNS', slug: 'users/dns-domain-setup' },
+					{ label: 'Webmail', slug: 'users/webmail-guide' },
+					{ label: 'Serviços e persistência', slug: 'self-hosting/docker' },
+					{ label: 'Variáveis de ambiente', slug: 'self-hosting/env-vars' },
+					{ label: 'Operação e backup', slug: 'self-hosting/operations' },
+					{ label: 'Diagnóstico', slug: 'users/troubleshooting' },
+				] },
+				{ label: 'Arquitetura e protocolo', items: [
+					{ label: 'Visão geral', slug: 'architecture/overview' },
+					{ label: 'Fluxos do Gateway', slug: 'developers/architecture-spec' },
+					{ label: 'Garantias e limites', slug: 'developers/security-matrix' },
+					{ label: 'Especificação P2P', slug: 'developers/p2p-handshake-spec' },
+					{ label: 'Oráculo e disputas', slug: 'developers/oracle-arbitration' },
+					{ label: 'Gas e custos', slug: 'developers/gas-economics' },
+					{ label: 'Contratos e deploy', slug: 'contracts/registry' },
+				] },
+				{ label: 'API e integração', items: [
+					{ label: 'Mensagens e anexos', slug: 'api/gateway' },
+					{ label: 'Contas e onboarding', slug: 'api/accounts' },
+					{ label: 'SMTP e administração', slug: 'api/operations' },
+					{ label: 'Inventário de rotas', slug: 'api/routes' },
+					{ label: 'Primeiro envio', slug: 'tutorials/sending-first-email' },
+					{ label: 'Piloto e coexistência', slug: 'tutorials/enterprise-migration' },
+				] },
+				{ label: 'Contribuição', items: [
+					{ label: 'Ambiente local', slug: 'contributors/local-setup' },
+					{ label: 'Mapa do código', slug: 'contributors/codebase-overview' },
+					{ label: 'Testes', slug: 'contributors/testing-and-debugging' },
+					{ label: 'Diretrizes', slug: 'contributors/contributing-guidelines' },
+				] },
 			],
 		}),
 	],

@@ -1,191 +1,106 @@
 ---
-title: Gateway REST API
-description: Referência dos principais endpoints HTTP expostos pelo nó Gateway Fastify.
+title: API do Gateway
+description: Mensagens, anexos, autenticação e diagnóstico da implementação atual.
 ---
 
-O **Gateway MAIVW** expõe uma API REST tipada para clientes de e-mail (como o WebMaivw), integrações backend e nós parceiros via protocolo P2P.
+Base local: `http://localhost:3001`. Envie JSON, salvo indicação explícita. Os exemplos usam placeholders e exigem identidades, contratos e credenciais configurados.
 
-## Autenticação
+Veja também [contas e onboarding](/api/accounts/), [SMTP e administração](/api/operations/) e o [inventário de rotas](/api/routes/).
 
-A maioria das rotas de usuário e administração requer o cabeçalho:
-```http
-Authorization: Bearer <token_jwt>
-```
-Para microsserviços e integrações de envio via API, chaves de API também são suportadas:
-```http
-Authorization: Bearer maivw_live_sk_...
-```
+## Autenticação atual
 
----
+Sessões usam `Authorization: Bearer <JWT>`. API keys emitidas pelo cofre têm prefixo `maivw_live_` ou `maivw_test_`; utilize a chave integral retornada, não a representação mascarada exibida na listagem.
 
-## ✉️ Rotas de Envio & Mensagens
+**Não há middleware global que proteja toda a API.** `/send` exige API key de domínio verificado ou sessão de caixa ativa e vincula o remetente à credencial. As rotas `/inbox/messages` e `/inbox/trash/empty` exigem JWT de usuário existente com caixa ativa; o e-mail da consulta não concede acesso. Comparações de endereço são exatas, sem correspondência parcial. Dados antigos com nome de exibição junto ao endereço precisam ser normalizados antes de aparecer nessas consultas. Upload/download também não implementam autorização de proprietário. Esses comportamentos são lacunas, não formas recomendadas de autenticação. Mantenha a API em ambiente restrito enquanto a revisão está pendente.
+
+## Envio
 
 ### `POST /api/v1/send`
-Dispara uma mensagem para um destinatário P2P MAIVW ou endereço de e-mail tradicional (via fallback SMTP).
 
-#### Request Body
+Campos obrigatórios: `to` (e-mail), `subject` (1–998 caracteres), `msgClass`, `content.text` não vazio. `content.html`, `content.attachments`, `from`, `senderEmail`, `senderDomain`, `subIdentityId` e `recipients` são opcionais.
+
+Classes: `TX_CODE`, `TX_RECEIPT`, `SUPPORT`, `CONVERSATION`, `MARKETING`, `COLD_OUTREACH`.
+
 ```json
 {
-  "to": "bob@parceiro.com.br",
-  "subject": "Acordo de Cooperação Técnica",
+  "from": "alice@example.com",
+  "to": "bob@example.org",
+  "subject": "Teste de integração",
   "msgClass": "CONVERSATION",
-  "content": {
-    "text": "Segue em anexo o documento assinado.",
-    "html": "<p>Segue em anexo o documento assinado.</p>",
-    "attachments": [
-      {
-        "id": "att-01",
-        "filename": "contrato.pdf",
-        "mimeType": "application/pdf",
-        "size": 1048576,
-        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-        "url": "/api/v1/attachments/att-01"
-      }
-    ]
-  },
-  "recipients": ["copia@parceiro.com.br"]
+  "content": { "text": "Olá", "html": "<p>Olá</p>" }
 }
 ```
 
-> **Classes de Mensagem Permitidas (`msgClass`):**
-> `TX_CODE` (segurança/OTP), `TX_RECEIPT` (comprovantes/faturas), `SUPPORT` (atendimento), `CONVERSATION` (comunicação humana direta), `MARKETING` (newsletters/campanhas) e `COLD_OUTREACH` (prospecção).
+Envie `Authorization: Bearer TOKEN`. Com API key, o domínio local deve estar verificado e o remetente deve pertencer a esse domínio. Com JWT, o remetente deve ser exatamente o e-mail da caixa ativa; JWT administrativo não envia como colaborador. `from`/`senderEmail` aceitam endereço simples, sem nome de exibição; se ambos forem enviados, devem coincidir. O campo `senderDomain` não pode substituir o domínio autorizado. Não use `recipients` como garantia de envio a todos os destinatários: o código atual usa esse campo na árvore Merkle, sem fan-out completo.
 
-#### Response (`200 OK`)
-```json
-{
-  "success": true,
-  "messageId": "550e8400-e29b-41d4-a716-446655440000",
-  "route": "web3",
-  "recipientDomain": "parceiro.com.br",
-  "message": "Mensagem enviada com sucesso via Protocolo MAIVW (Web3 P2P)"
-}
-```
+No sucesso, a resposta `200` contém `success`, `messageId`, `route` (`web3` ou `smtp`), `recipientDomain` e `message`. Aceite pelo Gateway/provedor não comprova leitura nem entrega definitiva. Erros incluem payload inválido (`400`), API key inválida (`401`), endpoint não encontrado (`502`) e falhas de entrega.
 
----
-
-## 📥 Rotas de Caixa de Entrada (Inbox)
+## Caixa postal
 
 ### `GET /api/v1/inbox/messages`
-Lista as mensagens da caixa postal do usuário autenticado.
 
-#### Query Parameters
-- `limit`: Quantidade máxima de itens a retornar (padrão: `50`).
-- `folder`: Pasta desejada — `inbox` (padrão), `sent`, `trash`, `spam` ou `quarantine`.
-- `isLegacy`: Filtra e-mails legados (`true`) ou nativos Web3 P2P (`false`).
-
-#### Response (`200 OK`)
-```json
-{
-  "total": 42,
-  "folder": "inbox",
-  "counts": {
-    "inbox": 42,
-    "sent": 15,
-    "spam": 0,
-    "trash": 3
-  },
-  "messages": [
-    {
-      "id": 101,
-      "messageId": "550e8400-e29b-41d4-a716-446655440000",
-      "from": "alice@empresa.com.br",
-      "to": "bob@parceiro.com.br",
-      "subject": "Acordo de Cooperação Técnica",
-      "body": "{\"text\":\"Segue em anexo...\",\"html\":\"<p>Segue...</p>\"}",
-      "msgClass": "CONVERSATION",
-      "status": "received",
-      "signature": "0x7f8a9...",
-      "isLegacy": false,
-      "isRead": false,
-      "receivedAt": "2026-10-11T04:30:00.000Z"
-    }
-  ]
-}
-```
+Use JWT da caixa postal, não da conta administrativa. Queries: `limit` (1–200, padrão 50), `folder` (`inbox`, `sent`, `trash`, `spam`, `quarantine`) e `isLegacy` (`true`/`false`). `total` é a quantidade de itens retornados, enquanto `counts` contém contadores das pastas. As mensagens incluem `id`, `messageId`, `from`, `to`, `subject`, `body`, `msgClass`, `status`, `isLegacy`, `isRead` e `receivedAt`.
 
 ### `PATCH /api/v1/inbox/messages/:id`
-Atualiza o estado de leitura ou move a mensagem para a lixeira.
+
 ```json
-{
-  "isRead": true,
-  "moveToTrash": false
-}
+{ "isRead": true, "status": "trash" }
 ```
+
+Use JWT da caixa ativa. `status` aceita `trash`, `spam` ou `quarantined`; `isRead` aceita booleano. A mensagem deve corresponder exatamente ao endereço da sessão.
 
 ### `PATCH /api/v1/inbox/messages/:id/restore`
-Restaura uma mensagem da lixeira de volta para a caixa de entrada.
+
+Restaura a mensagem conforme o estado tratado pelo backend.
 
 ### `DELETE /api/v1/inbox/messages/:id`
-Exclui permanentemente uma mensagem da lixeira.
+
+Move para a lixeira. Se já estiver na lixeira, ou com `?permanent=true`, exclui permanentemente. Exige sessão da caixa.
 
 ### `DELETE /api/v1/inbox/trash/empty`
-Esvazia todas as mensagens da lixeira do usuário autenticado.
 
----
+Solicita esvaziamento da lixeira. Não use como operação de diagnóstico.
 
-## 🤝 Receptor P2P Direto (Servidor para Servidor)
+## P2P
 
 ### `POST /api/v1/inbox`
-Endpoint HTTP direto consumido pelo Gateway remoto para entregar envelopes autenticados.
 
-#### Cabeçalhos do Protocolo
-- `x-maivw-sender`: Domínio remetente verificado na blockchain.
-- `x-maivw-intent-tx`: Hash da transação na blockchain comprovando a intenção de envio.
-- `x-maivw-sub-identity` *(opcional)*: Sub-identidade do remetente (para provedores multi-tenant).
-- `x-maivw-intent-root` e `x-maivw-intent-proof` *(opcionais)*: Raiz e prova Merkle para lotes de mensagens.
-- `x-maivw-stealth-token` *(opcional)*: Token de autorização para domínios em Modo Stealth.
+Recebe o envelope assinado de outro nó. Cabeçalhos, serialização e limitações da prova estão na [especificação P2P](/developers/p2p-handshake-spec/). O retorno `202` representa aceite pelo Gateway.
 
-#### Response (`202 Accepted`)
-```json
-{
-  "status": "accepted",
-  "messageId": "550e8400-e29b-41d4-a716-446655440000",
-  "senderDomain": "empresa.com.br",
-  "subIdentityId": "default",
-  "merkleVerified": false,
-  "message": "Mensagem de empresa.com.br validada e aceita para a caixa de entrada"
-}
-```
-
----
-
-## 📎 Anexos Criptográficos
+## Anexos
 
 ### `POST /api/v1/attachments/upload`
-Upload de anexo via formulário multipart (`multipart/form-data`). Retorna os metadados com cálculo automático de hash SHA-256 e ID único.
 
-### `GET /api/v1/attachments/:id`
-Download de anexo previamente validado.
-
----
-
-## 🩺 Diagnóstico e Status do Nó
-
-### `GET /health`
-Verifica a integridade operacional do nó, conectividade com Redis, status da blockchain e saldo do oráculo.
-
-```bash
-curl http://localhost:3001/health
-```
+Recebe **JSON/Base64**, não multipart:
 
 ```json
-{
-  "status": "ok",
-  "service": "maivw-gateway",
-  "timestamp": "2026-10-11T05:50:00.000Z",
-  "blockchain": "online",
-  "redis": "online",
-  "smtp": {
-    "provider": "resend",
-    "configured": true
-  },
-  "oracle": "0x0000000000000000000000000000000000000000",
-  "oracleSignerType": "local",
-  "oracleBalanceWei": "150000000000000000",
-  "oracleBalanceLow": false,
-  "contractAddress": "0x5FbDB2315678afecb367f032d93F642f64180aa3"
-}
+{ "filename": "teste.txt", "mimeType": "text/plain", "dataBase64": "T2xh" }
 ```
 
+O retorno `201` contém `success: true` e `attachment` com `id`, `filename`, `size`, `mimeType`, `sha256` e `url`. Use esse objeto em `content.attachments`.
+
+O handler possui verificação de 25 MiB por arquivo decodificado, mas o limite HTTP do Fastify/proxy pode rejeitar a requisição antes. O Gateway não configura um `bodyLimit` específico para permitir esse tamanho. Não anuncie 25 MB efetivamente suportados sem ajustar e testar toda a cadeia.
+
+### `GET /api/v1/attachments/:id/download`
+
+Retorna o arquivo com `Content-Type`, `Content-Disposition` e `x-maivw-sha256`. A URL relativa retornada precisa ser resolvida contra o Gateway que armazena o anexo. Hash de arquivo não equivale a criptografia nem a autorização de acesso; a assinatura atual da mensagem não cobre seus metadados.
+
+## Diagnóstico
+
+### `GET /health/live`
+
+Retorna `200` e `status: "alive"` se o servidor HTTP responde.
+
+### `GET /health`
+
+Consulta Registry, Redis e PostgreSQL com prazo limitado. Retorna `200`/`status: "ok"` ou `503`/`status: "degraded"`. Os campos `blockchain`, `redis` e `database` indicam cada dependência. Inclui metadados SMTP, endereço/modo do oráculo e `contractAddress`.
+
+`oracleBalanceWei` e `oracleBalanceLow` são `null` quando não foi possível consultar saldo. Saldo baixo é informativo e não muda sozinho o HTTP status. Saúde não certifica autorização on-chain, SMTP funcional ou segurança da API.
+
 ### `GET /api/v1/status`
-Retorna versão do Gateway, domínio configurado, carteira assinadora e total de domínios registrados no cartório on-chain.
+
+Retorna versão informada pelo Gateway, remetente padrão, assinante e dados do Registry. Métricas de outras rotas podem conter fallbacks de demonstração; não as trate automaticamente como observabilidade auditada.
+
+## Contatos
+
+`GET /api/v1/contacts/autocomplete` exige sessão de caixa ativa. `q` filtra sugestões; `domain`, se enviado, deve ser o domínio da própria caixa. O diretório exclui contas desativadas e conversas recentes usam comparação exata do endereço autenticado.
