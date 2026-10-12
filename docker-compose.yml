@@ -23,7 +23,7 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
       - POSTGRES_DB=maivw_reputation
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
     healthcheck:
@@ -39,7 +39,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - ./data/redis:/data
     command: redis-server --appendonly yes
@@ -57,7 +57,11 @@ services:
       context: ./gateway
       dockerfile: Dockerfile
     ports:
-      - "3001:3001"
+      - "127.0.0.1:3001:3001"
+    env_file:
+      - .env
+    volumes:
+      - ./data/attachments:/app/data/attachments
     environment:
       - MAIVW_EDITION=community
       - GATEWAY_PORT=3001
@@ -71,7 +75,6 @@ services:
       - INTERNAL_SERVICE_KEY=${INTERNAL_SERVICE_KEY}
       - BASE_RPC_URL=${BASE_RPC_URL:-https://sepolia.base.org}
       - BASE_REGISTRY_ADDRESS=${BASE_REGISTRY_ADDRESS:-}
-      - BASE_REGISTRY_LENS_ADDRESS=${BASE_REGISTRY_LENS_ADDRESS:-}
     depends_on:
       redis:
         condition: service_healthy
@@ -96,13 +99,20 @@ services:
         - NEXT_PUBLIC_RPC_URL=${NEXT_PUBLIC_RPC_URL:-https://sepolia.base.org}
         - NEXT_PUBLIC_CHAIN_ID=${NEXT_PUBLIC_CHAIN_ID:-84532}
         - NEXT_PUBLIC_REGISTRY_CONTRACT_ADDRESS=${NEXT_PUBLIC_REGISTRY_CONTRACT_ADDRESS:-}
+        - NEXT_PUBLIC_FIREBASE_API_KEY=${NEXT_PUBLIC_FIREBASE_API_KEY:-}
+        - NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=${NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN:-}
+        - NEXT_PUBLIC_FIREBASE_PROJECT_ID=${NEXT_PUBLIC_FIREBASE_PROJECT_ID:-}
+        - NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=${NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET:-}
+        - NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=${NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID:-}
+        - NEXT_PUBLIC_FIREBASE_APP_ID=${NEXT_PUBLIC_FIREBASE_APP_ID:-}
+        - NEXT_PUBLIC_PAYMENT_API_URL=${NEXT_PUBLIC_PAYMENT_API_URL:-https://api-payment.maivw.com}
     environment:
       - NEXT_PUBLIC_GATEWAY_URL=${NEXT_PUBLIC_GATEWAY_URL:-http://localhost:3001}
       - NEXT_PUBLIC_RPC_URL=${NEXT_PUBLIC_RPC_URL:-https://sepolia.base.org}
       - NEXT_PUBLIC_CHAIN_ID=${NEXT_PUBLIC_CHAIN_ID:-84532}
       - NEXT_PUBLIC_REGISTRY_CONTRACT_ADDRESS=${NEXT_PUBLIC_REGISTRY_CONTRACT_ADDRESS:-}
     ports:
-      - "3002:3002"
+      - "127.0.0.1:3002:3002"
     depends_on:
       gateway:
         condition: service_healthy
@@ -118,12 +128,14 @@ services:
         - NEXT_PUBLIC_GATEWAY_URL=${NEXT_PUBLIC_GATEWAY_URL:-http://localhost:3001}
         - NEXT_PUBLIC_RPC_URL=${NEXT_PUBLIC_RPC_URL:-https://sepolia.base.org}
         - NEXT_PUBLIC_CHAIN_ID=${NEXT_PUBLIC_CHAIN_ID:-84532}
+        - NEXT_PUBLIC_REGISTRY_CONTRACT_ADDRESS=${NEXT_PUBLIC_REGISTRY_CONTRACT_ADDRESS:-}
+        - NEXT_PUBLIC_WEBMAIVW_URL=${NEXT_PUBLIC_WEBMAIVW_URL:-http://localhost:3002}
     environment:
       - NEXT_PUBLIC_GATEWAY_URL=${NEXT_PUBLIC_GATEWAY_URL:-http://localhost:3001}
       - NEXT_PUBLIC_RPC_URL=${NEXT_PUBLIC_RPC_URL:-https://sepolia.base.org}
       - NEXT_PUBLIC_CHAIN_ID=${NEXT_PUBLIC_CHAIN_ID:-84532}
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     depends_on:
       gateway:
         condition: service_healthy
