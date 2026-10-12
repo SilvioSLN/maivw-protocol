@@ -4,7 +4,7 @@ import starlight from '@astrojs/starlight';
 
 // https://astro.build/config
 export default defineConfig({
-	site: 'https://docs.maivw.org',
+	site: 'https://docs.maivw.com',
 	integrations: [
 		starlight({
 			title: 'Protocol',
@@ -21,6 +21,24 @@ export default defineConfig({
 			],
 			social: [
 				{ icon: 'github', label: 'GitHub', href: 'https://github.com/SilvioSLN/maivw-protocol' }
+			],
+			head: [
+				{
+					tag: 'script',
+					attrs: {
+						async: true,
+						src: 'https://www.googletagmanager.com/gtag/js?id=G-2G2NC9JP9W',
+					},
+				},
+				{
+					tag: 'script',
+					content: `
+						window.dataLayer = window.dataLayer || [];
+						function gtag(){dataLayer.push(arguments);}
+						gtag('js', new Date());
+						gtag('config', 'G-2G2NC9JP9W');
+					`,
+				},
 			],
 			sidebar: [
 				{ label: 'Início', items: [
