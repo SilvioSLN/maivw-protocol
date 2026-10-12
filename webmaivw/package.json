@@ -1,0 +1,32 @@
+{
+  "name": "@maivw/webmaivw",
+  "version": "0.1.0",
+  "private": true,
+  "description": "WebMaivw — Modern B2B Webmail, Onboarding & Developer Dashboard",
+  "scripts": {
+    "dev": "next dev --port 3002",
+    "build": "next build",
+    "start": "next start --port 3002"
+  },
+  "dependencies": {
+    "clsx": "^2.1.1",
+    "dompurify": "^3.4.16",
+    "firebase": "^12.19.0",
+    "lucide-react": "^0.475.0",
+    "next": "^15.3.4",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "tailwind-merge": "^3.0.1",
+    "viem": "^2.57.3"
+  },
+  "devDependencies": {
+    "@types/dompurify": "^3.2.0",
+    "@types/node": "^22.15.0",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.5.1",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.8.3"
+  }
+}

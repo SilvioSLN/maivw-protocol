@@ -1,0 +1,167 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #f8fafc;
+  --foreground: #0f172a;
+}
+
+html.dark {
+  --background: #090d16;
+  --foreground: #f8fafc;
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  overflow-x: hidden;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+html.dark ::-webkit-scrollbar-track {
+  background: #0f172a;
+}
+html:not(.dark) ::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+html.dark ::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 9999px;
+}
+html:not(.dark) ::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+html.dark ::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+html:not(.dark) ::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+
+/* Rich Email Editor & Viewer Typography */
+.rich-email-canvas,
+.email-content-viewer {
+  font-family: inherit;
+}
+
+.rich-email-canvas h1,
+.email-content-viewer h1 {
+  display: block !important;
+  font-size: 1.75rem !important;
+  font-weight: 800 !important;
+  line-height: 1.25 !important;
+  margin-top: 1rem !important;
+  margin-bottom: 0.5rem !important;
+  color: #0f172a !important;
+}
+
+.rich-email-canvas h2,
+.email-content-viewer h2 {
+  display: block !important;
+  font-size: 1.35rem !important;
+  font-weight: 700 !important;
+  line-height: 1.3 !important;
+  margin-top: 0.85rem !important;
+  margin-bottom: 0.4rem !important;
+  color: #0f172a !important;
+}
+
+.rich-email-canvas h3,
+.email-content-viewer h3 {
+  display: block !important;
+  font-size: 1.15rem !important;
+  font-weight: 600 !important;
+  line-height: 1.35 !important;
+  margin-top: 0.75rem !important;
+  margin-bottom: 0.35rem !important;
+  color: #0f172a !important;
+}
+
+.dark .email-content-viewer h1,
+.dark .email-content-viewer h2,
+.dark .email-content-viewer h3 {
+  color: #f8fafc !important;
+}
+
+.rich-email-canvas ul,
+.email-content-viewer ul {
+  list-style-type: disc !important;
+  padding-left: 2rem !important;
+  margin-top: 0.5rem !important;
+  margin-bottom: 0.5rem !important;
+}
+
+.rich-email-canvas ol,
+.email-content-viewer ol {
+  list-style-type: decimal !important;
+  padding-left: 2rem !important;
+  margin-top: 0.5rem !important;
+  margin-bottom: 0.5rem !important;
+}
+
+.rich-email-canvas li,
+.email-content-viewer li {
+  display: list-item !important;
+  margin-bottom: 0.25rem !important;
+  line-height: 1.5 !important;
+}
+
+.rich-email-canvas hr,
+.email-content-viewer hr {
+  border: none !important;
+  border-top: 1px solid #cbd5e1 !important;
+  margin: 1.25rem 0 !important;
+}
+
+.rich-email-canvas img {
+  cursor: pointer;
+  transition: outline 0.15s ease, transform 0.15s ease;
+  max-width: 100%;
+  border-radius: 8px;
+}
+
+.rich-email-canvas img:hover {
+  outline: 2px solid #7d0000;
+}
+
+/* Rich Email Editor Styling */
+[contenteditable]:empty:before {
+  content: attr(data-placeholder);
+  color: #94a3b8;
+  cursor: text;
+  pointer-events: none;
+  display: block;
+}
+
+[contenteditable] blockquote {
+  border-left: 3px solid #7d0000;
+  padding-left: 12px;
+  margin: 8px 0;
+  color: #334155;
+  font-style: italic;
+}
+
+[contenteditable] p {
+  margin: 4px 0;
+}
+
+/* ========================================================
+   Email Clean Paper Canvas — Sempre Fundo Claro por Default
+   ======================================================== */
+.email-clean-paper {
+  background-color: #ffffff !important;
+  color: #0f172a;
+}
+
+
+
+
