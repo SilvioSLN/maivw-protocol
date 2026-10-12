@@ -13,11 +13,11 @@ interface NodeTelemetry {
     isIndependent: boolean;
   } | null;
   reputation: {
-    score: number;
+    score: number | null;
     strikes: number;
     maxStrikes: number;
-    isActive: boolean;
-    isProvider: boolean;
+    isActive: boolean | null;
+    isProvider: boolean | null;
     publicKey: string;
     status: string;
     contractAddress: string;
@@ -29,10 +29,10 @@ interface NodeTelemetry {
     totalSent: number;
     validSignatures: number;
     spoofingBlocked: number;
-    cryptographicSuccessRate: string;
-    p2pDeliveryRate: string;
-    queuePending: number;
-    avgLatencyMs: number;
+    cryptographicSuccessRate: string | null;
+    p2pDeliveryRate: string | null;
+    queuePending: number | null;
+    avgLatencyMs: number | null;
   };
   trafficHistory: Array<{
     time: string;
@@ -51,7 +51,7 @@ interface NodeTelemetry {
   systemHealth: {
     gateway: "online" | "offline";
     blockchain: "online" | "offline";
-    redis: "online" | "offline";
+    redis: "online" | "offline" | "unknown";
     postgres: "online" | "offline";
     blockNumber: number | null;
     rpcLatencyMs: number;
@@ -59,6 +59,11 @@ interface NodeTelemetry {
     chainName?: string;
   };
 }
+
+const formatNumber = (value: number | null) =>
+  value === null || !Number.isFinite(value) ? "—" : value.toLocaleString("pt-BR");
+
+const formatMetric = (value: string | null) => value ?? "não instrumentado";
 
 export default function OverviewPage() {
   const [telemetry, setTelemetry] = useState<NodeTelemetry | null>(null);
@@ -88,94 +93,42 @@ export default function OverviewPage() {
     return () => clearInterval(interval);
   }, [fetchTelemetry]);
 
-  // Dados com fallback para renderização inicial imediata e fluida
+  // Estado neutro enquanto a telemetria real ainda não está disponível.
   const data: NodeTelemetry = telemetry || {
-    domain: "empresaA.com",
+    domain: loading ? "carregando..." : "indisponível",
     nodeMode: "independent",
-    wallet: {
-      address: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
-      balanceEth: "0.0420 ETH",
-      isIndependent: true,
-    },
+    wallet: null,
     reputation: {
-      score: 100,
+      score: null,
       strikes: 0,
       maxStrikes: 3,
-      isActive: true,
-      isProvider: false,
-      publicKey: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
-      status: "Excelente",
-      contractAddress: "0x5FbDB2315678afecb367f032d93F642f64180aa3",
-      chainName: "Anvil Local",
+      isActive: null,
+      isProvider: null,
+      publicKey: "",
+      status: loading ? "consultando" : "indisponível",
+      contractAddress: "",
+      chainName: "EVM",
     },
     traffic: {
-      totalProcessed: 1482,
-      totalReceived: 889,
-      totalSent: 593,
-      validSignatures: 1444,
-      spoofingBlocked: 38,
-      cryptographicSuccessRate: "100%",
-      p2pDeliveryRate: "84%",
-      queuePending: 0,
-      avgLatencyMs: 380,
+      totalProcessed: 0,
+      totalReceived: 0,
+      totalSent: 0,
+      validSignatures: 0,
+      spoofingBlocked: 0,
+      cryptographicSuccessRate: null,
+      p2pDeliveryRate: null,
+      queuePending: null,
+      avgLatencyMs: null,
     },
-    trafficHistory: [
-      { time: "00h", legitimate: 42, threats: 1 },
-      { time: "03h", legitimate: 18, threats: 3 },
-      { time: "06h", legitimate: 85, threats: 2 },
-      { time: "09h", legitimate: 320, threats: 14 },
-      { time: "12h", legitimate: 410, threats: 9 },
-      { time: "15h", legitimate: 365, threats: 6 },
-      { time: "18h", legitimate: 194, threats: 2 },
-      { time: "21h", legitimate: 48, threats: 1 },
-    ],
-    securityEvents: [
-      {
-        id: "evt-01",
-        timestamp: "Hoje, 19:42",
-        from: "notificacoes@bancodobrasil-alerta.com",
-        to: "contato@empresaA.com",
-        originIp: "185.220.101.5",
-        reason: "Assinatura ECDSA ausente / Domínio não registrado no Cartório",
-        action: "descartado",
-      },
-      {
-        id: "evt-02",
-        timestamp: "Hoje, 18:15",
-        from: "admin@empresaA.com",
-        to: "financeiro@empresaA.com",
-        originIp: "45.154.255.88",
-        reason: "Tentativa de Spoofing Interno (Chave pública forjada incompatível)",
-        action: "bloqueado",
-      },
-      {
-        id: "evt-03",
-        timestamp: "Hoje, 16:30",
-        from: "cobranca-judicial@receita-federal.net",
-        to: "suporte@empresaA.com",
-        originIp: "194.26.29.11",
-        reason: "Phishing detectado / Tag Spoofing rejeitado pelo Nó",
-        action: "descartado",
-      },
-      {
-        id: "evt-04",
-        timestamp: "Hoje, 12:08",
-        from: "fatura@servicos-nuvem.com",
-        to: "admin@empresaA.com",
-        originIp: "89.208.29.14",
-        reason: "Reputação do remetente nula / Taxonomia não autorizada",
-        action: "quarentena",
-      },
-    ],
+    trafficHistory: [],
+    securityEvents: [],
     systemHealth: {
-      gateway: "online",
-      blockchain: "online",
-      redis: "online",
-      postgres: "online",
-      blockNumber: 18492102,
-      rpcLatencyMs: 24,
-      contractAddress: "0x5FbDB2315678afecb367f032d93F642f64180aa3",
-      chainName: "Anvil Local",
+      gateway: "offline",
+      blockchain: "offline",
+      redis: "unknown",
+      postgres: "offline",
+      blockNumber: null,
+      rpcLatencyMs: 0,
     },
   };
 
@@ -197,26 +150,39 @@ export default function OverviewPage() {
   };
 
   // Cálculos do Gráfico SVG
-  const maxVal = Math.max(...data.trafficHistory.map((d) => Math.max(d.legitimate, d.threats * 10)), 100);
+  const trafficHistory = Array.isArray(data.trafficHistory)
+    ? data.trafficHistory.filter(
+        (entry) => Number.isFinite(entry.legitimate) && Number.isFinite(entry.threats)
+      )
+    : [];
+  const securityEvents = Array.isArray(data.securityEvents) ? data.securityEvents : [];
+  const maxVal = Math.max(...trafficHistory.map((d) => Math.max(d.legitimate, d.threats * 10)), 100);
   const chartWidth = 720;
   const chartHeight = 160;
   const paddingX = 40;
   const paddingY = 25;
 
-  const pointsLegit = data.trafficHistory.map((d, i) => {
-    const x = paddingX + (i / (data.trafficHistory.length - 1)) * (chartWidth - paddingX * 2);
+  const pointX = (index: number) =>
+    trafficHistory.length === 1
+      ? chartWidth / 2
+      : paddingX + (index / Math.max(trafficHistory.length - 1, 1)) * (chartWidth - paddingX * 2);
+
+  const pointsLegit = trafficHistory.map((d, i) => {
+    const x = pointX(i);
     const y = chartHeight - paddingY - (d.legitimate / maxVal) * (chartHeight - paddingY * 2);
     return { x, y, ...d };
   });
 
-  const pointsThreats = data.trafficHistory.map((d, i) => {
-    const x = paddingX + (i / (data.trafficHistory.length - 1)) * (chartWidth - paddingX * 2);
+  const pointsThreats = trafficHistory.map((d, i) => {
+    const x = pointX(i);
     const y = chartHeight - paddingY - ((d.threats * 10) / maxVal) * (chartHeight - paddingY * 2);
     return { x, y, ...d };
   });
 
   const pathLegit = pointsLegit.reduce((acc, p, i) => (i === 0 ? `M ${p.x} ${p.y}` : `${acc} L ${p.x} ${p.y}`), "");
-  const areaLegit = `${pathLegit} L ${pointsLegit[pointsLegit.length - 1].x} ${chartHeight - paddingY} L ${pointsLegit[0].x} ${chartHeight - paddingY} Z`;
+  const areaLegit = pointsLegit.length > 1
+    ? `${pathLegit} L ${pointsLegit[pointsLegit.length - 1].x} ${chartHeight - paddingY} L ${pointsLegit[0].x} ${chartHeight - paddingY} Z`
+    : "";
   const pathThreats = pointsThreats.reduce((acc, p, i) => (i === 0 ? `M ${p.x} ${p.y}` : `${acc} L ${p.x} ${p.y}`), "");
 
   return (
@@ -267,7 +233,7 @@ export default function OverviewPage() {
               }}
             >
               <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#10b981" }} />
-              Nó Local Operacional
+              {data.systemHealth.gateway === "online" ? "Nó Local Operacional" : loading ? "Consultando Nó Local" : "Nó Local Indisponível"}
             </span>
 
             <span
@@ -344,22 +310,18 @@ export default function OverviewPage() {
               </button>
             </div>
 
-            <a
-              href={`https://sepolia.basescan.org/address/${data.systemHealth.contractAddress}`}
-              target="_blank"
-              rel="noreferrer"
-              style={{
-                fontSize: "0.75rem",
-                color: "#60a5fa",
-                textDecoration: "none",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "0.35rem",
-              }}
-            >
-              <span>Ver no BaseScan</span>
-              <span>↗</span>
-            </a>
+            {data.systemHealth.chainName === "Base Sepolia" ? (
+              <a
+                href={`https://sepolia.basescan.org/address/${data.systemHealth.contractAddress}`}
+                target="_blank"
+                rel="noreferrer"
+                style={{ fontSize: "0.75rem", color: "#60a5fa", textDecoration: "none" }}
+              >
+                Ver no BaseScan ↗
+              </a>
+            ) : (
+              <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Contrato da rede local</span>
+            )}
           </div>
         )}
       </div>
@@ -375,7 +337,7 @@ export default function OverviewPage() {
             <span style={{ fontSize: "1.2rem" }}>📨</span>
           </div>
           <div style={{ fontSize: "1.8rem", fontWeight: 800, color: "#ffffff" }}>
-            {data.traffic.totalProcessed.toLocaleString("pt-BR")}
+            {formatNumber(data.traffic.totalProcessed)}
           </div>
           <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
             {data.traffic.totalReceived} recebidos • {data.traffic.totalSent} enviados
@@ -394,7 +356,7 @@ export default function OverviewPage() {
             {data.traffic.spoofingBlocked} bloqueados
           </div>
           <span style={{ fontSize: "0.75rem", color: "#10b981", fontWeight: 600 }}>
-            Taxa de Proteção: {data.traffic.cryptographicSuccessRate}
+            Taxa de Proteção: {formatMetric(data.traffic.cryptographicSuccessRate)}
           </span>
         </div>
 
@@ -407,7 +369,7 @@ export default function OverviewPage() {
             <span style={{ fontSize: "1.2rem" }}>⚖️</span>
           </div>
           <div style={{ fontSize: "1.8rem", fontWeight: 800, color: "#10b981" }}>
-            {data.reputation.score} / 100
+            {data.reputation.score === null ? "—" : `${data.reputation.score} / 100`}
           </div>
           <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
             {data.reputation.strikes} de 3 strikes • Nível {data.reputation.status}
@@ -423,10 +385,10 @@ export default function OverviewPage() {
             <span style={{ fontSize: "1.2rem" }}>⚡</span>
           </div>
           <div style={{ fontSize: "1.8rem", fontWeight: 800, color: "#60a5fa" }}>
-            {data.traffic.avgLatencyMs} ms
+            {data.traffic.avgLatencyMs === null ? "—" : `${data.traffic.avgLatencyMs} ms`}
           </div>
           <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
-            Fila: {data.traffic.queuePending} pendentes • {data.traffic.p2pDeliveryRate} Direto P2P
+            Fila: {formatNumber(data.traffic.queuePending)} pendentes • {formatMetric(data.traffic.p2pDeliveryRate)}
           </span>
         </div>
       </div>
@@ -474,12 +436,17 @@ export default function OverviewPage() {
               <line x1={paddingX} y1={chartHeight / 2} x2={chartWidth - paddingX} y2={chartHeight / 2} stroke="rgba(255,255,255,0.06)" strokeDasharray="3 3" />
               <line x1={paddingX} y1={chartHeight - paddingY} x2={chartWidth - paddingX} y2={chartHeight - paddingY} stroke="rgba(255,255,255,0.12)" />
 
-              {/* Área e Linha de Entregas Legítimas */}
-              <path d={areaLegit} fill="url(#legitGradient)" />
-              <path d={pathLegit} fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" />
-
-              {/* Linha de Ameaças Bloqueadas */}
-              <path d={pathThreats} fill="none" stroke="#ef4444" strokeWidth="2" strokeDasharray="4 2" strokeLinecap="round" />
+              {trafficHistory.length === 0 ? (
+                <text x={chartWidth / 2} y={chartHeight / 2} fill="var(--text-muted)" fontSize="12" textAnchor="middle">
+                  Ainda não há histórico de tráfego instrumentado.
+                </text>
+              ) : (
+                <>
+                  {areaLegit && <path d={areaLegit} fill="url(#legitGradient)" />}
+                  <path d={pathLegit} fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" />
+                  <path d={pathThreats} fill="none" stroke="#ef4444" strokeWidth="2" strokeDasharray="4 2" strokeLinecap="round" />
+                </>
+              )}
 
               {/* Pontos com Labels */}
               {pointsLegit.map((p, i) => (
@@ -544,7 +511,7 @@ export default function OverviewPage() {
                 </tr>
               </thead>
               <tbody>
-                {data.securityEvents.map((evt) => (
+                {securityEvents.map((evt) => (
                   <tr
                     key={evt.id}
                     style={{
@@ -600,6 +567,13 @@ export default function OverviewPage() {
                     </td>
                   </tr>
                 ))}
+                {securityEvents.length === 0 && (
+                  <tr>
+                    <td colSpan={6} style={{ padding: "1.25rem", color: "var(--text-muted)", textAlign: "center" }}>
+                      Nenhum evento de segurança instrumentado até o momento.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -645,7 +619,11 @@ export default function OverviewPage() {
               </span>
             </div>
             <p style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.5rem" }}>
-              Domínio verificado com chave criptográfica ancorada na blockchain ({data.reputation.chainName}).
+              {data.reputation.isActive === null
+                ? `Perfil ainda não confirmado na blockchain (${data.reputation.chainName}).`
+                : data.reputation.isActive
+                  ? `Domínio verificado com chave criptográfica ancorada na blockchain (${data.reputation.chainName}).`
+                  : `Domínio suspenso na blockchain (${data.reputation.chainName}).`}
             </p>
           </div>
 
@@ -656,7 +634,7 @@ export default function OverviewPage() {
             </span>
             <div style={{ marginTop: "0.5rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
               <code style={{ fontSize: "0.8rem", color: "#60a5fa", fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {data.reputation.publicKey}
+                {data.reputation.publicKey || "Chave ainda não disponível"}
               </code>
               <button
                 onClick={copyKey}
@@ -702,7 +680,13 @@ export default function OverviewPage() {
               ))}
             </div>
             <p style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.5rem" }}>
-              Nenhum risco de suspensão. O domínio opera em conformidade total com a rede.
+              {data.reputation.isActive === null
+                ? "Situação de conformidade ainda não confirmada pela rede."
+                : data.reputation.isActive && data.reputation.strikes === 0
+                  ? "Nenhum risco de suspensão. O domínio opera em conformidade total com a rede."
+                  : data.reputation.isActive
+                    ? "Há infrações registradas; acompanhe os strikes antes do limite de suspensão."
+                    : "O domínio está suspenso na rede."}
             </p>
           </div>
         </div>
@@ -818,7 +802,7 @@ export default function OverviewPage() {
 
           {/* Card WebMaivw */}
           <a
-            href={process.env.NEXT_PUBLIC_WEBMAIVW_URL || "http://localhost:3002"}
+            href={process.env.NEXT_PUBLIC_WEBMAIVW_URL || "http://localhost:52443"}
             target="_blank"
             rel="noopener noreferrer"
             style={{

@@ -359,7 +359,7 @@ export default function CartorioPage() {
 
             <div style={{ display: "flex", gap: "1rem", justifyContent: "center", flexWrap: "wrap" }}>
               <a
-                href="http://localhost:3002/admin"
+                href={`${(process.env.NEXT_PUBLIC_WEBMAIVW_URL || "http://localhost:52443").replace(/\/+$/, "")}/admin`}
                 target="_blank"
                 rel="noreferrer"
                 className="btn btn-primary"
