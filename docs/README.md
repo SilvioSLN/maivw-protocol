@@ -1,29 +1,47 @@
-# Documentação do MAIVW
+# Documentação do MAIVW Protocol
 
-Site estático em Astro/Starlight. O conteúdo público fica em `src/content/docs/`; o menu é definido em `astro.config.mjs`.
+A documentação oficial e completa do **MAIVW Protocol** está disponível online em:
 
-## Manutenção
+👉 **[https://docs.maivw.com](https://docs.maivw.com)**
+
+Para consultar guias de instalação, referência de APIs, contratos inteligentes e arquitetura, acesse o link acima.
+
+---
+
+## 🛠️ Manutenção e Desenvolvimento Local
+
+Este diretório contém a fonte da documentação oficial construída com [Astro](https://astro.build) e [Starlight](https://starlight.astro.build).
+
+### Pré-requisitos
+- Node.js 20+
+- npm 10+
+
+### Comandos de Desenvolvimento
 
 Na pasta `docs/`:
 
 ```bash
+# 1. Instalar dependências
 npm install
+
+# 2. Executar validação de consistência técnica
 npm run check:docs
+
+# 3. Gerar build estático de produção
 npm run build
+
+# 4. Pré-visualizar localmente o build gerado
 npm run preview
 ```
 
-Para o servidor de desenvolvimento, siga `AGENTS.md`: `npx astro dev --background`; consulte `npx astro dev status`, `logs` e `stop` para gerenciá-lo.
+Para executar o servidor de desenvolvimento interativo:
 
-O build gera `dist/`. O domínio configurado em `site` define URLs canônicas e sitemap; gerar o build não publica o site.
+```bash
+npm run dev
+```
 
-## Consistência com o código
+### Diretrizes de Contribuição na Documentação
 
-- Documente o comportamento implementado, separando recursos experimentais e pendências em `status.md`.
-- Não anuncie E2EE, mTLS automático, assinatura integral, auditoria concluída ou métricas sem evidência.
-- Atualize configuração e referência quando mudar variáveis de ambiente.
-- Após alterar rotas, execute `npm run docs:routes`, revise o inventário e atualize exemplos/autenticação manualmente.
-- `check:docs` verifica links locais entre páginas, navegação, rotas literais e variáveis do schema. Não testa links externos, autenticação, âncoras nem execução dos exemplos.
-- As páginas antigas de setup, DNS e handshake mantêm URLs e encaminham ao conteúdo canônico; não duplique procedimentos nelas.
-
-O trabalho em andamento está em [IMPLEMENTATION-CHECKLIST.md](IMPLEMENTATION-CHECKLIST.md), fora da coleção pública.
+- Mantenha a documentação estritamente fiel às funcionalidades implementadas no código.
+- Após alterar rotas ou variáveis de ambiente no Gateway, execute sempre `npm run check:docs` para verificar a consistência de links, rotas e inventários.
+- Para acompanhar os marcos técnicos e o status de implementação, consulte o [IMPLEMENTATION-CHECKLIST.md](IMPLEMENTATION-CHECKLIST.md).
