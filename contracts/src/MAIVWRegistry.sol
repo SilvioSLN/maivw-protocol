@@ -259,6 +259,12 @@ contract MAIVWRegistry is
     event ProviderSuspended(string domain, uint256 timestamp);
     event GenesisDomainRegistered(string domain, address publicKey, address adminKey, uint256 genesisIndex);
     event DelaysUpdated(uint256 newSlashDelay, uint256 newRecoveryDelay);
+    event DomainTlsFingerprintUpdated(
+        bytes32 indexed domainHash,
+        string domain,
+        bytes32 indexed fingerprint,
+        uint256 timestamp
+    );
 
     // ============================================
     //  Errors
@@ -940,6 +946,22 @@ contract MAIVWRegistry is
         emit EndpointUpdated(_domain, old, _newEndpoint);
     }
 
+    /// @notice Registra ou atualiza o fingerprint SHA-256 do certificado TLS do domínio (DANE On-Chain / S08)
+    function setDomainTlsFingerprint(string calldata _domain, bytes32 _fingerprint) external {
+        bytes32 h = _hash(_domain);
+        CompanyProfile storage p = profiles[h];
+        if (p.status != DomainStatus.ACTIVE) revert DomainNotActive();
+        if (msg.sender != p.adminKey && msg.sender != p.publicKey) revert UnauthorizedDomainCaller();
+
+        domainTlsFingerprints[h] = _fingerprint;
+        emit DomainTlsFingerprintUpdated(h, _domain, _fingerprint, block.timestamp);
+    }
+
+    /// @notice Consulta o fingerprint SHA-256 do certificado TLS do domínio (DANE On-Chain / S08)
+    function getDomainTlsFingerprint(string calldata _domain) external view returns (bytes32) {
+        return domainTlsFingerprints[_hash(_domain)];
+    }
+
     /// @notice Proposta de novo adminKey (two-step rotation)
     function proposeAdminKey(string calldata _domain, address _newAdmin) external onlyDomainAdmin(_hash(_domain)) {
         _validateKey(_newAdmin);
@@ -1340,7 +1362,12 @@ contract MAIVWRegistry is
     }
 
     // ============================================
+    //  State Variables: DANE / mTLS On-Chain (S08)
+    // ============================================
+    mapping(bytes32 => bytes32) public domainTlsFingerprints;
+
+    // ============================================
     //  Storage Gap (Reserva para versões futuras)
     // ============================================
-    uint256[50] private __gap;
+    uint256[49] private __gap;
 }
