@@ -48,5 +48,5 @@ export async function verifyFirebaseIdToken(idToken: string): Promise<DecodedIdT
   if (!app) {
     throw new Error("Firebase Admin não pôde ser inicializado");
   }
-  return await getAuth(app).verifyIdToken(idToken);
+  return await getAuth(app).verifyIdToken(idToken, true);
 }

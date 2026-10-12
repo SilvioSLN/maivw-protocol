@@ -1,4 +1,4 @@
-import { createPublicClient, createWalletClient, http, parseEther, type Address, type PublicClient } from "viem";
+import { decodeEventLog, parseAbi, createPublicClient, createWalletClient, http, parseEther, type Address, type PublicClient, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { foundry } from "viem/chains";
 import { REGISTRY_ABI, type EnvConfig } from "../config.js";
@@ -18,6 +18,7 @@ export class LedgerService {
     endpointUrl: string;
     isProvider: boolean;
     isActive: boolean;
+    tlsFingerprint?: Hex;
   }> = new Map();
 
   constructor(config: EnvConfig) {
@@ -44,6 +45,28 @@ export class LedgerService {
     console.log(`[LEDGER] Contract address: ${this.contractAddress || "NOT SET"}`);
   }
 
+  /** Confirms an exact registration on this node's configured chain, without demo/parent fallbacks. */
+  async verifyRegistration(txHash: `0x${string}`, domain: string, publicKey: string, endpointUrl: string): Promise<boolean> {
+    const address = this.ensureContract();
+    if (await this.client.getChainId() !== this.config.CHAIN_ID) return false;
+    const receipt = await this.client.waitForTransactionReceipt({ hash: txHash, confirmations: 1, timeout: 15000 });
+    if (receipt.status !== "success" || receipt.to?.toLowerCase() !== address.toLowerCase()) return false;
+    const abi = parseAbi(["event CompanyRegistered(bytes32 indexed domainHash, string domain, address publicKey, address adminKey, bool isProvider, uint256 feePaid, uint256 timestamp)"]);
+    const matched = receipt.logs.some(log => {
+      if (log.address.toLowerCase() !== address.toLowerCase()) return false;
+      try {
+        const decoded = decodeEventLog({ abi, data: log.data, topics: log.topics });
+        return decoded.args.domain === domain && decoded.args.publicKey.toLowerCase() === publicKey.toLowerCase();
+      } catch { return false; }
+    });
+    if (!matched) return false;
+    const [key, endpoint] = await Promise.all([
+      this.client.readContract({ address, abi: REGISTRY_ABI, functionName: "getPublicKey", args: [domain] }),
+      this.client.readContract({ address, abi: REGISTRY_ABI, functionName: "getEndpointUrl", args: [domain] }),
+    ]);
+    return String(key).toLowerCase() === publicKey.toLowerCase() && endpoint === endpointUrl;
+  }
+
   /**
    * Registra um domínio temporário para o showcase de demonstração E2E
    */
@@ -52,6 +75,7 @@ export class LedgerService {
     endpointUrl: string;
     isProvider: boolean;
     isActive: boolean;
+    tlsFingerprint?: Hex;
   }): void {
     this.demoDomains.set(domain.toLowerCase().trim(), data);
   }
@@ -346,6 +370,15 @@ export class LedgerService {
   /**
    * Retorna o total de empresas registradas
    */
+  async checkBlockchainHealth(): Promise<void> {
+    await this.client.readContract({
+      address: this.ensureContract(),
+      abi: REGISTRY_ABI,
+      functionName: "getRegisteredDomainCount",
+      args: [],
+    });
+  }
+
   async getTotalRegistered(): Promise<number> {
     try {
       const address = this.ensureContract();
@@ -542,6 +575,70 @@ export class LedgerService {
       abi: REGISTRY_ABI,
       functionName: "updateEndpoint",
       args: [domain, newEndpoint],
+    });
+
+    await this.client.waitForTransactionReceipt({ hash });
+    return hash;
+  }
+
+  /**
+   * Consulta o fingerprint SHA-256 do certificado TLS do domínio (DANE On-Chain / S08)
+   */
+  async getDomainTlsFingerprint(domain: string, exactOnly = false): Promise<Hex | null> {
+    const cleanDomain = domain.toLowerCase().trim();
+    const demo = this.demoDomains.get(cleanDomain);
+    if (demo?.tlsFingerprint) return demo.tlsFingerprint;
+
+    try {
+      const address = this.ensureContract();
+      const result = await this.client.readContract({
+        address,
+        abi: REGISTRY_ABI,
+        functionName: "getDomainTlsFingerprint",
+        args: [cleanDomain],
+      }) as Hex;
+
+      if (result && result !== "0x0000000000000000000000000000000000000000000000000000000000000000") {
+        return result;
+      }
+
+      if (exactOnly) return null;
+
+      const parent = this.getParentDomain(cleanDomain);
+      if (parent) {
+        return await this.getDomainTlsFingerprint(parent, false);
+      }
+      return null;
+    } catch {
+      if (demo?.tlsFingerprint) return demo.tlsFingerprint;
+      return null;
+    }
+  }
+
+  /**
+   * Atualiza o fingerprint SHA-256 do certificado TLS do domínio on-chain (DANE On-Chain / S08)
+   */
+  async setDomainTlsFingerprint(domain: string, fingerprint: Hex): Promise<string> {
+    const cleanDomain = domain.toLowerCase().trim();
+    const demo = this.demoDomains.get(cleanDomain);
+    if (demo) {
+      demo.tlsFingerprint = fingerprint;
+      return "0xdemo_tls_fingerprint_updated";
+    }
+
+    const address = this.ensureContract();
+    const account = privateKeyToAccount(this.config.DEPLOYER_PRIVATE_KEY as `0x${string}`);
+    const walletClient = createWalletClient({
+      chain: this.chain,
+      transport: http(this.config.RPC_URL),
+      account,
+    });
+
+    const hash = await (walletClient as any).writeContract({
+      address,
+      abi: REGISTRY_ABI,
+      functionName: "setDomainTlsFingerprint",
+      args: [cleanDomain, fingerprint],
     });
 
     await this.client.waitForTransactionReceipt({ hash });
@@ -761,4 +858,3 @@ export class LedgerService {
     return this.client;
   }
 }
-

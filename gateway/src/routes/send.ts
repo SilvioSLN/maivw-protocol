@@ -1,9 +1,11 @@
+import { z } from "zod";
+import { getActiveMailbox } from "./auth.js";
 import type { FastifyInstance } from "fastify";
 import { v4 as uuidv4 } from "uuid";
 import type { Hex } from "viem";
 import { SendRequestSchema } from "../schemas/payload.js";
 import type { LedgerService } from "../services/LedgerService.js";
-import type { SignatureService } from "../services/SignatureService.js";
+import { SignatureService, type EnvelopeV2Payload } from "../services/SignatureService.js";
 import type { SmtpService } from "../services/SmtpService.js";
 import {
   buildMerkleTree,
@@ -16,6 +18,7 @@ import type { KeyManagementService } from "../services/KeyManagementService.js";
 import type { EventListenerService } from "../services/EventListenerService.js";
 import type { StealthRoutingService } from "../services/StealthRoutingService.js";
 import type { RoutingPoolService, EndpointNodeData } from "../services/RoutingPoolService.js";
+import { TlsCertService } from "../services/TlsCertService.js";
 
 // Cache de contagem diária de mensagens por domínio (Fase 13 Rate Limiting)
 const dailySendCounts = new Map<string, number>();
@@ -30,6 +33,7 @@ interface SendRouteOptions {
   eventListener?: EventListenerService;
   stealth?: StealthRoutingService;
   routingPool?: RoutingPoolService;
+  config?: any;
 }
 
 /**
@@ -44,25 +48,25 @@ interface SendRouteOptions {
  * - Roteamento por Pool de Nós Dinâmicos (Weighted Round-Robin + Circuit Breaker Failover)
  */
 export async function sendRoutes(app: FastifyInstance, options: SendRouteOptions) {
-  const { ledger, signer, smtp, senderDomain, prisma, kms, eventListener, stealth, routingPool } = options;
+  const { ledger, signer, smtp, senderDomain, prisma, kms, eventListener, stealth, routingPool, config } = options;
 
   app.post("/api/v1/send", async (request, reply) => {
-    // 0. Autenticação por API Key (se fornecida via Bearer)
     const authHeader = request.headers.authorization;
+    if (!authHeader?.startsWith("Bearer ")) return reply.status(401).send({ error: "Credencial de envio obrigatória" });
+    if (!prisma || !kms) return reply.status(503).send({ error: "Serviço de identidade indisponível" });
+    const rawToken = authHeader.slice(7).trim();
     let apiKeyDomain: string | null = null;
-
-    if (authHeader?.startsWith("Bearer ") && kms) {
-      const rawToken = authHeader.replace("Bearer ", "").trim();
-      if (rawToken.startsWith("maivw_live_") || rawToken.startsWith("maivw_test_")) {
-        const keyInfo = await kms.validateApiKey(rawToken);
-        if (!keyInfo) {
-          return reply.status(401).send({
-            error: "Não autorizado",
-            message: "A chave de API fornecida é inválida ou foi revogada.",
-          });
-        }
-        apiKeyDomain = keyInfo.domainName;
-      }
+    let mailboxEmail: string | null = null;
+    if (rawToken.startsWith("maivw_live_") || rawToken.startsWith("maivw_test_")) {
+      const keyInfo = await kms.validateApiKey(rawToken);
+      if (!keyInfo) return reply.status(401).send({ error: "Chave inválida ou revogada" });
+      const domain = await prisma.domain.findUnique({ where: { id: keyInfo.domainId } });
+      if (!domain?.isVerified || domain.domainName !== keyInfo.domainName) return reply.status(403).send({ error: "Domínio não verificado" });
+      apiKeyDomain = domain.domainName.toLowerCase();
+    } else {
+      const mailbox = await getActiveMailbox(request, prisma);
+      if (!mailbox) return reply.status(401).send({ error: "Sessão de caixa ativa obrigatória" });
+      mailboxEmail = mailbox.email;
     }
 
     // 0.1 Normalizar payload para suportar top-level text e html (estilo Resend)
@@ -86,21 +90,17 @@ export async function sendRoutes(app: FastifyInstance, options: SendRouteOptions
     const { to, subject, content, msgClass, recipients, subIdentityId, from, senderEmail } = parseResult.data;
     const messageId = uuidv4();
 
-    // Resolver remetente efetivo
-    const effectiveSenderEmail = from || senderEmail;
-    let effectiveSenderDomain = apiKeyDomain || parseResult.data.senderDomain;
-    if (effectiveSenderEmail && effectiveSenderEmail.includes("@")) {
-      const match = effectiveSenderEmail.match(/@([a-zA-Z0-9.-]+)/);
-      if (match) {
-        effectiveSenderDomain = match[1].replace(/[>]/g, "").trim().toLowerCase();
-      }
+    const authorizedDomain = apiKeyDomain || mailboxEmail!.split("@")[1];
+    for (const supplied of [from, senderEmail]) {
+      if (supplied === undefined) continue;
+      if (!z.string().email().safeParse(supplied).success) return reply.status(400).send({ error: "Remetente deve ser um endereço de e-mail simples" });
+      const normalized = supplied.toLowerCase();
+      if ((mailboxEmail && normalized !== mailboxEmail) || normalized.split("@")[1] !== authorizedDomain) return reply.status(403).send({ error: "Remetente não pertence à credencial" });
     }
-    if (apiKeyDomain) {
-      effectiveSenderDomain = apiKeyDomain;
-    }
-    if (!effectiveSenderDomain) {
-      effectiveSenderDomain = senderDomain;
-    }
+    if (from && senderEmail && from.toLowerCase() !== senderEmail.toLowerCase()) return reply.status(400).send({ error: "Remetentes divergentes" });
+    if (parseResult.data.senderDomain && parseResult.data.senderDomain.toLowerCase() !== authorizedDomain) return reply.status(403).send({ error: "Domínio não pertence à credencial" });
+    const effectiveSenderEmail = (from || senderEmail || mailboxEmail || `noreply@${authorizedDomain}`).toLowerCase();
+    const effectiveSenderDomain = authorizedDomain;
 
     // 2. Extrair domínio do destinatário principal
     const recipientDomainMatch = to.match(/@([a-zA-Z0-9.-]+)/);
@@ -215,27 +215,41 @@ export async function sendRoutes(app: FastifyInstance, options: SendRouteOptions
           });
         }
 
-        // 3b. Assinar o payload com a chave Web3 do domínio remetente (KMS)
+        // 3b. Montar dados do Envelope v2 canônico e assinar com a chave Web3 do domínio remetente
+        const nowSeconds = Math.floor(Date.now() / 1000);
+        const contentHash = SignatureService.computeContentHash(content);
+        const attachmentsHash = SignatureService.computeAttachmentsHash(content.attachments);
+
+        const envelopeV2Payload: EnvelopeV2Payload = {
+          version: "2.0",
+          messageId,
+          from: effectiveSenderDomain,
+          to,
+          subject,
+          msgClass,
+          timestamp: nowSeconds,
+          contentHash,
+          attachmentsHash,
+          subIdentityId: subIdentityId || undefined,
+        };
+        const canonicalMessage = SignatureService.canonicalizeEnvelopeV2(envelopeV2Payload);
+
         let signature: Hex;
         if (kms) {
           try {
             const domainAccount = await kms.getSignerForDomain(effectiveSenderDomain);
-            const contentString = JSON.stringify({
-              text: content.text,
-              html: content.html || "",
-            });
-            signature = await domainAccount.signMessage({ message: contentString });
-            app.log.info(`[ROUTER] ✍️ Assinado com a chave do domínio ${effectiveSenderDomain}: ${domainAccount.address}`);
+            signature = await domainAccount.signMessage({ message: canonicalMessage });
+            app.log.info(`[ROUTER] ✍️ Assinado envelope v2 com chave do domínio ${effectiveSenderDomain}: ${domainAccount.address}`);
           } catch (kmsErr: any) {
             app.log.warn(`[ROUTER] Não encontrou carteira no KMS para ${effectiveSenderDomain}, usando signer padrão: ${kmsErr.message}`);
-            signature = await signer.signPayload(content);
+            signature = await signer.signEnvelopeV2(envelopeV2Payload);
           }
         } else {
-          signature = await signer.signPayload(content);
+          signature = await signer.signEnvelopeV2(envelopeV2Payload);
         }
 
         // 3c. Lógica de Escalabilidade Merkle (Fase 6)
-        let intentRoot: string = "0x" + "0".repeat(64);
+        let intentRoot: string | undefined;
         let intentProof: string[] = [];
 
         // Lista de domínios para construir a árvore Merkle se for um lote
@@ -248,20 +262,24 @@ export async function sendRoutes(app: FastifyInstance, options: SendRouteOptions
           )
         );
 
-        if (allRecipientDomains.length > 0) {
+        if (allRecipientDomains.length > 1) {
           const tree = buildMerkleTree(allRecipientDomains);
           intentRoot = getMerkleRootHex(tree);
           intentProof = getMerkleProofHex(tree, recipientDomain);
         }
 
-        // 3d. Montar headers do protocolo MAIVW
+        // 3d. Montar headers do protocolo MAIVW (Envelope v2)
         const headers: Record<string, string> = {
           "Content-Type": "application/json",
+          "x-maivw-envelope-version": "2.0",
           "x-maivw-sender": effectiveSenderDomain,
-          "x-maivw-intent-tx": "0x" + "ab".repeat(32),
-          "x-maivw-intent-root": intentRoot,
-          "x-maivw-intent-proof": JSON.stringify(intentProof),
+          "x-maivw-timestamp": String(nowSeconds),
         };
+
+        if (intentRoot && intentProof.length > 0) {
+          headers["x-maivw-intent-root"] = intentRoot;
+          headers["x-maivw-intent-proof"] = JSON.stringify(intentProof);
+        }
 
         if (subIdentityId) {
           headers["x-maivw-sub-identity"] = subIdentityId;
@@ -273,13 +291,18 @@ export async function sendRoutes(app: FastifyInstance, options: SendRouteOptions
 
         // 3e. Montar body
         const maivwPayload = {
+          envelopeVersion: "2.0",
           messageId,
           msgClass,
           to,
           subject,
           content,
           signature,
+          timestamp: nowSeconds,
+          contentHash,
+          attachmentsHash,
           subIdentityId,
+          attachments: content.attachments,
         };
 
         // 3f. Resolução Dinâmica de Roteamento P2P (Pools, Circuit Breaker e Failover)
@@ -316,7 +339,27 @@ export async function sendRoutes(app: FastifyInstance, options: SendRouteOptions
           candidateUrls = [{ url: targetInboxUrl }];
         }
 
-        let response: Response | null = null;
+        const recipientTlsFingerprint = typeof ledger.getDomainTlsFingerprint === "function"
+          ? await ledger.getDomainTlsFingerprint(recipientDomain)
+          : null;
+        let nodeCredentials: any = null;
+        try {
+          nodeCredentials = TlsCertService.getOrProvisionNodeCredentials({
+            certPath: config?.TLS_CERT_PATH,
+            keyPath: config?.TLS_KEY_PATH,
+            domain: authorizedDomain,
+          });
+        } catch (credErr: any) {
+          app.log.warn(`[ROUTER] ⚠️ Falha ao obter credenciais TLS locais: ${credErr.message}`);
+        }
+
+        if (recipientTlsFingerprint) {
+          app.log.info(
+            `[ROUTER] 🔒 DANE On-Chain ativo para destinatário ${recipientDomain} (${recipientTlsFingerprint}). TLS estrito requerido.`
+          );
+        }
+
+        let response: any = null;
         let responseData: any = null;
         let lastError: any = null;
         let deliveredNodeName: string | undefined;
@@ -329,11 +372,13 @@ export async function sendRoutes(app: FastifyInstance, options: SendRouteOptions
           );
 
           try {
-            response = await fetch(candidate.url, {
+            response = await TlsCertService.dispatchP2PRequest(candidate.url, {
               method: "POST",
               headers,
               body: JSON.stringify(maivwPayload),
-              signal: AbortSignal.timeout(6000),
+              recipientFingerprint: recipientTlsFingerprint,
+              nodeCredentials,
+              timeoutMs: 6000,
             });
 
             if (response.ok) {
@@ -366,8 +411,8 @@ export async function sendRoutes(app: FastifyInstance, options: SendRouteOptions
           }
         }
 
-        // Se nenhum candidato respondeu e estamos em ambiente de desenvolvimento/teste local
-        if (!response && (
+        // Se nenhum candidato respondeu e estamos em ambiente de desenvolvimento/teste local (sem DANE obrigatório)
+        if (!response && !recipientTlsFingerprint && (
           lastError?.message?.includes("ENOTFOUND") ||
           lastError?.message?.includes("getaddrinfo") ||
           lastError?.name === "TimeoutError" ||

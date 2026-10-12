@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { PrismaClient } from "@prisma/client";
 import { SmtpService } from "../services/SmtpService.js";
-import { getAuthUser } from "./auth.js";
+import { getActiveAdmin } from "./auth.js";
 import { EMAIL_PROVIDER_PRESETS } from "../services/email/presets.js";
 
 const SmtpConfigSchema = z.object({
@@ -23,10 +23,15 @@ const SmtpConfigSchema = z.object({
   fromEmail: z.string().email().optional(),
 });
 
+import type { LedgerService } from "../services/LedgerService.js";
+import { TlsCertService } from "../services/TlsCertService.js";
+
 interface SettingsRouteOptions {
   prisma: PrismaClient;
   smtp: SmtpService;
   masterKey: string;
+  ledger?: LedgerService;
+  config?: any;
 }
 
 /**
@@ -34,7 +39,20 @@ interface SettingsRouteOptions {
  * Acesso estritamente restrito ao Administrador do próprio domínio
  */
 export async function settingsRoutes(app: FastifyInstance, options: SettingsRouteOptions) {
-  const { prisma, smtp, masterKey } = options;
+  const { prisma, smtp, masterKey, ledger, config } = options;
+
+  async function requireAdmin(request: any, reply: any) {
+    if (!request.headers.authorization?.startsWith("Bearer ")) {
+      reply.status(401).send({ error: "Unauthorized", message: "Autenticação obrigatória." });
+      return null;
+    }
+    const admin = await getActiveAdmin(request, prisma);
+    if (!admin) {
+      reply.status(403).send({ error: "Forbidden", message: "Administrador existente obrigatório." });
+      return null;
+    }
+    return admin;
+  }
 
   /**
    * GET /api/v1/settings/smtp/presets
@@ -52,13 +70,8 @@ export async function settingsRoutes(app: FastifyInstance, options: SettingsRout
    * Retorna configuração do provedor SMTP pertencente ao domínio do admin (sem expor a senha)
    */
   app.get("/api/v1/settings/smtp", async (request, reply) => {
-    const authUser = getAuthUser(request);
-    if (!authUser || authUser.role !== "admin") {
-      return reply.status(403).send({
-        error: "Forbidden",
-        message: "Apenas administradores podem acessar as configurações de SMTP.",
-      });
-    }
+    const authUser = await requireAdmin(request, reply);
+    if (!authUser) return;
 
     const query = request.query as { domainId?: string };
     const targetDomainId = query.domainId ? parseInt(query.domainId, 10) : undefined;
@@ -171,13 +184,8 @@ export async function settingsRoutes(app: FastifyInstance, options: SettingsRout
    * Salva/atualiza a configuração SMTP exclusivamente para o domínio do admin
    */
   const handleSaveSmtp = async (request: any, reply: any) => {
-    const authUser = getAuthUser(request);
-    if (!authUser || authUser.role !== "admin") {
-      return reply.status(403).send({
-        error: "Forbidden",
-        message: "Apenas administradores podem salvar configurações de SMTP.",
-      });
-    }
+    const authUser = await requireAdmin(request, reply);
+    if (!authUser) return;
 
     const body = request.body as any;
     const parse = SmtpConfigSchema.safeParse(body);
@@ -338,13 +346,8 @@ export async function settingsRoutes(app: FastifyInstance, options: SettingsRout
    * Testa a conectividade com o provedor SMTP e opcionalmente envia um e-mail de teste real
    */
   app.post("/api/v1/settings/smtp/test", async (request, reply) => {
-    const authUser = getAuthUser(request);
-    if (!authUser || authUser.role !== "admin") {
-      return reply.status(403).send({
-        error: "Forbidden",
-        message: "Apenas administradores podem testar a conexão SMTP.",
-      });
-    }
+    const authUser = await requireAdmin(request, reply);
+    if (!authUser) return;
 
     const body = (request.body as {
       apiKey?: string;
@@ -442,13 +445,8 @@ export async function settingsRoutes(app: FastifyInstance, options: SettingsRout
    * Retorna informações do domínio (apenas para o admin proprietário)
    */
   app.get("/api/v1/settings/domain/:domainId", async (request, reply) => {
-    const authUser = getAuthUser(request);
-    if (!authUser || authUser.role !== "admin") {
-      return reply.status(403).send({
-        error: "Forbidden",
-        message: "Acesso restrito a administradores.",
-      });
-    }
+    const authUser = await requireAdmin(request, reply);
+    if (!authUser) return;
 
     const { domainId } = request.params as { domainId: string };
     const domain = await prisma.domain.findFirst({
@@ -475,5 +473,128 @@ export async function settingsRoutes(app: FastifyInstance, options: SettingsRout
       accountsCount: domain.accounts.length,
       createdAt: domain.createdAt,
     };
+  });
+
+  async function assertDomainAdmin(domainName: string, authUser: any, reply: any): Promise<boolean> {
+    const clean = domainName.toLowerCase().trim();
+    const domain = await prisma.domain.findFirst({
+      where: { domainName: clean, userId: authUser.id },
+    });
+    if (domain) return true;
+
+    if (authUser.email && authUser.email.split("@")[1]?.toLowerCase() === clean) {
+      return true;
+    }
+
+    reply.status(403).send({
+      error: "Forbidden",
+      message: `Você não possui permissão administrativa sobre o domínio '${clean}'.`,
+    });
+    return false;
+  }
+
+  /**
+   * GET /api/v1/settings/tls/:domain
+   * Retorna o status de ancoragem TLS DANE On-Chain do domínio (S08)
+   */
+  app.get("/api/v1/settings/tls/:domain", async (request, reply) => {
+    const authUser = await requireAdmin(request, reply);
+    if (!authUser) return;
+
+    const { domain } = request.params as { domain: string };
+    const cleanDomain = domain.toLowerCase().trim();
+    if (!await assertDomainAdmin(cleanDomain, authUser, reply)) return;
+
+    if (!ledger) {
+      return reply.status(503).send({ error: "LedgerService indisponível" });
+    }
+
+    let localCredentials;
+    try {
+      localCredentials = TlsCertService.getOrProvisionNodeCredentials({
+        certPath: config?.TLS_CERT_PATH,
+        keyPath: config?.TLS_KEY_PATH,
+        domain: cleanDomain,
+      });
+    } catch (e: any) {
+      app.log.warn(`[SETTINGS] Falha ao provisionar/ler credenciais locais TLS: ${e.message}`);
+    }
+
+    const onChainFingerprint = typeof ledger.getDomainTlsFingerprint === "function"
+      ? await ledger.getDomainTlsFingerprint(cleanDomain, true)
+      : null;
+    const localFingerprint = localCredentials?.fingerprintSha256 || null;
+
+    let status = "NOT_ANCHORED";
+    if (onChainFingerprint) {
+      if (localFingerprint && TlsCertService.matchesFingerprint(localFingerprint, onChainFingerprint)) {
+        status = "MATCH";
+      } else {
+        status = "MISMATCH";
+      }
+    }
+
+    return reply.send({
+      domain: cleanDomain,
+      localFingerprint,
+      onChainFingerprint,
+      status,
+      anchored: Boolean(onChainFingerprint),
+    });
+  });
+
+  /**
+   * POST /api/v1/settings/tls/:domain
+   * Registra ou atualiza o fingerprint SHA-256 no contrato MAIVWRegistry (S08)
+   */
+  app.post("/api/v1/settings/tls/:domain", async (request, reply) => {
+    const authUser = await requireAdmin(request, reply);
+    if (!authUser) return;
+
+    const { domain } = request.params as { domain: string };
+    const cleanDomain = domain.toLowerCase().trim();
+    if (!await assertDomainAdmin(cleanDomain, authUser, reply)) return;
+
+    if (!ledger) {
+      return reply.status(503).send({ error: "LedgerService indisponível" });
+    }
+
+    const body = (request.body || {}) as { fingerprint?: string };
+    let targetFingerprint = body.fingerprint;
+
+    if (!targetFingerprint) {
+      const localCredentials = TlsCertService.getOrProvisionNodeCredentials({
+        certPath: config?.TLS_CERT_PATH,
+        keyPath: config?.TLS_KEY_PATH,
+        domain: cleanDomain,
+      });
+      targetFingerprint = localCredentials.fingerprintSha256;
+    }
+
+    let normalizedFingerprint;
+    try {
+      normalizedFingerprint = TlsCertService.normalizeFingerprint(targetFingerprint);
+    } catch (err: any) {
+      return reply.status(400).send({
+        error: "InvalidFingerprint",
+        message: err.message,
+      });
+    }
+
+    try {
+      const txHash = await ledger.setDomainTlsFingerprint(cleanDomain, normalizedFingerprint);
+      return reply.send({
+        success: true,
+        domain: cleanDomain,
+        fingerprint: normalizedFingerprint,
+        txHash,
+        message: "Fingerprint TLS ancorado on-chain com sucesso no contrato MAIVWRegistry.",
+      });
+    } catch (txErr: any) {
+      return reply.status(500).send({
+        error: "OnChainTransactionError",
+        message: `Falha ao ancorar fingerprint on-chain: ${txErr.message}`,
+      });
+    }
   });
 }

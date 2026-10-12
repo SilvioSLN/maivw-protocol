@@ -1,5 +1,7 @@
 import type { FastifyInstance } from "fastify";
-import crypto from "node:crypto";
+import { createChallenge, validChallenge } from "../services/OnboardingChallenge.js";
+import { hashPassword, NewPasswordSchema } from "../services/PasswordService.js";
+import { getAuthUser } from "./auth.js";
 import dns from "node:dns/promises";
 import { z } from "zod";
 import type { PrismaClient } from "@prisma/client";
@@ -10,14 +12,14 @@ import type { EnvConfig } from "../config.js";
 import type { Address } from "viem";
 
 const ChallengeSchema = z.object({
-  domainName: z.string().min(3),
+  domainName: z.string().trim().toLowerCase().max(253).regex(/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/),
   userId: z.number().int().positive().optional(),
 });
 
 const CheckDnsSchema = z.object({
-  domainName: z.string().min(3),
+  domainName: z.string().trim().toLowerCase().max(253).regex(/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/),
   token: z.string().min(8),
-  simulate: z.boolean().optional(),
+  simulate: z.literal(false).optional(),
 });
 
 const HttpsUrlSchema = z
@@ -33,7 +35,7 @@ const VerifyAndRegisterSchema = z.object({
   token: z.string().min(8),
   publicKey: z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional(),
   endpointUrl: HttpsUrlSchema.optional(),
-  simulateDns: z.boolean().optional(),
+  simulateDns: z.literal(false).optional(),
   targetChainId: z.number().int().optional(),
 });
 
@@ -44,30 +46,24 @@ const ClaimProofSchema = z.object({
   callerAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/),
   publicKey: z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional(),
   endpointUrl: HttpsUrlSchema.optional(),
-  targetChainId: z.number().int().optional().default(84532),
-  simulateDns: z.boolean().optional(),
+  targetChainId: z.number().int().optional(),
+  simulateDns: z.literal(false).optional(),
 });
 
 const FinalizeWeb3RegistrationSchema = z.object({
   domainId: z.number().int().positive(),
   txHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
   endpointUrl: HttpsUrlSchema.optional(),
-  targetChainId: z.number().int().optional().default(84532),
+  targetChainId: z.number().int().optional(),
 });
 
 const CompleteOnboardingSchema = z.object({
   domainId: z.number().int().positive(),
-  localPart: z.string().min(1).default("admin"),
+  localPart: z.string().min(1).regex(/^[a-zA-Z0-9._-]+$/).default("admin"),
   displayName: z.string().optional(),
-  password: z.string().min(6),
+  password: NewPasswordSchema,
   purpose: z.enum(["webmail", "api", "both"]).default("both"),
 });
-
-function hashPassword(password: string): string {
-  const salt = crypto.randomBytes(16).toString("hex");
-  const hash = crypto.createHash("sha256").update(salt + password).digest("hex");
-  return `${salt}:${hash}`;
-}
 
 interface OnboardingRouteOptions {
   prisma: PrismaClient;
@@ -75,10 +71,45 @@ interface OnboardingRouteOptions {
   oracle: OracleService;
   ledger: LedgerService;
   config: EnvConfig;
+  resolveTxt?: (host: string) => Promise<string[][]>;
 }
 
 export async function onboardingRoutes(app: FastifyInstance, options: OnboardingRouteOptions) {
   const { prisma, kms, oracle, ledger, config } = options;
+  async function hasDnsChallenge(domain: string, expected: string): Promise<boolean> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const records = await Promise.race([
+        (options.resolveTxt || dns.resolveTxt)(`_maivw-verify.${domain}`),
+        new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("DNS timeout")), 4000); }),
+      ]);
+      return records.some(parts => parts.join("") === expected);
+    } catch { return false; }
+    finally { if (timer) clearTimeout(timer); }
+  }
+  async function authorizeOnboarding(request: any, reply: any) {
+    const claims = getAuthUser(request);
+    if (!claims) return reply.status(401).send({ error: "Autenticação obrigatória" });
+    const current = await prisma.user.findUnique({ where: { id: claims.id } });
+    if (!current || current.role !== "admin" || current.email.toLowerCase() !== claims.email.toLowerCase()) return reply.status(403).send({ error: "Administrador ativo obrigatório" });
+    const body = request.body || {};
+    if (body.userId !== undefined && body.userId !== current.id) return reply.status(403).send({ error: "Usuário não corresponde à sessão" });
+    if (body.targetChainId !== undefined && body.targetChainId !== config.CHAIN_ID) return reply.status(400).send({ error: "Use a rede configurada neste nó" });
+    if (body.simulate === true || body.simulateDns === true) return reply.status(400).send({ error: "Simulação DNS desativada" });
+    if (body.domainName !== undefined) {
+      const domain = ChallengeSchema.shape.domainName.safeParse(body.domainName);
+      if (!domain.success) return reply.status(400).send({ error: "Domínio inválido" });
+      const existing = await prisma.domain.findUnique({ where: { domainName: domain.data } });
+      if (existing && existing.userId !== current.id) return reply.status(403).send({ error: "Domínio indisponível para esta conta" });
+      if (request.routeOptions.url !== "/api/v1/onboarding/challenge" && !validChallenge(body.token, domain.data, current.id, config.JWT_SECRET)) return reply.status(400).send({ error: "Desafio inválido ou expirado; gere outro e atualize o DNS" });
+    }
+    if (body.domainId !== undefined) {
+      if (!Number.isInteger(body.domainId) || body.domainId < 1) return reply.status(400).send({ error: "Domínio inválido" });
+      const domain = await prisma.domain.findUnique({ where: { id: body.domainId } });
+      if (!domain || domain.userId !== current.id) return reply.status(404).send({ error: "Domínio não encontrado" });
+    }
+  }
+
   const MAIVW_CORE_DOMAIN = process.env.MAIVW_CORE_DOMAIN || "maivw.org";
   const DEFAULT_P2P_ENDPOINT = process.env.DEFAULT_P2P_ENDPOINT || `https://mw.${MAIVW_CORE_DOMAIN}/api/v1/inbox`;
 
@@ -106,6 +137,8 @@ export async function onboardingRoutes(app: FastifyInstance, options: Onboarding
     const isSelfHosted = !isCloud;
 
     return {
+      chainId: config.CHAIN_ID,
+      paymentProvisioningEnabled: false,
       isCloud,
       isSelfHosted,
       isOracleAuthority,
@@ -120,7 +153,7 @@ export async function onboardingRoutes(app: FastifyInstance, options: Onboarding
    * POST /api/v1/onboarding/challenge
    * Gera o desafio de posse único via DNS TXT e verifica se o domínio já existe
    */
-  app.post("/api/v1/onboarding/challenge", async (request, reply) => {
+  app.post("/api/v1/onboarding/challenge", { preHandler: authorizeOnboarding }, async (request, reply) => {
     const parse = ChallengeSchema.safeParse(request.body);
     if (!parse.success) {
       return reply.status(400).send({
@@ -130,7 +163,7 @@ export async function onboardingRoutes(app: FastifyInstance, options: Onboarding
     }
 
     const cleanDomain = parse.data.domainName.toLowerCase().trim();
-    const userId = parse.data.userId || 1;
+    const userId = getAuthUser(request)!.id;
 
     // 1. Verificar se o domínio já existe on-chain no Cartório MAIVW (apenas o domínio exato)
     const isOnChain = await ledger.isDomainRegistered(cleanDomain, true);
@@ -141,13 +174,7 @@ export async function onboardingRoutes(app: FastifyInstance, options: Onboarding
       });
     }
 
-    // 2. Gerar token de desafio determinístico seguro
-    const secret = config.JWT_SECRET || "maivw_secret";
-    const token = crypto
-      .createHash("sha256")
-      .update(`${cleanDomain}:${userId}:${secret}`)
-      .digest("hex")
-      .substring(0, 32);
+    const token = createChallenge(cleanDomain, userId, config.JWT_SECRET);
 
     return {
       domain: cleanDomain,
@@ -194,7 +221,7 @@ export async function onboardingRoutes(app: FastifyInstance, options: Onboarding
    * POST /api/v1/onboarding/check-dns
    * Consulta os servidores DNS em tempo real (via DoH / dns.google)
    */
-  app.post("/api/v1/onboarding/check-dns", async (request, reply) => {
+  app.post("/api/v1/onboarding/check-dns", { preHandler: authorizeOnboarding }, async (request, reply) => {
     const parse = CheckDnsSchema.safeParse(request.body);
     if (!parse.success) {
       return reply.status(400).send({
@@ -226,15 +253,15 @@ export async function onboardingRoutes(app: FastifyInstance, options: Onboarding
           foundTxts = dohData.Answer.map((a: any) =>
             (a.data || "").replace(/^"|"$/g, "")
           );
-          isPosseVerified = foundTxts.some((t) => t.includes(expectedValue));
+          isPosseVerified = foundTxts.some((t) => t === expectedValue);
         }
       }
     } catch {
       // Fallback para DNS nativo do Node
       try {
         const records = await dns.resolveTxt(challengeHost);
-        foundTxts = records.flat();
-        isPosseVerified = foundTxts.some((t) => t.includes(expectedValue));
+        foundTxts = records.map(parts => parts.join(""));
+        isPosseVerified = foundTxts.some((t) => t === expectedValue);
       } catch {}
     }
 
@@ -263,11 +290,6 @@ export async function onboardingRoutes(app: FastifyInstance, options: Onboarding
       }
     } catch {}
 
-    // Suporte para ambiente de simulação/demonstração rápida
-    if (simulate && !isPosseVerified) {
-      isPosseVerified = true;
-      foundTxts.push(expectedValue);
-    }
 
     return {
       domain: cleanDomain,
@@ -285,7 +307,7 @@ export async function onboardingRoutes(app: FastifyInstance, options: Onboarding
    * POST /api/v1/onboarding/verify-and-register
    * Valida o desafio, gera a prova criptográfica do Oráculo e registra on-chain no Cartório MAIVW
    */
-  app.post("/api/v1/onboarding/verify-and-register", async (request, reply) => {
+  app.post("/api/v1/onboarding/verify-and-register", { preHandler: authorizeOnboarding }, async (request, reply) => {
     const parse = VerifyAndRegisterSchema.safeParse(request.body);
     if (!parse.success) {
       return reply.status(400).send({
@@ -311,94 +333,10 @@ export async function onboardingRoutes(app: FastifyInstance, options: Onboarding
       contractOracle.toLowerCase() === myOracleAddress.toLowerCase()
     );
 
-    // 1. Garantir usuário e domínio no banco local
-    let user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user) {
-      user = await prisma.user.findFirst();
-    }
-    if (!user) {
-      return reply.status(404).send({ error: "Usuário não encontrado" });
-    }
-
-    const domain = await prisma.domain.upsert({
-      where: { domainName: cleanDomain },
-      create: { domainName: cleanDomain, userId: user.id, isVerified: true },
-      update: { isVerified: true },
-    });
-
-    // 2. Provisionar Carteira e Chave Criptográfica ECDSA para o Domínio
-    const localWallet = await kms.provisionWalletForDomain(domain.id);
-    const domainPublicKey = (providedPubKey || localWallet.publicKey) as Address;
-    const effectiveChainId = targetChainId || config.CHAIN_ID;
-
-    // Se NÃO for a autoridade do Oráculo e tiver MAIVW_ORACLE_URL configurado (Máquina B -> Máquina A):
-    if (!isOracleAuthority && config.MAIVW_ORACLE_URL && effectiveChainId !== 31337) {
-      try {
-        const remoteRes = await fetch(`${config.MAIVW_ORACLE_URL.replace(/\/+$/, "")}/api/v1/onboarding/verify-and-register`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            domainName: cleanDomain,
-            userId: 1,
-            token,
-            publicKey: domainPublicKey,
-            endpointUrl: resolvedEndpoint,
-            simulateDns,
-            targetChainId: effectiveChainId,
-          }),
-          signal: AbortSignal.timeout(25000),
-        });
-
-        const remoteData: any = await remoteRes.json();
-        if (!remoteRes.ok) {
-          return reply.status(remoteRes.status).send({
-            error: remoteData.error || "Falha na atestação com o Oráculo da Rede Maivw",
-            message: remoteData.message || "O Oráculo remoto rejeitou a validação.",
-            details: remoteData.details,
-          });
-        }
-
-        return reply.status(201).send({
-          success: true,
-          domain: {
-            id: domain.id,
-            domainName: cleanDomain,
-            isVerified: true,
-          },
-          blockchain: {
-            ...remoteData.blockchain,
-            publicKey: domainPublicKey,
-            endpointUrl: resolvedEndpoint,
-          },
-          message: remoteData.message || `Domínio ${cleanDomain} registrado com sucesso no Cartório On-Chain!`,
-        });
-      } catch (err: any) {
-        return reply.status(502).send({
-          error: "Falha de conexão com o Oráculo da Rede",
-          message: `Não foi possível contatar o Oráculo da Rede em ${config.MAIVW_ORACLE_URL}: ${err.message}`,
-        });
-      }
-    }
+    if (!isOracleAuthority) return reply.status(503).send({ error: "Este nó não é a autoridade do Registry; integração autenticada com oráculo remoto pendente" });
 
     // 3. Validação de DNS pelo próprio Oráculo Local (se for a autoridade ou modo Anvil)
-    let isPosseVerified = false;
-    try {
-      const dohRes = await fetch(
-        `https://dns.google/resolve?name=_maivw-verify.${cleanDomain}&type=TXT`,
-        { headers: { Accept: "application/dns-json" }, signal: AbortSignal.timeout(4000) }
-      );
-      if (dohRes.ok) {
-        const dohData: any = await dohRes.json();
-        const foundTxts = (dohData?.Answer || []).map((a: any) =>
-          (a.data || "").replace(/^"|"$/g, "")
-        );
-        isPosseVerified = foundTxts.some((t: string) => t.includes(expectedValue));
-      }
-    } catch {}
-
-    if (!isPosseVerified && simulateDns) {
-      isPosseVerified = true;
-    }
+    const isPosseVerified = await hasDnsChallenge(cleanDomain, expectedValue);
 
     if (!isPosseVerified) {
       return reply.status(400).send({
@@ -406,6 +344,26 @@ export async function onboardingRoutes(app: FastifyInstance, options: Onboarding
         message: `Não encontramos a entrada TXT "_maivw-verify.${cleanDomain}" com o valor "${expectedValue}" no seu provedor de DNS.`,
       });
     }
+
+    // 1. Garantir usuário e domínio no banco local
+    let user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      return reply.status(404).send({ error: "Usuário não encontrado" });
+    }
+
+    const domain = await prisma.domain.upsert({
+      where: { domainName: cleanDomain },
+      create: { domainName: cleanDomain, userId: user.id, isVerified: false },
+      update: {},
+    });
+
+    if (domain.userId !== user.id) return reply.status(403).send({ error: "Domínio pertence a outra conta" });
+
+    // 2. Provisionar Carteira e Chave Criptográfica ECDSA para o Domínio
+    const localWallet = await kms.provisionWalletForDomain(domain.id);
+    if (providedPubKey && providedPubKey.toLowerCase() !== localWallet.publicKey.toLowerCase()) return reply.status(400).send({ error: "Chave deve corresponder ao cofre local" });
+    const domainPublicKey = localWallet.publicKey as Address;
+    const effectiveChainId = targetChainId || config.CHAIN_ID;
 
     const adminKey = domainPublicKey;
     const deadline = BigInt(Math.floor(Date.now() / 1000) + 86400);
@@ -447,6 +405,13 @@ export async function onboardingRoutes(app: FastifyInstance, options: Onboarding
       });
     }
 
+    try {
+      if (!await ledger.verifyRegistration(txHash as `0x${string}`, cleanDomain, domainPublicKey, resolvedEndpoint)) throw new Error("Registro não corresponde ao domínio");
+    } catch {
+      return reply.status(409).send({ error: "Transação ainda não confirmada ou registro divergente; use finalize-web3-registration para conferir novamente", txHash, domainId: domain.id });
+    }
+    await prisma.domain.update({ where: { id: domain.id }, data: { isVerified: true } });
+
     let networkName = "Base Sepolia";
     let basescanUrl = `https://sepolia.basescan.org/tx/${txHash}`;
     if (effectiveChainId === 421614) {
@@ -485,7 +450,7 @@ export async function onboardingRoutes(app: FastifyInstance, options: Onboarding
    * Valida a posse do domínio e emite a Prova Criptográfica ECDSA do Oráculo autorizando a carteira Web3 do usuário (msg.sender)
    * a invocar diretamente registerCompany() no Smart Contract.
    */
-  app.post("/api/v1/onboarding/claim-proof", async (request, reply) => {
+  app.post("/api/v1/onboarding/claim-proof", { preHandler: authorizeOnboarding }, async (request, reply) => {
     const parse = ClaimProofSchema.safeParse(request.body);
     if (!parse.success) {
       return reply.status(400).send({
@@ -511,87 +476,10 @@ export async function onboardingRoutes(app: FastifyInstance, options: Onboarding
       contractOracle.toLowerCase() === myOracleAddress.toLowerCase()
     );
 
-    // 1. Garantir usuário e domínio no banco de dados local
-    let user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user) {
-      user = await prisma.user.findFirst();
-    }
-    if (!user) {
-      return reply.status(404).send({ error: "Usuário não encontrado" });
-    }
-
-    const domain = await prisma.domain.upsert({
-      where: { domainName: cleanDomain },
-      create: { domainName: cleanDomain, userId: user.id, isVerified: true },
-      update: { isVerified: true },
-    });
-
-    // 2. Provisionar Carteira e Chave Criptográfica ECDSA para o Domínio
-    const localWallet = await kms.provisionWalletForDomain(domain.id);
-    const domainPublicKey = (providedPubKey || localWallet.publicKey) as Address;
-    const effectiveChainId = targetChainId || config.CHAIN_ID;
-
-    // Se NÃO for a autoridade do Oráculo e tiver MAIVW_ORACLE_URL configurado (Máquina B -> Máquina A):
-    if (!isOracleAuthority && config.MAIVW_ORACLE_URL && effectiveChainId !== 31337) {
-      try {
-        const remoteRes = await fetch(`${config.MAIVW_ORACLE_URL.replace(/\/+$/, "")}/api/v1/onboarding/claim-proof`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            domainName: cleanDomain,
-            userId: 1,
-            token,
-            callerAddress,
-            publicKey: domainPublicKey,
-            endpointUrl: resolvedEndpoint,
-            simulateDns,
-            targetChainId: effectiveChainId,
-          }),
-          signal: AbortSignal.timeout(25000),
-        });
-
-        const remoteData: any = await remoteRes.json();
-        if (!remoteRes.ok) {
-          return reply.status(remoteRes.status).send({
-            error: remoteData.error || "Falha ao obter atestado do Oráculo da Rede Maivw",
-            message: remoteData.message || "O Oráculo remoto rejeitou a requisição.",
-            details: remoteData.details,
-          });
-        }
-
-        return reply.status(200).send({
-          ...remoteData,
-          domainId: domain.id,
-          publicKey: domainPublicKey,
-          endpointUrl: resolvedEndpoint,
-        });
-      } catch (err: any) {
-        return reply.status(502).send({
-          error: "Falha de conexão com o Oráculo da Rede",
-          message: `Não foi possível contatar o Oráculo da Rede em ${config.MAIVW_ORACLE_URL}: ${err.message}`,
-        });
-      }
-    }
+    if (!isOracleAuthority) return reply.status(503).send({ error: "Este nó não é a autoridade do Registry; integração autenticada com oráculo remoto pendente" });
 
     // 3. Validar posse via DNS se for o próprio Oráculo
-    let isPosseVerified = false;
-    try {
-      const dohRes = await fetch(
-        `https://dns.google/resolve?name=_maivw-verify.${cleanDomain}&type=TXT`,
-        { headers: { Accept: "application/dns-json" }, signal: AbortSignal.timeout(4000) }
-      );
-      if (dohRes.ok) {
-        const dohData: any = await dohRes.json();
-        const foundTxts = (dohData?.Answer || []).map((a: any) =>
-          (a.data || "").replace(/^"|"$/g, "")
-        );
-        isPosseVerified = foundTxts.some((t: string) => t.includes(expectedValue));
-      }
-    } catch {}
-
-    if (!isPosseVerified && simulateDns) {
-      isPosseVerified = true;
-    }
+    const isPosseVerified = await hasDnsChallenge(cleanDomain, expectedValue);
 
     if (!isPosseVerified) {
       return reply.status(400).send({
@@ -599,6 +487,26 @@ export async function onboardingRoutes(app: FastifyInstance, options: Onboarding
         message: `Não encontramos a entrada TXT "_maivw-verify.${cleanDomain}" com o valor "${expectedValue}" no seu DNS.`,
       });
     }
+
+    // 1. Garantir usuário e domínio no banco de dados local
+    let user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      return reply.status(404).send({ error: "Usuário não encontrado" });
+    }
+
+    const domain = await prisma.domain.upsert({
+      where: { domainName: cleanDomain },
+      create: { domainName: cleanDomain, userId: user.id, isVerified: false },
+      update: {},
+    });
+
+    if (domain.userId !== user.id) return reply.status(403).send({ error: "Domínio pertence a outra conta" });
+
+    // 2. Provisionar Carteira e Chave Criptográfica ECDSA para o Domínio
+    const localWallet = await kms.provisionWalletForDomain(domain.id);
+    if (providedPubKey && providedPubKey.toLowerCase() !== localWallet.publicKey.toLowerCase()) return reply.status(400).send({ error: "Chave deve corresponder ao cofre local" });
+    const domainPublicKey = localWallet.publicKey as Address;
+    const effectiveChainId = targetChainId || config.CHAIN_ID;
 
     // 4. Determinar contrato e taxa da rede
     let contractAddress = ledger.getContractAddress() as Address;
@@ -662,7 +570,7 @@ export async function onboardingRoutes(app: FastifyInstance, options: Onboarding
    * POST /api/v1/onboarding/finalize-web3-registration
    * Conclui o onboarding após a carteira Web3 do usuário transmitir com sucesso a transação on-chain
    */
-  app.post("/api/v1/onboarding/finalize-web3-registration", async (request, reply) => {
+  app.post("/api/v1/onboarding/finalize-web3-registration", { preHandler: authorizeOnboarding }, async (request, reply) => {
     const parse = FinalizeWeb3RegistrationSchema.safeParse(request.body);
     if (!parse.success) {
       return reply.status(400).send({
@@ -682,12 +590,15 @@ export async function onboardingRoutes(app: FastifyInstance, options: Onboarding
 
     const resolvedEndpoint = endpointUrl || DEFAULT_P2P_ENDPOINT || `https://mw-p2p.${domain.domainName}/api/v1/inbox`;
 
-    await prisma.domain.update({
-      where: { id: domainId },
-      data: { isVerified: true },
-    });
-
-    const { publicKey } = await kms.provisionWalletForDomain(domainId);
+    const vault = await prisma.walletVault.findUnique({ where: { domainId } });
+    if (!vault) return reply.status(409).send({ error: "Emita uma prova de registro antes de finalizar" });
+    const publicKey = vault.publicKey;
+    try {
+      if (!await ledger.verifyRegistration(txHash as `0x${string}`, domain.domainName, publicKey, resolvedEndpoint)) throw new Error("Registro divergente");
+    } catch {
+      return reply.status(409).send({ error: "Transação não confirmada para este domínio, chave e endpoint" });
+    }
+    await prisma.domain.update({ where: { id: domainId }, data: { isVerified: true } });
 
     const effectiveChainId = targetChainId || config.CHAIN_ID;
     let networkName = "Base Sepolia";
@@ -728,104 +639,17 @@ export async function onboardingRoutes(app: FastifyInstance, options: Onboarding
    * Rota interna chamada pelo microserviço de pagamentos (apps/payment) ou webhooks após pagamento confirmado
    * Protegida por X-Internal-Service-Key
    */
-  app.post("/api/v1/onboarding/fulfill-registration", async (request, reply) => {
-    const serviceKey = request.headers["x-internal-service-key"];
-    if (!serviceKey || serviceKey !== config.INTERNAL_SERVICE_KEY) {
-      return reply.status(403).send({ error: "Acesso negado: chave interna de serviço inválida" });
-    }
-
-    const { domain, userId, targetChainId, orderId } = request.body as {
-      domain: string;
-      userId: number;
-      targetChainId: number;
-      orderId?: string;
-    };
-
-    if (!domain) {
-      return reply.status(400).send({ error: "Domínio é obrigatório" });
-    }
-
-    const cleanDomain = domain.toLowerCase().trim();
-    const effectiveChainId = targetChainId || config.CHAIN_ID;
-
-    // 1. Garantir usuário e domínio no banco de dados local
-    let user = await prisma.user.findFirst();
-    if (userId) {
-      const foundUser = await prisma.user.findUnique({ where: { id: userId } });
-      if (foundUser) user = foundUser;
-    }
-
-    if (!user) {
-      return reply.status(404).send({ error: "Usuário padrão não encontrado no sistema" });
-    }
-
-    const domainRecord = await prisma.domain.upsert({
-      where: { domainName: cleanDomain },
-      create: { domainName: cleanDomain, userId: user.id, isVerified: true },
-      update: { isVerified: true },
-    });
-
-    // 2. Provisionar carteira e chave criptográfica ECDSA
-    const { publicKey } = await kms.provisionWalletForDomain(domainRecord.id);
-
-    // 3. Gerar prova do oráculo
-    const adminKey = publicKey as `0x${string}`;
-    const deadline = BigInt(Math.floor(Date.now() / 1000) + 86400);
-
-    const oracleProof = await oracle.generateRegistrationProof(
-      cleanDomain,
-      publicKey as `0x${string}`,
-      oracle.getOracleAddress(),
-      effectiveChainId,
-      adminKey,
-      deadline
-    );
-
-    // 4. Executar transação on-chain
-    let txHash: string;
-    try {
-      txHash = await oracle.registerCompanyOnChain(
-        cleanDomain,
-        DEFAULT_P2P_ENDPOINT,
-        publicKey as `0x${string}`,
-        false,
-        oracleProof,
-        effectiveChainId,
-        adminKey,
-        deadline
-      );
-    } catch (err: any) {
-      app.log.error(err, "[FULFILL] Erro ao registrar on-chain:");
-      if (err?.message?.includes("DomainAlreadyExists") || err?.message?.includes("DomainAlreadyRegistered")) {
-        return reply.status(200).send({
-          success: true,
-          alreadyRegistered: true,
-          domain: cleanDomain,
-          message: "Domínio já se encontrava ativo on-chain",
-        });
-      }
-      return reply.status(500).send({
-        error: "Falha na transação blockchain",
-        message: err?.shortMessage || err?.message || "Erro desconhecido",
-      });
-    }
-
-    return reply.status(200).send({
-      success: true,
-      domain: cleanDomain,
-      domainId: domainRecord.id,
-      chainId: effectiveChainId,
-      txHash,
-      publicKey,
-      orderId,
-    });
+  app.post("/api/v1/onboarding/fulfill-registration", async (_request, reply) => {
+    return reply.status(503).send({ error: "Provisionamento por pagamento suspenso até vincular pedido autenticado, prova DNS e confirmação on-chain" });
   });
 
   /**
    * POST /api/v1/onboarding/complete
    * Cria a 1ª caixa postal e provisiona as chaves de API caso o usuário tenha selecionado a finalidade de desenvolvedor
    */
-  app.post("/api/v1/onboarding/complete", async (request, reply) => {
+  app.post("/api/v1/onboarding/complete", { preHandler: authorizeOnboarding }, async (request, reply) => {
+    const authUser = getAuthUser(request);
+    if (!authUser || authUser.role !== "admin") return reply.status(403).send({ error: "Administrador autenticado obrigatório" });
     const parse = CompleteOnboardingSchema.safeParse(request.body);
     if (!parse.success) {
       return reply.status(400).send({
@@ -841,27 +665,25 @@ export async function onboardingRoutes(app: FastifyInstance, options: Onboarding
       where: { id: domainId },
       include: { user: true },
     });
-    if (!domain) {
+    if (!domain || domain.userId !== authUser.id || !domain.isVerified) {
       return reply.status(404).send({ error: "Domínio não encontrado" });
     }
 
     const fullEmail = `${cleanLocal}@${domain.domainName}`;
 
-    // 1. Criar ou atualizar o User dedicado para a caixa postal (com role "user")
-    const passwordHash = hashPassword(password);
+    const existingAccount = await prisma.emailAccount.findUnique({
+      where: { localPart_domainId: { localPart: cleanLocal, domainId } },
+    });
+    if (existingAccount) return reply.status(409).send({ error: "Caixa já existente" });
+
+    // 1. Criar o User dedicado para a caixa postal (com role "user")
+    const passwordHash = await hashPassword(password);
     let mailboxUser = await prisma.user.findUnique({
       where: { email: fullEmail },
     });
 
     if (mailboxUser) {
-      mailboxUser = await prisma.user.update({
-        where: { id: mailboxUser.id },
-        data: {
-          passwordHash,
-          displayName: displayName || `${cleanLocal.toUpperCase()} - ${domain.domainName}`,
-          role: "user",
-        },
-      });
+      return reply.status(409).send({ error: "Caixa já existente; conclusão de onboarding não redefine senhas" });
     } else {
       mailboxUser = await prisma.user.create({
         data: {

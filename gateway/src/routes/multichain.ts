@@ -1,17 +1,19 @@
 import type { FastifyInstance } from "fastify";
 import type { Address } from "viem";
-import crypto from "node:crypto";
 import type { LedgerService } from "../services/LedgerService.js";
 import type { OracleService } from "../services/OracleService.js";
+import type { PrismaClient } from "@prisma/client";
+import { getActiveAdmin } from "./auth.js";
 
 interface MultiChainRouteOptions {
   ledger: LedgerService;
   oracle: OracleService;
+  prisma: PrismaClient;
   internalServiceKey?: string;
 }
 
 export async function multiChainRoutes(app: FastifyInstance, options: MultiChainRouteOptions) {
-  const { ledger, oracle } = options;
+  const { ledger, oracle, prisma } = options;
 
   /**
    * GET /api/v1/multichain/networks
@@ -98,6 +100,18 @@ export async function multiChainRoutes(app: FastifyInstance, options: MultiChain
     }
 
     const cleanDomain = body.domain.toLowerCase().trim();
+    if (!request.headers.authorization?.startsWith("Bearer ")) {
+      return reply.status(401).send({ error: "Autenticação obrigatória" });
+    }
+    const admin = await getActiveAdmin(request, prisma);
+    if (!admin) return reply.status(403).send({ error: "Administrador existente obrigatório" });
+    const ownedDomain = await prisma.domain.findFirst({
+      where: { domainName: cleanDomain, userId: admin.id, isVerified: true },
+    });
+    if (!ownedDomain) return reply.status(404).send({ error: "Domínio verificado não encontrado para esta conta" });
+    if (body.executeRelayer) {
+      return reply.status(503).send({ error: "Relayer de espelhamento suspenso até confirmar a transação real" });
+    }
 
     try {
       // 1. Verificar se o domínio está ativo na rede de origem
@@ -141,19 +155,6 @@ export async function multiChainRoutes(app: FastifyInstance, options: MultiChain
         deadline
       );
 
-      let transaction: { status: string; txHash: string; explorerUrl?: string } | undefined;
-
-      // 4. Se solicitado execução via Relayer / 1-Click
-      if (body.executeRelayer) {
-        const txHash = `0x${crypto.randomBytes(32).toString("hex")}`;
-        const explorerUrl = targetNet.explorerUrl ? `${targetNet.explorerUrl}/tx/${txHash}` : undefined;
-        transaction = {
-          status: "confirmed",
-          txHash,
-          explorerUrl,
-        };
-      }
-
       return {
         success: true,
         domain: cleanDomain,
@@ -170,7 +171,7 @@ export async function multiChainRoutes(app: FastifyInstance, options: MultiChain
         deadline: deadline.toString(),
         callerAddress: effectiveCallerAddress,
         oracleNodeAddress: oracle.getOracleAddress(),
-        transaction,
+        transaction: undefined,
       };
     } catch (error: any) {
       return reply.status(500).send({
@@ -182,81 +183,11 @@ export async function multiChainRoutes(app: FastifyInstance, options: MultiChain
 
   /**
    * POST /api/v1/multichain/fulfill-mirror
-   * Rota interna chamada pelo microserviço de pagamentos (apps/payment) ou webhooks após pagamento confirmado
-   * Protegida por X-Internal-Service-Key
+   * Rota interna para espelhamento por relayer
    */
-  app.post("/api/v1/multichain/fulfill-mirror", async (request, reply) => {
-    const serviceKey = request.headers["x-internal-service-key"];
-    const expectedKey = options.internalServiceKey || process.env.INTERNAL_SERVICE_KEY;
-    if (!serviceKey || !expectedKey || serviceKey !== expectedKey) {
-      return reply.status(403).send({ error: "Acesso negado: chave interna de serviço inválida" });
-    }
-
-    const { domain, targetChainId, orderId } = request.body as {
-      domain: string;
-      targetChainId: number;
-      orderId?: string;
-    };
-
-    if (!domain || !targetChainId) {
-      return reply.status(400).send({ error: "Campos obrigatórios ausentes: domain, targetChainId" });
-    }
-
-    const cleanDomain = domain.toLowerCase().trim();
-
-    try {
-      const profile = await ledger.getCompanyProfile(cleanDomain);
-      if (!profile || !profile.isActive) {
-        return reply.status(400).send({
-          error: `Domínio "${cleanDomain}" não possui registro ativo na rede de origem para espelhamento.`,
-        });
-      }
-
-      const networks = ledger.getSupportedNetworks();
-      const targetNet = networks.find((n) => n.id === targetChainId);
-      if (!targetNet) {
-        return reply.status(400).send({
-          error: `Rede de destino chainId ${targetChainId} não suportada.`,
-        });
-      }
-
-      const primaryNet = networks.find((n) => n.isPrimary) || networks[0];
-      const originChainId = primaryNet.id;
-      const effectiveCallerAddress = (profile.publicKey || oracle.getOracleAddress()) as Address;
-      const adminKey = ((profile as any).adminKey || profile.publicKey) as Address;
-      const deadline = BigInt(Math.floor(Date.now() / 1000) + 86400);
-
-      const oracleProof = await oracle.generateMirrorProof(
-        cleanDomain,
-        profile.publicKey,
-        originChainId,
-        targetChainId,
-        effectiveCallerAddress,
-        adminKey,
-        deadline
-      );
-
-      // Ancoragem e emissão via Relayer
-      const txHash = `0x${crypto.randomBytes(32).toString("hex")}`;
-      const explorerUrl = targetNet.explorerUrl ? `${targetNet.explorerUrl}/tx/${txHash}` : undefined;
-
-      return reply.status(200).send({
-        success: true,
-        domain: cleanDomain,
-        targetChainId,
-        targetNetworkName: targetNet.name,
-        txHash,
-        explorerUrl,
-        oracleProof,
-        orderId,
-        message: `Espelhamento do domínio ${cleanDomain} na rede ${targetNet.name} ancorado com sucesso via Relayer!`,
-      });
-    } catch (error: any) {
-      app.log.error(error, "[FULFILL-MIRROR] Erro ao cumprir espelhamento:");
-      return reply.status(500).send({
-        error: "Falha ao ancorar espelhamento na blockchain",
-        message: error.message,
-      });
-    }
+  app.post("/api/v1/multichain/fulfill-mirror", async (_request, reply) => {
+    return reply.status(503).send({
+      error: "Relayer de espelhamento suspenso até vincular pedido autenticado e confirmação on-chain real",
+    });
   });
 }
