@@ -1,0 +1,129 @@
+# ==============================================================================
+# MAIVW Community Edition — Self-Hosted Docker Compose
+# ==============================================================================
+# Este arquivo sobe o stack 100% Open Source do MAIVW:
+#   - Banco de Dados (PostgreSQL 16)
+#   - Fila & Cache (Redis 7)
+#   - Gateway P2P & SMTP (Fastify)
+#   - WebMaivw (Webmail Moderno Next.js)
+#   - Dashboard de Observabilidade On-Chain
+#
+# Para rodar:
+#   docker compose up -d
+# ==============================================================================
+
+services:
+  # ============================================
+  # Postgres — Banco de Dados Relacional
+  # ============================================
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=maivw_reputation
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres -d maivw_reputation" ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  # ============================================
+  # Redis — Fila de Mensagens & Cache
+  # ============================================
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./data/redis:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ============================================
+  # Gateway — Motor P2P, Inbound/Outbound SMTP
+  # ============================================
+  gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      - MAIVW_EDITION=community
+      - GATEWAY_PORT=3001
+      - GATEWAY_HOST=0.0.0.0
+      - RPC_URL=${RPC_URL:-https://sepolia.base.org}
+      - CHAIN_ID=${CHAIN_ID:-84532}
+      - REDIS_URL=redis://redis:6379
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/maivw_reputation?schema=public
+      - JWT_SECRET=${JWT_SECRET}
+      - MASTER_SECRET_KEY=${MASTER_SECRET_KEY}
+      - INTERNAL_SERVICE_KEY=${INTERNAL_SERVICE_KEY}
+      - BASE_RPC_URL=${BASE_RPC_URL:-https://sepolia.base.org}
+      - BASE_REGISTRY_ADDRESS=${BASE_REGISTRY_ADDRESS:-}
+      - BASE_REGISTRY_LENS_ADDRESS=${BASE_REGISTRY_LENS_ADDRESS:-}
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "node", "-e", "fetch('http://localhost:3001/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ============================================
+  # WebMaivw — Interface Webmail Corporativa
+  # ============================================
+  webmaivw:
+    build:
+      context: ./webmaivw
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_GATEWAY_URL=${NEXT_PUBLIC_GATEWAY_URL:-http://localhost:3001}
+        - NEXT_PUBLIC_RPC_URL=${NEXT_PUBLIC_RPC_URL:-https://sepolia.base.org}
+        - NEXT_PUBLIC_CHAIN_ID=${NEXT_PUBLIC_CHAIN_ID:-84532}
+        - NEXT_PUBLIC_REGISTRY_CONTRACT_ADDRESS=${NEXT_PUBLIC_REGISTRY_CONTRACT_ADDRESS:-}
+    environment:
+      - NEXT_PUBLIC_GATEWAY_URL=${NEXT_PUBLIC_GATEWAY_URL:-http://localhost:3001}
+      - NEXT_PUBLIC_RPC_URL=${NEXT_PUBLIC_RPC_URL:-https://sepolia.base.org}
+      - NEXT_PUBLIC_CHAIN_ID=${NEXT_PUBLIC_CHAIN_ID:-84532}
+      - NEXT_PUBLIC_REGISTRY_CONTRACT_ADDRESS=${NEXT_PUBLIC_REGISTRY_CONTRACT_ADDRESS:-}
+    ports:
+      - "3002:3002"
+    depends_on:
+      gateway:
+        condition: service_healthy
+
+  # ============================================
+  # Dashboard — Observabilidade On-Chain
+  # ============================================
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_GATEWAY_URL=${NEXT_PUBLIC_GATEWAY_URL:-http://localhost:3001}
+        - NEXT_PUBLIC_RPC_URL=${NEXT_PUBLIC_RPC_URL:-https://sepolia.base.org}
+        - NEXT_PUBLIC_CHAIN_ID=${NEXT_PUBLIC_CHAIN_ID:-84532}
+    environment:
+      - NEXT_PUBLIC_GATEWAY_URL=${NEXT_PUBLIC_GATEWAY_URL:-http://localhost:3001}
+      - NEXT_PUBLIC_RPC_URL=${NEXT_PUBLIC_RPC_URL:-https://sepolia.base.org}
+      - NEXT_PUBLIC_CHAIN_ID=${NEXT_PUBLIC_CHAIN_ID:-84532}
+    ports:
+      - "3000:3000"
+    depends_on:
+      gateway:
+        condition: service_healthy
