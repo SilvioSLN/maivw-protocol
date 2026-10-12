@@ -76,12 +76,12 @@ test('DNS challenges expire and bind domain, user and signing secret',()=>{
   assert.equal(validChallenge(token,'example.com',1,secret,now+1800000),false);
   assert.equal(validChallenge('fake','example.com',1,secret,now),false);
 });
-async function onboardingFixture({owner=1,validReceipt=false,dns=false}:{owner?:number,validReceipt?:boolean,dns?:boolean}={}) {
+async function onboardingFixture({owner=1,validReceipt=false,dns=false,local=false}:{owner?:number,validReceipt?:boolean,dns?:boolean,local?:boolean}={}) {
   const writes:any[]=[]; let token='';
   const domain={id:1,userId:owner,domainName:'example.com',isVerified:false}, key=`0x${'1'.repeat(40)}`;
   const prisma:any={user:{findUnique:async()=>admin},domain:{findUnique:async()=>domain,upsert:async(args:any)=>{writes.push(args);return domain;},update:async(args:any)=>{writes.push(args);return domain;}},walletVault:{findUnique:async()=>({publicKey:key})}};
   const app=Fastify();
-  await app.register(onboardingRoutes,{prisma,kms:{provisionWalletForDomain:async()=>({publicKey:key})} as any,oracle:{getOracleAddress:()=>key,generateRegistrationProof:async()=>'proof',registerCompanyOnChain:async()=>`0x${'2'.repeat(64)}`} as any,ledger:{isDomainRegistered:async()=>false,getOracleNode:async()=>key,getContractAddress:()=>key,verifyRegistration:async()=>validReceipt} as any,config:{JWT_SECRET:secret,CHAIN_ID:31337} as any,resolveTxt:async()=>dns?[[`maivw-verification=${token}`]]:[]});
+  await app.register(onboardingRoutes,{prisma,kms:{provisionWalletForDomain:async()=>({publicKey:key})} as any,oracle:{getOracleAddress:()=>key,generateRegistrationProof:async()=>'proof',registerCompanyOnChain:async()=>`0x${'2'.repeat(64)}`} as any,ledger:{isDomainRegistered:async()=>false,getOracleNode:async()=>key,getContractAddress:()=>key,verifyRegistration:async()=>validReceipt} as any,config:{JWT_SECRET:secret,CHAIN_ID:31337,RPC_URL:local?'http://anvil:8545':'https://rpc.example.com',MAIVW_CORE_DOMAIN:'example.com',DEFAULT_P2P_ENDPOINT:local?'http://gateway:3001/api/v1/inbox':undefined} as any,resolveTxt:async()=>dns?[[`maivw-verification=${token}`]]:[]});
   token=createChallenge('example.com',1,secret);
   return {app,writes,token};
 }
@@ -90,7 +90,7 @@ test('onboarding rejects anonymous callers, account/domain substitution, simulat
     const {app,writes,token}=await onboardingFixture({owner});
     try {
       for(const route of ['challenge','check-dns','verify-and-register','claim-proof','finalize-web3-registration','complete']) assert.equal((await app.inject({method:'POST',url:`/api/v1/onboarding/${route}`,payload:{}})).statusCode,401);
-      for(const extra of [{userId:2},{simulate:true},{simulateDns:true},{targetChainId:1},{token:'forged'}]) {
+      for(const extra of [{userId:2},{simulate:true},{simulateDns:true},{targetChainId:1},{token:'forged'},{endpointUrl:'http://gateway:3001/api/v1/inbox'}]) {
         const res=await app.inject({method:'POST',url:'/api/v1/onboarding/verify-and-register',headers:headers(admin),payload:{domainName:'example.com',userId:1,token,...extra}});
         assert.ok([400,403].includes(res.statusCode));
       }
@@ -107,6 +107,23 @@ test('proof issuance requires DNS and never marks domain verified',async()=>{
       if(dns) assert.equal(writes[0].create.isVerified,false); else assert.equal(writes.length,0);
     } finally {await app.close();}
   }
+});
+test('local Anvil demo bypasses public DNS and permits its internal HTTP endpoint',async()=>{
+  const {app,writes,token}=await onboardingFixture({local:true,dns:false});
+  try {
+    const mode=await app.inject({method:'GET',url:'/api/v1/onboarding/node-mode'});
+    assert.equal(mode.statusCode,200);
+    assert.equal(mode.json().dnsMode,'local-demo');
+    assert.equal(mode.json().defaultEndpoint,'http://gateway:3001/api/v1/inbox');
+
+    const dnsResult=await app.inject({method:'POST',url:'/api/v1/onboarding/check-dns',headers:headers(admin),payload:{domainName:'example.com',token}});
+    assert.equal(dnsResult.statusCode,200,dnsResult.body);
+    assert.equal(dnsResult.json().localBypass,true);
+
+    const proof=await app.inject({method:'POST',url:'/api/v1/onboarding/claim-proof',headers:headers(admin),payload:{domainName:'example.com',userId:1,token,callerAddress:`0x${'3'.repeat(40)}`,endpointUrl:'http://gateway:3001/api/v1/inbox',targetChainId:31337}});
+    assert.equal(proof.statusCode,200,proof.body);
+    assert.equal(writes.some(write=>write.data?.isVerified===true),false);
+  } finally {await app.close();}
 });
 test('activation requires matching receipt in finalization and relayer flows',async()=>{
   for(const validReceipt of [false,true]) for(const route of ['finalize-web3-registration','verify-and-register']) {

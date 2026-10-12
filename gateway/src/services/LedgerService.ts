@@ -769,7 +769,7 @@ export class LedgerService {
         contractAddress: this.contractAddress || (this.config.BASE_REGISTRY_ADDRESS as Address),
         mirrorFeeFormatted: isAnvil ? "0.003 ETH" : "0.003 ETH",
         mirrorFeeWei: "3000000000000000",
-        explorerUrl: isAnvil ? "http://localhost:8545" : "https://sepolia.basescan.org",
+        explorerUrl: isAnvil ? "http://localhost:55443" : "https://sepolia.basescan.org",
       },
       {
         id: 421614,
