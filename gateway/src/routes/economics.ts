@@ -1,5 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { LedgerService } from "../services/LedgerService.js";
+import type { PrismaClient } from "@prisma/client";
+import { getActiveAdmin } from "./auth.js";
 
 const TIER_NAMES: Record<number, string> = {
   0: "NONE",
@@ -10,10 +12,39 @@ const TIER_NAMES: Record<number, string> = {
 
 interface EconomicsRouteOptions {
   ledger: LedgerService;
+  prisma: PrismaClient;
+  internalServiceKey?: string;
 }
 
 export async function economicsRoutes(app: FastifyInstance, options: EconomicsRouteOptions) {
-  const { ledger } = options;
+  const { ledger, prisma } = options;
+
+  async function requireOwnedDomain(request: any, reply: any, domainName: string) {
+    if (!request.headers.authorization?.startsWith("Bearer ")) {
+      reply.status(401).send({ error: "Autenticação obrigatória" });
+      return null;
+    }
+    const admin = await getActiveAdmin(request, prisma);
+    if (!admin) {
+      reply.status(403).send({ error: "Administrador existente obrigatório" });
+      return null;
+    }
+    const domain = await prisma.domain.findFirst({
+      where: { domainName: domainName.toLowerCase().trim(), userId: admin.id, isVerified: true },
+    });
+    if (!domain) {
+      reply.status(404).send({ error: "Domínio verificado não encontrado para esta conta" });
+      return null;
+    }
+    return domain;
+  }
+
+  function requirePlatformService(request: any, reply: any) {
+    const key = request.headers["x-internal-service-key"];
+    if (options.internalServiceKey && key === options.internalServiceKey) return true;
+    reply.status(403).send({ error: "Serviço interno de governança obrigatório" });
+    return false;
+  }
 
   /**
    * GET /api/v1/economics/governance
@@ -137,6 +168,7 @@ export async function economicsRoutes(app: FastifyInstance, options: EconomicsRo
     if (!domain) {
       return reply.status(400).send({ error: "O campo 'domain' é obrigatório para recarga." });
     }
+    if (!await requireOwnedDomain(request, reply, domain)) return;
 
     try {
       const result = await ledger.topUpBalance(domain, amountEth || "1");
@@ -167,6 +199,7 @@ export async function economicsRoutes(app: FastifyInstance, options: EconomicsRo
     if (!domain || !newEndpoint) {
       return reply.status(400).send({ error: "Campos 'domain' e 'endpointUrl' (ou 'newEndpoint') são obrigatórios." });
     }
+    if (!await requireOwnedDomain(request, reply, domain)) return;
 
     try {
       const txHash = await ledger.updateEndpoint(domain, newEndpoint);
@@ -190,6 +223,7 @@ export async function economicsRoutes(app: FastifyInstance, options: EconomicsRo
    * Registra um provedor multi-tenant usufruindo da Cota Gênesis
    */
   app.post("/api/v1/economics/genesis-provider", async (request, reply) => {
+    if (!requirePlatformService(request, reply)) return;
     const body = (request.body || {}) as {
       domain?: string;
       endpoint?: string;

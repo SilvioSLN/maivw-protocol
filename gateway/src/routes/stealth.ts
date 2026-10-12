@@ -1,20 +1,51 @@
 import type { FastifyInstance } from "fastify";
 import type { StealthRoutingService } from "../services/StealthRoutingService.js";
 import type { LedgerService } from "../services/LedgerService.js";
+import type { PrismaClient } from "@prisma/client";
+import { getActiveAdmin } from "./auth.js";
 
 interface StealthRouteOptions {
   stealth: StealthRoutingService;
   ledger: LedgerService;
+  prisma: PrismaClient;
+  internalServiceKey?: string;
 }
 
 export async function stealthRoutes(app: FastifyInstance, options: StealthRouteOptions) {
-  const { stealth, ledger } = options;
+  const { stealth, ledger, prisma } = options;
+
+  function requirePlatformService(request: any, reply: any) {
+    if (options.internalServiceKey && request.headers["x-internal-service-key"] === options.internalServiceKey) return true;
+    reply.status(403).send({ error: "Serviço interno de roteamento obrigatório" });
+    return false;
+  }
+
+  async function requireOwnedDomain(request: any, reply: any, domainName: string) {
+    if (!request.headers.authorization?.startsWith("Bearer ")) {
+      reply.status(401).send({ error: "Autenticação obrigatória" });
+      return null;
+    }
+    const admin = await getActiveAdmin(request, prisma);
+    if (!admin) {
+      reply.status(403).send({ error: "Administrador existente obrigatório" });
+      return null;
+    }
+    const domain = await prisma.domain.findFirst({
+      where: { domainName: domainName.toLowerCase().trim(), userId: admin.id, isVerified: true },
+    });
+    if (!domain) {
+      reply.status(404).send({ error: "Domínio verificado não encontrado para esta conta" });
+      return null;
+    }
+    return domain;
+  }
 
   /**
    * GET /api/v1/stealth/routes
    * Lista todas as rotas privadas bilaterais cadastradas para envio
    */
   app.get("/api/v1/stealth/routes", async (request, reply) => {
+    if (!requirePlatformService(request, reply)) return;
     try {
       const routes = await stealth.listRoutes();
       return { success: true, routes };
@@ -31,6 +62,7 @@ export async function stealthRoutes(app: FastifyInstance, options: StealthRouteO
    * Cadastra ou atualiza uma rota privada para um Dark Endpoint
    */
   app.post("/api/v1/stealth/routes", async (request, reply) => {
+    if (!requirePlatformService(request, reply)) return;
     const body = (request.body || {}) as {
       targetDomain?: string;
       privateEndpointUrl?: string;
@@ -72,6 +104,7 @@ export async function stealthRoutes(app: FastifyInstance, options: StealthRouteO
    * Remove uma rota privada de envio
    */
   app.delete("/api/v1/stealth/routes/:targetDomain", async (request, reply) => {
+    if (!requirePlatformService(request, reply)) return;
     const { targetDomain } = request.params as { targetDomain: string };
 
     try {
@@ -91,6 +124,7 @@ export async function stealthRoutes(app: FastifyInstance, options: StealthRouteO
     */
   app.get("/api/v1/stealth/config/:domain", async (request, reply) => {
     const { domain } = request.params as { domain: string };
+    if (!await requireOwnedDomain(request, reply, domain)) return;
 
     try {
       const config = await stealth.getStealthConfig(domain);
@@ -128,6 +162,7 @@ export async function stealthRoutes(app: FastifyInstance, options: StealthRouteO
    */
   app.put("/api/v1/stealth/config/:domain", async (request, reply) => {
     const { domain } = request.params as { domain: string };
+    if (!await requireOwnedDomain(request, reply, domain)) return;
     const body = (request.body || {}) as {
       mode?: "public" | "hybrid" | "dark";
       isStealthEnabled?: boolean;

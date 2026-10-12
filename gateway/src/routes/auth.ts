@@ -1,29 +1,27 @@
 import type { FastifyInstance } from "fastify";
 import crypto from "node:crypto";
+import { hashPassword, verifyPassword, needsPasswordUpgrade, NewPasswordSchema, validRegistrationToken } from "../services/PasswordService.js";
 import jwt from "jsonwebtoken";
 import { z } from "zod";
 import type { PrismaClient } from "@prisma/client";
 import type { KeyManagementService } from "../services/KeyManagementService.js";
 import { verifyFirebaseIdToken } from "../services/FirebaseAuthService.js";
 
-const JWT_SECRET = process.env.JWT_SECRET || "";
+function getJwtSecret(): string {
+  return process.env.JWT_SECRET || "";
+}
 const JWT_EXPIRES = "7d";
 
 const RegisterSchema = z.object({
+  registrationToken: z.string().max(1024).optional(),
   email: z.string().email(),
-  password: z.string().min(6),
+  password: NewPasswordSchema,
   displayName: z.string().optional(),
 });
 
 const LoginSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(1),
-});
-
-const DomainSchema = z.object({
-  domainName: z.string().min(3),
-  userId: z.number().int().positive(),
-  isVerified: z.boolean().default(true),
+  password: z.string().min(1).max(128),
 });
 
 const ApiKeySchema = z.object({
@@ -35,7 +33,7 @@ const ApiKeySchema = z.object({
 const CreateAccountSchema = z.object({
   localPart: z.string().min(1).regex(/^[a-zA-Z0-9._-]+$/, "Apenas letras, números, pontos, hífens e underscores"),
   displayName: z.string().optional(),
-  password: z.string().min(6),
+  password: NewPasswordSchema,
   domainId: z.coerce.number().int().positive().optional(),
 });
 
@@ -45,22 +43,12 @@ interface AuthRouteOptions {
   prisma: PrismaClient;
   kms: KeyManagementService;
   smtp?: SmtpService;
-}
-
-function hashPassword(password: string): string {
-  const salt = crypto.randomBytes(16).toString("hex");
-  const hash = crypto.createHash("sha256").update(salt + password).digest("hex");
-  return `${salt}:${hash}`;
-}
-
-function verifyPassword(password: string, storedHash: string): boolean {
-  const [salt, hash] = storedHash.split(":");
-  const computed = crypto.createHash("sha256").update(salt + password).digest("hex");
-  return computed === hash;
+  registrationToken?: string;
+  verifyIdentityToken?: typeof verifyFirebaseIdToken;
 }
 
 function generateToken(user: { id: number; email: string; role: string; domainId?: number; domainName?: string }): string {
-  return jwt.sign(user, JWT_SECRET, { expiresIn: JWT_EXPIRES });
+  return jwt.sign(user, getJwtSecret(), { expiresIn: JWT_EXPIRES });
 }
 
 export function getAuthUser(request: any): { id: number; email: string; role: string; domainId?: number; domainName?: string } | null {
@@ -68,14 +56,49 @@ export function getAuthUser(request: any): { id: number; email: string; role: st
   if (!authHeader?.startsWith("Bearer ")) return null;
   try {
     const rawToken = authHeader.replace("Bearer ", "").trim();
-    return jwt.verify(rawToken, JWT_SECRET) as any;
+    const claims = z.object({ id: z.number().int().positive(), email: z.string().email(), role: z.enum(["admin", "user"]), domainId: z.number().int().positive().optional(), domainName: z.string().optional() }).safeParse(jwt.verify(rawToken, getJwtSecret(), { algorithms: ["HS256"] }));
+    return claims.success ? claims.data : null;
   } catch {
     return null;
   }
 }
 
+export async function getCurrentUser(request: any, prisma: PrismaClient) {
+  const claims = getAuthUser(request);
+  if (!claims) return null;
+  const user = await prisma.user.findUnique({ where: { id: claims.id } });
+  if (!user || user.email.toLowerCase() !== claims.email.toLowerCase() || user.role !== claims.role) return null;
+  return user;
+}
+
+export async function getActiveAdmin(request: any, prisma: PrismaClient) {
+  const user = await getCurrentUser(request, prisma);
+  return user?.role === "admin" ? user : null;
+}
+
+/** Reload account state instead of trusting a JWT issued before deletion/deactivation. */
+export async function getActiveMailbox(request: any, prisma: PrismaClient) {
+  const claims = getAuthUser(request);
+  const user = await getCurrentUser(request, prisma);
+  if (!claims || !user || user.role !== "user") return null;
+  const email = user.email.toLowerCase();
+  const account = await prisma.emailAccount.findFirst({
+    where: { userId: user.id, isActive: true, localPart: email.split("@")[0], domain: { domainName: email.split("@")[1], isVerified: true } },
+  });
+  return account ? { ...claims, email, role: "user" as const } : null;
+}
+
 export async function authRoutes(app: FastifyInstance, options: AuthRouteOptions) {
   const { prisma, kms, smtp } = options;
+
+  async function requireMailbox(request: any, reply: any) {
+    if (!getAuthUser(request)) { reply.status(401).send({ error: "Autenticação obrigatória" }); return null; }
+    const user = await getActiveMailbox(request, prisma);
+    if (!user) { reply.status(403).send({ error: "Conta de e-mail existente e caixa ativa obrigatórias" }); return null; }
+    return user;
+  }
+
+
 
   /**
    * POST /api/v1/auth/register
@@ -90,6 +113,9 @@ export async function authRoutes(app: FastifyInstance, options: AuthRouteOptions
       });
     }
 
+    if (!validRegistrationToken(parse.data.registrationToken, options.registrationToken)) {
+      return reply.status(403).send({ error: "Cadastro administrativo fechado ou código de convite inválido" });
+    }
     const { email, password, displayName } = parse.data;
     const normalizedEmail = email.toLowerCase().trim();
 
@@ -104,7 +130,7 @@ export async function authRoutes(app: FastifyInstance, options: AuthRouteOptions
       });
     }
 
-    const passwordHash = hashPassword(password);
+    const passwordHash = await hashPassword(password);
 
     const user = await prisma.user.create({
       data: {
@@ -136,34 +162,19 @@ export async function authRoutes(app: FastifyInstance, options: AuthRouteOptions
    * Autentica ou cadastra usuário via Google Sign-In (Firebase Auth)
    */
   app.post("/api/v1/auth/google", async (request, reply) => {
-    const body = request.body as { idToken?: string; email?: string; displayName?: string };
-    let email = body.email;
-    let displayName = body.displayName;
-
-    if (body.idToken) {
-      try {
-        const decoded = await verifyFirebaseIdToken(body.idToken);
-        if (decoded.email) {
-          email = decoded.email;
-          displayName = displayName || decoded.name || decoded.email.split("@")[0];
-        }
-      } catch (err: any) {
-        app.log.warn(`[AUTH] Verificação do token Firebase falhou: ${err.message}`);
-        if (!email) {
-          return reply.status(401).send({
-            error: "Token Firebase inválido",
-            message: err.message,
-          });
-        }
-      }
+    const parse = z.object({ idToken: z.string().min(1).max(16384), registrationToken: z.string().max(1024).optional() }).safeParse(request.body);
+    if (!parse.success) return reply.status(401).send({ error: "Token de identidade obrigatório" });
+    let identity;
+    try {
+      identity = await (options.verifyIdentityToken || verifyFirebaseIdToken)(parse.data.idToken);
+    } catch {
+      return reply.status(401).send({ error: "Token de identidade inválido ou expirado" });
     }
-
-    if (!email) {
-      return reply.status(400).send({
-        error: "Dados incompletos",
-        message: "E-mail não fornecido pelo Google.",
-      });
+    if (!identity.email || !identity.email_verified || !["google.com", "github.com"].includes(identity.firebase?.sign_in_provider)) {
+      return reply.status(401).send({ error: "Identidade social com e-mail verificado obrigatória" });
     }
+    const email = identity.email;
+    const displayName = typeof identity.name === "string" ? identity.name : undefined;
 
     const cleanEmail = email.toLowerCase().trim();
 
@@ -179,9 +190,12 @@ export async function authRoutes(app: FastifyInstance, options: AuthRouteOptions
     });
 
     if (!user) {
+      if (!validRegistrationToken(parse.data.registrationToken, options.registrationToken)) {
+        return reply.status(403).send({ error: "Cadastro administrativo fechado ou código de convite inválido" });
+      }
       // Criar novo usuário como admin (para novos cadastros via /signup)
       const randomPassword = crypto.randomBytes(24).toString("hex");
-      const passwordHash = hashPassword(randomPassword);
+      const passwordHash = await hashPassword(randomPassword);
 
       user = await prisma.user.create({
         data: {
@@ -289,7 +303,7 @@ export async function authRoutes(app: FastifyInstance, options: AuthRouteOptions
               where: { id: emailAccount.userId },
             });
 
-            if (accountUser && verifyPassword(password, accountUser.passwordHash)) {
+            if (accountUser && await verifyPassword(password, accountUser.passwordHash)) {
               user = accountUser;
             }
           }
@@ -297,11 +311,20 @@ export async function authRoutes(app: FastifyInstance, options: AuthRouteOptions
       }
     }
 
-    if (!user || !verifyPassword(password, user.passwordHash)) {
+    if (!user || !await verifyPassword(password, user.passwordHash)) {
       return reply.status(401).send({
         error: "Credenciais inválidas",
         message: "E-mail ou senha incorretos.",
       });
+    }
+
+    if (needsPasswordUpgrade(user.passwordHash)) {
+      const replacement = await hashPassword(password);
+      const migrated = await prisma.user.updateMany({
+        where: { id: user.id, passwordHash: user.passwordHash },
+        data: { passwordHash: replacement },
+      });
+      if (migrated.count !== 1) return reply.status(401).send({ error: "Credenciais alteradas; entre novamente" });
     }
 
     // 2. Resolver domínio associado (se for admin ou conta de e-mail)
@@ -347,7 +370,7 @@ export async function authRoutes(app: FastifyInstance, options: AuthRouteOptions
 
     try {
       const token = authHeader.replace("Bearer ", "").trim();
-      const decoded = jwt.verify(token, JWT_SECRET) as any;
+      const decoded = jwt.verify(token, getJwtSecret()) as any;
 
       const user = await prisma.user.findUnique({
         where: { id: decoded.id },
@@ -476,21 +499,10 @@ export async function authRoutes(app: FastifyInstance, options: AuthRouteOptions
       let accountUserId: number;
 
       if (existingUser) {
-        if (password) {
-          const passwordHash = hashPassword(password);
-          await prisma.user.update({
-            where: { id: existingUser.id },
-            data: {
-              passwordHash,
-              displayName: displayName || existingUser.displayName || cleanLocal,
-              role: "user",
-            },
-          });
-        }
-        accountUserId = existingUser.id;
+        return reply.status(409).send({ error: "E-mail já associado a uma conta; não é permitido redefini-la por criação de caixa" });
       } else {
         // Criar novo usuário comum de email
-        const passwordHash = hashPassword(password);
+        const passwordHash = await hashPassword(password);
         const accountUser = await prisma.user.create({
           data: {
             email: fullEmail,
@@ -687,50 +699,8 @@ export async function authRoutes(app: FastifyInstance, options: AuthRouteOptions
    * POST /api/v1/domains
    * Registra um domínio para o usuário e provisiona carteira Web3 + API Key
    */
-  app.post("/api/v1/domains", async (request, reply) => {
-    const parse = DomainSchema.safeParse(request.body);
-    if (!parse.success) {
-      return reply.status(400).send({
-        error: "Dados inválidos",
-        details: parse.error.flatten(),
-      });
-    }
-
-    const { domainName, userId, isVerified } = parse.data;
-    const cleanDomain = domainName.toLowerCase().trim();
-
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user) {
-      return reply.status(404).send({
-        error: "Usuário não encontrado",
-        message: `Usuário ID ${userId} não encontrado.`,
-      });
-    }
-
-    const domain = await prisma.domain.upsert({
-      where: { domainName: cleanDomain },
-      create: { domainName: cleanDomain, userId, isVerified },
-      update: { isVerified },
-    });
-
-    const { publicKey } = await kms.provisionWalletForDomain(domain.id);
-    const apiKeyResult = await kms.generateApiKey(domain.id, "Default API Key");
-
-    return reply.status(201).send({
-      domain: {
-        id: domain.id,
-        domainName: domain.domainName,
-        isVerified: domain.isVerified,
-        createdAt: domain.createdAt,
-      },
-      web3Identity: { publicKey, vaultEncrypted: true },
-      apiKey: {
-        id: apiKeyResult.id,
-        name: apiKeyResult.name,
-        key: apiKeyResult.apiKey,
-        note: "Guarde esta chave. Por segurança, ela não será exibida novamente.",
-      },
-    });
+  app.post("/api/v1/domains", async (_request, reply) => {
+    return reply.status(410).send({ error: "Registro local desativado; use o onboarding com prova de titularidade" });
   });
 
   /**
@@ -918,15 +888,9 @@ export async function authRoutes(app: FastifyInstance, options: AuthRouteOptions
    * Retorna mensagens estritamente do e-mail autenticado (bloqueado para admin)
    */
   app.get("/api/v1/inbox/messages", async (request, reply) => {
-    const authUser = getAuthUser(request);
+    const authUser = await requireMailbox(request, reply);
+    if (!authUser) return;
 
-    // Regra: Contas administrativas não possuem caixa de entrada pessoal
-    if (authUser && authUser.role === "admin") {
-      return reply.status(403).send({
-        error: "Forbidden",
-        message: "Contas administrativas não possuem caixa de entrada direta. Crie uma conta de e-mail comum no painel para acessar o Webmail.",
-      });
-    }
 
     const query = request.query as {
       limit?: string;
@@ -934,11 +898,12 @@ export async function authRoutes(app: FastifyInstance, options: AuthRouteOptions
       email?: string;
       folder?: string;
     };
-    const limit = query.limit ? parseInt(query.limit, 10) : 50;
+    const limit = query.limit === undefined ? 50 : Number(query.limit);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 200) return reply.status(400).send({ error: "Limite deve estar entre 1 e 200" });
     const folder = (query.folder || "inbox").toLowerCase();
 
-    // Determinar o e-mail alvo estritamente do usuário logado (ou query param em dev)
-    const targetEmail = (authUser ? authUser.email : query.email)?.toLowerCase().trim();
+    // A caixa pertence à sessão ativa; parâmetros de e-mail não conferem acesso.
+    const targetEmail = authUser.email.toLowerCase().trim();
 
     if (!targetEmail) {
       return reply.status(401).send({
@@ -965,20 +930,20 @@ export async function authRoutes(app: FastifyInstance, options: AuthRouteOptions
 
     if (folder === "sent") {
       where.status = "sent";
-      where.from = { contains: targetEmail, mode: "insensitive" };
+      where.from = { equals: targetEmail, mode: "insensitive" };
     } else if (folder === "trash") {
       where.status = "trash";
       where.OR = [
-        { to: { contains: targetEmail, mode: "insensitive" } },
-        { from: { contains: targetEmail, mode: "insensitive" } },
+        { to: { equals: targetEmail, mode: "insensitive" } },
+        { from: { equals: targetEmail, mode: "insensitive" } },
       ];
     } else if (folder === "spam" || folder === "quarantine") {
       where.status = { in: ["quarantined", "spam", "disputed"] };
-      where.to = { contains: targetEmail, mode: "insensitive" };
+      where.to = { equals: targetEmail, mode: "insensitive" };
     } else {
       // Default: Inbox (recebidos não arquivados/quarentenados/lixeira)
       where.status = { notIn: ["sent", "quarantined", "spam", "disputed", "trash"] };
-      where.to = { contains: targetEmail, mode: "insensitive" };
+      where.to = { equals: targetEmail, mode: "insensitive" };
     }
 
     const messages = await prisma.message.findMany({
@@ -992,27 +957,27 @@ export async function authRoutes(app: FastifyInstance, options: AuthRouteOptions
       prisma.message.count({
         where: {
           status: { notIn: ["sent", "quarantined", "spam", "disputed", "trash"] },
-          to: { contains: targetEmail, mode: "insensitive" },
+          to: { equals: targetEmail, mode: "insensitive" },
         },
       }),
       prisma.message.count({
         where: {
           status: "sent",
-          from: { contains: targetEmail, mode: "insensitive" },
+          from: { equals: targetEmail, mode: "insensitive" },
         },
       }),
       prisma.message.count({
         where: {
           status: { in: ["quarantined", "spam", "disputed"] },
-          to: { contains: targetEmail, mode: "insensitive" },
+          to: { equals: targetEmail, mode: "insensitive" },
         },
       }),
       prisma.message.count({
         where: {
           status: "trash",
           OR: [
-            { to: { contains: targetEmail, mode: "insensitive" } },
-            { from: { contains: targetEmail, mode: "insensitive" } },
+            { to: { equals: targetEmail, mode: "insensitive" } },
+            { from: { equals: targetEmail, mode: "insensitive" } },
           ],
         },
       }),
@@ -1036,11 +1001,14 @@ export async function authRoutes(app: FastifyInstance, options: AuthRouteOptions
    * Atualiza status da mensagem (ex: mover para spam/quarentena, marcar lida)
    */
   app.patch("/api/v1/inbox/messages/:id", async (request, reply) => {
-    const authUser = getAuthUser(request);
+    const authUser = await requireMailbox(request, reply);
+    if (!authUser) return;
     const { id } = request.params as { id: string };
-    const body = request.body as { status?: string; isRead?: boolean };
+    const parsedBody = z.object({ status: z.enum(["quarantined", "spam", "trash"]).optional(), isRead: z.boolean().optional() }).strict().safeParse(request.body);
+    if (!parsedBody.success) return reply.status(400).send({ error: "Alteração inválida" });
+    const body = parsedBody.data;
 
-    const messageIdNum = parseInt(id, 10);
+    const messageIdNum = /^\d+$/.test(id) && Number.isSafeInteger(Number(id)) ? Number(id) : NaN;
     const existing = await prisma.message.findFirst({
       where: {
         OR: [
@@ -1054,9 +1022,9 @@ export async function authRoutes(app: FastifyInstance, options: AuthRouteOptions
       return reply.status(404).send({ error: "Mensagem não encontrada" });
     }
 
-    if (authUser && authUser.role === "user") {
+    if (authUser.role === "user") {
       const emailLower = authUser.email.toLowerCase();
-      if (!existing.to.toLowerCase().includes(emailLower) && !existing.from.toLowerCase().includes(emailLower)) {
+      if (existing.to.toLowerCase() !== emailLower && existing.from.toLowerCase() !== emailLower) {
         return reply.status(403).send({ error: "Acesso negado a esta mensagem" });
       }
     }
@@ -1077,10 +1045,11 @@ export async function authRoutes(app: FastifyInstance, options: AuthRouteOptions
    * Restaura mensagem da lixeira de volta para a Caixa de Entrada ou Enviados
    */
   app.patch("/api/v1/inbox/messages/:id/restore", async (request, reply) => {
-    const authUser = getAuthUser(request);
+    const authUser = await requireMailbox(request, reply);
+    if (!authUser) return;
     const { id } = request.params as { id: string };
 
-    const messageIdNum = parseInt(id, 10);
+    const messageIdNum = /^\d+$/.test(id) && Number.isSafeInteger(Number(id)) ? Number(id) : NaN;
     const existing = await prisma.message.findFirst({
       where: {
         OR: [
@@ -1094,8 +1063,9 @@ export async function authRoutes(app: FastifyInstance, options: AuthRouteOptions
       return reply.status(404).send({ error: "Mensagem não encontrada" });
     }
 
-    const targetEmail = authUser ? authUser.email.toLowerCase() : "";
-    const restoredStatus = targetEmail && existing.from.toLowerCase().includes(targetEmail) ? "sent" : "received";
+    const targetEmail = authUser.email.toLowerCase();
+    if (existing.to.toLowerCase() !== targetEmail && existing.from.toLowerCase() !== targetEmail) return reply.status(404).send({ error: "Mensagem não encontrada" });
+    const restoredStatus = existing.from.toLowerCase() === targetEmail ? "sent" : "received";
 
     const updated = await prisma.message.update({
       where: { id: existing.id },
@@ -1110,12 +1080,13 @@ export async function authRoutes(app: FastifyInstance, options: AuthRouteOptions
    * Exclusão em dois estágios: se não está no lixo, move para trash; se já está no lixo, exclui permanentemente
    */
   app.delete("/api/v1/inbox/messages/:id", async (request, reply) => {
-    const authUser = getAuthUser(request);
+    const authUser = await requireMailbox(request, reply);
+    if (!authUser) return;
     const { id } = request.params as { id: string };
     const query = request.query as { permanent?: string };
     const isPermanent = query.permanent === "true";
 
-    const messageIdNum = parseInt(id, 10);
+    const messageIdNum = /^\d+$/.test(id) && Number.isSafeInteger(Number(id)) ? Number(id) : NaN;
     const existing = await prisma.message.findFirst({
       where: {
         OR: [
@@ -1129,9 +1100,9 @@ export async function authRoutes(app: FastifyInstance, options: AuthRouteOptions
       return reply.status(404).send({ error: "Mensagem não encontrada" });
     }
 
-    if (authUser && authUser.role === "user") {
+    if (authUser.role === "user") {
       const emailLower = authUser.email.toLowerCase();
-      if (!existing.to.toLowerCase().includes(emailLower) && !existing.from.toLowerCase().includes(emailLower)) {
+      if (existing.to.toLowerCase() !== emailLower && existing.from.toLowerCase() !== emailLower) {
         return reply.status(403).send({ error: "Acesso negado a esta mensagem" });
       }
     }
@@ -1155,9 +1126,10 @@ export async function authRoutes(app: FastifyInstance, options: AuthRouteOptions
    * Esvazia permanentemente todas as mensagens na lixeira do usuário
    */
   app.delete("/api/v1/inbox/trash/empty", async (request, reply) => {
-    const authUser = getAuthUser(request);
+    const authUser = await requireMailbox(request, reply);
+    if (!authUser) return;
     const query = request.query as { email?: string };
-    const targetEmail = (authUser ? authUser.email : query.email)?.toLowerCase().trim();
+    const targetEmail = authUser.email.toLowerCase().trim();
 
     if (!targetEmail) {
       return reply.status(400).send({ error: "Identificação de usuário necessária para esvaziar a lixeira" });
@@ -1167,8 +1139,8 @@ export async function authRoutes(app: FastifyInstance, options: AuthRouteOptions
       where: {
         status: "trash",
         OR: [
-          { to: { contains: targetEmail, mode: "insensitive" } },
-          { from: { contains: targetEmail, mode: "insensitive" } },
+          { to: { equals: targetEmail, mode: "insensitive" } },
+          { from: { equals: targetEmail, mode: "insensitive" } },
         ],
       },
     });

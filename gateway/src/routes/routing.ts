@@ -2,7 +2,6 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { z } from "zod";
 import type { PrismaClient } from "@prisma/client";
 import type { RoutingPoolService } from "../services/RoutingPoolService.js";
-import { getAuthUser } from "./auth.js";
 
 interface RoutingRoutesOptions {
   prisma: PrismaClient;
@@ -56,29 +55,21 @@ const UpdateRuleSchema = z.object({
 });
 
 /**
- * Middleware para validar que o solicitante é SuperAdmin da Plataforma MAIVW
- * (Clientes não podem gerenciar pools nem clusters regionais)
+ * Governança global não pode ser concedida pelo papel tenant `admin`.
  */
 function requirePlatformAdmin(
   request: FastifyRequest,
   reply: FastifyReply,
   internalServiceKey?: string
 ): boolean {
-  // 1. Chave interna de microsserviço
-  const reqServiceKey = request.headers["x-maivw-service-key"];
+  const reqServiceKey = request.headers["x-internal-service-key"];
   if (internalServiceKey && reqServiceKey === internalServiceKey) {
-    return true;
-  }
-
-  // 2. Token JWT com role === 'admin'
-  const authUser = getAuthUser(request);
-  if (authUser && authUser.role === "admin") {
     return true;
   }
 
   reply.status(403).send({
     error: "Forbidden",
-    message: "Acesso restrito a administradores da Plataforma MAIVW. O roteamento e alocação de nós são de governança centralizada da rede.",
+    message: "Acesso restrito ao serviço interno de governança da plataforma.",
   });
   return false;
 }

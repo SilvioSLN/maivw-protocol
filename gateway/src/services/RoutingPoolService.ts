@@ -82,6 +82,15 @@ export class RoutingPoolService {
     this.initRedis(redisUrl);
   }
 
+  async checkRedisHealth(): Promise<void> {
+    if (!this.redisPub || this.redisPub.status !== "ready") {
+      throw new Error("Redis is not ready");
+    }
+    if (await this.redisPub.ping() !== "PONG") {
+      throw new Error("Unexpected Redis ping response");
+    }
+  }
+
   private initRedis(redisUrl?: string) {
     if (!redisUrl) return;
 

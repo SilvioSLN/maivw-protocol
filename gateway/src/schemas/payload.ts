@@ -68,6 +68,9 @@ export type MessageContent = z.infer<typeof MessageContentSchema>;
  * para a API da Empresa B no endpoint /api/v1/inbox.
  */
 export const MessagePayloadSchema = z.object({
+  /** Versão do envelope ("1.0" ou "2.0") */
+  envelopeVersion: z.string().optional(),
+
   /** UUID único da mensagem */
   messageId: z.string().uuid(),
 
@@ -84,9 +87,9 @@ export const MessagePayloadSchema = z.object({
   content: MessageContentSchema,
 
   /** 
-   * Assinatura criptográfica (EIP-191 ou EIP-712)
-   * O hash do content é assinado com a chave privada do remetente.
-   * O destinatário verifica usando a chave pública registrada no Smart Contract.
+   * Assinatura criptográfica (EIP-191)
+   * No v1: assina o content JSON
+   * No v2: assina o envelope canônico com timestamp e hashes
    */
   signature: z.string().regex(
     /^0x[a-fA-F0-9]+$/,
@@ -95,6 +98,18 @@ export const MessagePayloadSchema = z.object({
 
   /** Sub-identidade (obrigatória para provedores multi-tenant) */
   subIdentityId: z.string().optional(),
+
+  /** Timestamp Unix em segundos (obrigatório para v2 replay protection) */
+  timestamp: z.number().int().positive().optional(),
+
+  /** Hash do conteúdo (v2) */
+  contentHash: z.string().optional(),
+
+  /** Hash dos anexos (v2) */
+  attachmentsHash: z.string().optional(),
+
+  /** Anexos da mensagem (opcional) */
+  attachments: z.array(AttachmentItemSchema).optional(),
 });
 
 export type MessagePayload = z.infer<typeof MessagePayloadSchema>;

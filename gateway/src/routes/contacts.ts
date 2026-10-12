@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { PrismaClient } from "@prisma/client";
-import jwt from "jsonwebtoken";
+import { getAuthUser, getActiveMailbox } from "./auth.js";
 
 interface ContactsRouteOptions {
   prisma: PrismaClient;
@@ -8,18 +8,7 @@ interface ContactsRouteOptions {
 }
 
 export async function contactsRoutes(app: FastifyInstance, options: ContactsRouteOptions) {
-  const { prisma, jwtSecret } = options;
-
-  const getAuthUser = (request: any) => {
-    try {
-      const authHeader = request.headers.authorization;
-      if (!authHeader?.startsWith("Bearer ")) return null;
-      const token = authHeader.split(" ")[1];
-      return jwt.verify(token, jwtSecret) as { id: number; email: string; role: string };
-    } catch {
-      return null;
-    }
-  };
+  const { prisma } = options;
 
   /**
    * GET /api/v1/contacts/autocomplete
@@ -28,11 +17,14 @@ export async function contactsRoutes(app: FastifyInstance, options: ContactsRout
    * 2. Destinatários recentes de conversas anteriores
    */
   app.get("/api/v1/contacts/autocomplete", async (request, reply) => {
-    const authUser = getAuthUser(request);
+    if (!getAuthUser(request)) return reply.status(401).send({ error: "Autenticação obrigatória" });
+    const authUser = await getActiveMailbox(request, prisma);
+    if (!authUser) return reply.status(403).send({ error: "Caixa ativa obrigatória" });
     const { q, domain } = request.query as { q?: string; domain?: string };
     const queryTerm = (q || "").trim().toLowerCase();
 
-    const userDomain = domain || (authUser?.email ? authUser.email.split("@")[1] : "");
+    const userDomain = authUser.email.split("@")[1];
+    if (domain && domain.toLowerCase() !== userDomain) return reply.status(403).send({ error: "Diretório pertence a outro domínio" });
 
     const results: Array<{ email: string; name?: string; isInternal: boolean }> = [];
     const seenEmails = new Set<string>();
@@ -42,7 +34,7 @@ export async function contactsRoutes(app: FastifyInstance, options: ContactsRout
       if (userDomain) {
         const domainRecord = await prisma.domain.findFirst({
           where: { domainName: userDomain },
-          include: { accounts: true },
+          include: { accounts: { where: { isActive: true } } },
         });
 
         if (domainRecord && domainRecord.accounts) {
@@ -68,8 +60,8 @@ export async function contactsRoutes(app: FastifyInstance, options: ContactsRout
         const recentMessages = await prisma.message.findMany({
           where: {
             OR: [
-              { from: { contains: authUser.email, mode: "insensitive" } },
-              { to: { contains: authUser.email, mode: "insensitive" } },
+              { from: { equals: authUser.email, mode: "insensitive" } },
+              { to: { equals: authUser.email, mode: "insensitive" } },
             ],
           },
           orderBy: { receivedAt: "desc" },

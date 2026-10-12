@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
  * Configuração centralizada do Gateway via variáveis de ambiente.
  * Validada com Zod para fail-fast em caso de configuração incorreta.
  */
-const EnvSchema = z.object({
+export const EnvSchema = z.object({
   GATEWAY_PORT: z.coerce.number().default(3001),
   GATEWAY_HOST: z.string().default("0.0.0.0"),
   RPC_URL: z.string().url().default("http://localhost:8545"),
@@ -23,6 +23,7 @@ const EnvSchema = z.object({
   MASTER_SECRET_KEY: z.string().min(16, "MASTER_SECRET_KEY deve ser configurada no ambiente"),
   LEGACY_WEBHOOK_SECRET: z.string().optional().default(""),
   RESEND_API_KEY: z.string().optional(),
+  ADMIN_REGISTRATION_TOKEN: z.string().min(32).optional(),
   JWT_SECRET: z.string().min(16, "JWT_SECRET deve ser configurado no ambiente"),
   BASE_RPC_URL: z.string().url().default("https://sepolia.base.org"),
   BASE_REGISTRY_ADDRESS: z.string().optional(),
@@ -40,11 +41,30 @@ const EnvSchema = z.object({
   MAIVW_CORE_DOMAIN: z.string().default("maivw.org"),
   PLATFORM_INGRESS_HOSTS: z.string().default(""),
   MAIVW_ORACLE_URL: z.string().url().default("https://api-test.maivw.com"),
-  IS_CLOUD: z.coerce.boolean().default(false),
+  IS_CLOUD: z.preprocess(
+    (value) => value === "true" ? true : value === "false" ? false : value,
+    z.boolean().default(false),
+  ),
   DEFAULT_P2P_ENDPOINT: z.string().optional(),
+  TLS_CERT_PATH: z.string().optional(),
+  TLS_KEY_PATH: z.string().optional(),
+  MTLS_STRICT_MODE: z.preprocess(
+    (value) => value === "true" ? true : value === "false" ? false : value,
+    z.boolean().default(false),
+  ),
+  TRUST_PROXY: z.preprocess(
+    (value) => value === "true" ? true : value === "false" ? false : value,
+    z.boolean().default(false),
+  ),
 });
 
 export type EnvConfig = z.infer<typeof EnvSchema>;
+
+export function parseEnvironment(env: NodeJS.ProcessEnv) {
+  return EnvSchema.safeParse(
+    Object.fromEntries(Object.entries(env).filter(([, value]) => value !== "")),
+  );
+}
 
 /**
  * Carrega e valida as variáveis de ambiente.
@@ -71,7 +91,7 @@ export function loadConfig(): EnvConfig {
     ...(contractAddress ? { REGISTRY_CONTRACT_ADDRESS: contractAddress } : {}),
   };
 
-  const result = EnvSchema.safeParse(env);
+  const result = parseEnvironment(env);
   
   if (!result.success) {
     console.error("[CONFIG] ❌ Invalid environment configuration:");
@@ -595,5 +615,31 @@ export const REGISTRY_ABI = [
     inputs: [{ name: "_newFee", type: "uint256" }],
     outputs: [],
   },
+  {
+    name: "setDomainTlsFingerprint",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "_domain", type: "string" },
+      { name: "_fingerprint", type: "bytes32" },
+    ],
+    outputs: [],
+  },
+  {
+    name: "getDomainTlsFingerprint",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "_domain", type: "string" }],
+    outputs: [{ name: "", type: "bytes32" }],
+  },
+  {
+    name: "DomainTlsFingerprintUpdated",
+    type: "event",
+    inputs: [
+      { name: "domainHash", type: "bytes32", indexed: true },
+      { name: "domain", type: "string", indexed: false },
+      { name: "fingerprint", type: "bytes32", indexed: true },
+      { name: "timestamp", type: "uint256", indexed: false },
+    ],
+  },
 ] as const;
-

@@ -1,3 +1,4 @@
+import { healthRoutes } from "./routes/health.js";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import type { Hex } from "viem";
@@ -77,50 +78,20 @@ await app.register(cors, {
 // ============================================
 //  Health Check
 // ============================================
-app.get("/health", async () => {
-  let blockchainStatus = "offline";
-  let redisStatus = "offline";
-
-  try {
-    const total = await ledger.getTotalRegistered();
-    blockchainStatus = "online";
-  } catch {
-    blockchainStatus = "offline";
-  }
-
-  try {
-    if (config.REDIS_URL) {
-      redisStatus = "online";
-    }
-  } catch {
-    redisStatus = "offline";
-  }
-
-  const smtpInfo = smtp.getProviderInfo();
-
-  let oracleBalance = "0";
-  let isBalanceLow = false;
-  try {
-    const bal = await oracle.getBalance();
-    oracleBalance = bal.toString();
-    isBalanceLow = bal < config.ORACLE_MIN_BALANCE_WEI;
-  } catch {
-    // offline ou RPC indisponível
-  }
-
-  return {
-    status: "ok",
-    service: "maivw-gateway",
-    timestamp: new Date().toISOString(),
-    blockchain: blockchainStatus,
-    redis: redisStatus,
-    smtp: smtpInfo,
+await healthRoutes(app, {
+  checks: {
+    blockchain: () => ledger.checkBlockchainHealth(),
+    redis: () => routingPool.checkRedisHealth(),
+    database: () => prisma.$queryRaw`SELECT 1`,
+  },
+  oracleBalance: () => oracle.getBalance(),
+  oracleMinBalance: config.ORACLE_MIN_BALANCE_WEI,
+  metadata: () => ({
+    smtp: smtp.getProviderInfo(),
     oracle: oracle.getOracleAddress(),
     oracleSignerType: oracle.getSignerType(),
-    oracleBalanceWei: oracleBalance,
-    oracleBalanceLow: isBalanceLow,
     contractAddress: config.REGISTRY_CONTRACT_ADDRESS || "not deployed",
-  };
+  }),
 });
 
 // ============================================
@@ -223,6 +194,7 @@ await sendRoutes(app, {
   eventListener,
   stealth,
   routingPool,
+  config,
 });
 
 await inboxRoutes(app, {
@@ -232,6 +204,7 @@ await inboxRoutes(app, {
   prisma,
   stealth,
   routingPool,
+  trustProxy: config.TRUST_PROXY,
 });
 
 await disputeRoutes(app, {
@@ -243,6 +216,7 @@ await disputeRoutes(app, {
 });
 
 await authRoutes(app, {
+  registrationToken: config.ADMIN_REGISTRATION_TOKEN,
   prisma,
   kms,
   smtp,
@@ -257,6 +231,8 @@ await settingsRoutes(app, {
   prisma,
   smtp,
   masterKey: config.MASTER_SECRET_KEY,
+  ledger,
+  config,
 });
 
 await onboardingRoutes(app, {
@@ -269,20 +245,28 @@ await onboardingRoutes(app, {
 
 await economicsRoutes(app, {
   ledger,
+  prisma,
+  internalServiceKey: config.INTERNAL_SERVICE_KEY,
 });
 
 await oracleRoutes(app, {
   oracle,
   ledger,
   reportService: oracleReportService,
+  internalServiceKey: config.INTERNAL_SERVICE_KEY,
 });
 
 await stealthRoutes(app, {
   stealth,
   ledger,
+  prisma,
+  internalServiceKey: config.INTERNAL_SERVICE_KEY,
 });
 
-await attachmentRoutes(app);
+await attachmentRoutes(app, {
+  prisma,
+  kms,
+});
 
 await contactsRoutes(app, {
   prisma,
@@ -292,6 +276,7 @@ await contactsRoutes(app, {
 await multiChainRoutes(app, {
   ledger,
   oracle,
+  prisma,
   internalServiceKey: config.INTERNAL_SERVICE_KEY,
 });
 

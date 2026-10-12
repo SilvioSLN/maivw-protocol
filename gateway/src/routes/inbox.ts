@@ -3,13 +3,14 @@ import type { Hex, Address } from "viem";
 import { MessagePayloadSchema } from "../schemas/payload.js";
 import { BLOCKABLE_CLASSES, type MessageClass } from "../schemas/taxonomy.js";
 import type { LedgerService } from "../services/LedgerService.js";
-import type { SignatureService } from "../services/SignatureService.js";
+import { SignatureService } from "../services/SignatureService.js";
 import type { ReputationService } from "../services/ReputationService.js";
 import type { PrismaClient } from "@prisma/client";
 import { verifyDomainMerkleProof } from "../utils/merkleUtils.js";
 
 import type { StealthRoutingService } from "../services/StealthRoutingService.js";
 import type { RoutingPoolService } from "../services/RoutingPoolService.js";
+import { TlsCertService } from "../services/TlsCertService.js";
 
 interface InboxRouteOptions {
   ledger: LedgerService;
@@ -18,6 +19,7 @@ interface InboxRouteOptions {
   prisma?: PrismaClient;
   stealth?: StealthRoutingService;
   routingPool?: RoutingPoolService;
+  trustProxy?: boolean;
 }
 
 /**
@@ -121,8 +123,15 @@ export async function inboxRoutes(app: FastifyInstance, options: InboxRouteOptio
     }
 
     // ============================================
-    //  1. Extrair headers do protocolo MAIVW
+    //  1. Identificar versão do envelope e headers
     // ============================================
+    const rawBody = (request.body || {}) as any;
+    const envelopeVersion =
+      (headers["x-maivw-envelope-version"] as string) ||
+      rawBody.envelopeVersion ||
+      "1.0";
+    const isV2 = envelopeVersion === "2.0";
+
     const senderDomain = headers["x-maivw-sender"] as string | undefined;
     const intentTx = headers["x-maivw-intent-tx"] as string | undefined;
     const subIdentityHeader = headers["x-maivw-sub-identity"] as string | undefined;
@@ -136,10 +145,73 @@ export async function inboxRoutes(app: FastifyInstance, options: InboxRouteOptio
       });
     }
 
-    if (!intentTx && !intentRoot) {
+    // ============================================
+    //  1.1 Validação de mTLS com Ancoragem On-Chain / DANE (S08)
+    // ============================================
+    const senderTlsFingerprint = typeof ledger.getDomainTlsFingerprint === "function"
+      ? await ledger.getDomainTlsFingerprint(senderDomain)
+      : null;
+    if (senderTlsFingerprint) {
+      let peerFingerprint: string | null = null;
+
+      // 1. Tenta extrair diretamente do socket TLS peer
+      const rawSocket = (request.raw as any)?.socket;
+      if (rawSocket && typeof rawSocket.getPeerCertificate === "function") {
+        try {
+          const peerCert = rawSocket.getPeerCertificate(true);
+          if (peerCert && peerCert.raw) {
+            peerFingerprint = TlsCertService.computeCertFingerprint(peerCert.raw);
+          }
+        } catch (sockErr: any) {
+          app.log.warn(`[INBOX] ⚠️ Falha ao ler certificado do socket TLS: ${sockErr.message}`);
+        }
+      }
+
+      // 2. Fallback para header de proxy se proxy confiável habilitado
+      const trustProxy = options.trustProxy ?? (process.env.TRUST_PROXY === "true");
+      if (!peerFingerprint && trustProxy) {
+        const proxyCertFingerprint = headers["x-client-cert-fingerprint-sha256"] as string | undefined;
+        if (proxyCertFingerprint) {
+          try {
+            peerFingerprint = TlsCertService.normalizeFingerprint(proxyCertFingerprint);
+          } catch {
+            peerFingerprint = null;
+          }
+        }
+      }
+
+      if (!peerFingerprint) {
+        app.log.warn(
+          `[INBOX] ❌ mTLS Obrigatório: Domínio remetente '${senderDomain}' possui ancoragem TLS on-chain, mas a conexão não apresentou certificado X.509 de cliente válido.`
+        );
+        return reply.status(401).send({
+          error: "TlsCertificateRequired",
+          message: `Domínio '${senderDomain}' possui TLS ancorado on-chain. Apresentação de certificado de cliente TLS (mTLS) é obrigatória.`,
+        });
+      }
+
+      if (!TlsCertService.matchesFingerprint(peerFingerprint, senderTlsFingerprint)) {
+        app.log.warn(
+          `[INBOX] ❌ mTLS Fingerprint Mismatch para '${senderDomain}': recebido ${peerFingerprint}, esperado on-chain ${senderTlsFingerprint}`
+        );
+        return reply.status(403).send({
+          error: "TlsFingerprintMismatch",
+          message: `Certificado TLS apresentado não confere com o fingerprint ancorado on-chain para o domínio '${senderDomain}'.`,
+          expected: senderTlsFingerprint,
+          received: peerFingerprint,
+        });
+      }
+
+      app.log.info(
+        `[INBOX] 🔒 mTLS verificado com sucesso para '${senderDomain}' contra o registro on-chain (${senderTlsFingerprint}).`
+      );
+    }
+
+    // No v1 legado, intentTx ou intentRoot era obrigatório. No v2, intenção não requer hash fictício.
+    if (!isV2 && !intentTx && !intentRoot) {
       return reply.status(400).send({
         error: "Missing intent header",
-        message: "O header x-maivw-intent-tx ou x-maivw-intent-root é obrigatório",
+        message: "O header x-maivw-intent-tx ou x-maivw-intent-root é obrigatório para envelope v1",
       });
     }
 
@@ -155,9 +227,59 @@ export async function inboxRoutes(app: FastifyInstance, options: InboxRouteOptio
       });
     }
 
-    const { messageId, msgClass, to, subject, content, signature, subIdentityId } =
-      parseResult.data;
+    const {
+      messageId,
+      msgClass,
+      to,
+      subject,
+      content,
+      signature,
+      subIdentityId,
+      timestamp: bodyTimestamp,
+      contentHash: bodyContentHash,
+      attachmentsHash: bodyAttachmentsHash,
+      attachments: bodyAttachments,
+    } = parseResult.data;
     const effectiveSubId = subIdentityHeader || subIdentityId;
+
+    // ============================================
+    //  2.1 Proteção contra Replay: ID Duplicado
+    // ============================================
+    if (prisma) {
+      const existing = await prisma.message.findUnique({
+        where: { messageId },
+      });
+      if (existing) {
+        app.log.warn(`[INBOX] ⚠️ Tentativa de replay: messageId ${messageId} já recebida anteriormente.`);
+        return reply.status(409).send({
+          error: "DuplicateMessage",
+          message: `Mensagem ${messageId} já processada anteriormente (proteção anti-replay).`,
+        });
+      }
+    }
+
+    // ============================================
+    //  2.2 Proteção contra Replay: Janela de Timestamp (Envelope v2)
+    // ============================================
+    let effectiveTimestamp = 0;
+    if (isV2) {
+      const rawTimestamp = bodyTimestamp || headers["x-maivw-timestamp"];
+      effectiveTimestamp = Number(rawTimestamp);
+      if (!rawTimestamp || isNaN(effectiveTimestamp) || effectiveTimestamp <= 0) {
+        return reply.status(400).send({
+          error: "MissingTimestamp",
+          message: "Envelope v2 requer campo timestamp ou header x-maivw-timestamp para proteção anti-replay.",
+        });
+      }
+      const nowSec = Math.floor(Date.now() / 1000);
+      if (Math.abs(nowSec - effectiveTimestamp) > 900) {
+        // Tolerância de 15 minutos para relógios dessincronizados
+        return reply.status(400).send({
+          error: "ExpiredTimestamp",
+          message: "Timestamp fora da janela de tolerância de 15 minutos (proteção anti-replay).",
+        });
+      }
+    }
 
     // ============================================
     //  3. Regra de Provedor Multi-Tenant (Fase 7)
@@ -242,13 +364,39 @@ export async function inboxRoutes(app: FastifyInstance, options: InboxRouteOptio
     }
 
     // ============================================
-    //  8. Validar Assinatura Criptográfica
+    //  8. Validar Assinatura Criptográfica (v1 ou v2)
     // ============================================
-    const isSignatureValid = await signer.verifyPayload(
-      content,
-      signature as Hex,
-      publicKey as Address
-    );
+    let isSignatureValid = false;
+
+    if (isV2) {
+      const contentHash = bodyContentHash || SignatureService.computeContentHash(content);
+      const attachmentsHash =
+        bodyAttachmentsHash ||
+        SignatureService.computeAttachmentsHash(bodyAttachments || content.attachments);
+
+      isSignatureValid = await signer.verifyEnvelopeV2(
+        {
+          version: "2.0",
+          messageId,
+          from: senderDomain,
+          to,
+          subject,
+          msgClass,
+          timestamp: effectiveTimestamp,
+          contentHash,
+          attachmentsHash,
+          subIdentityId: effectiveSubId || undefined,
+        },
+        signature as Hex,
+        publicKey as Address
+      );
+    } else {
+      isSignatureValid = await signer.verifyPayload(
+        content,
+        signature as Hex,
+        publicKey as Address
+      );
+    }
 
     if (!isSignatureValid) {
       app.log.warn(`[INBOX] ❌ Assinatura inválida de ${senderDomain}`);
