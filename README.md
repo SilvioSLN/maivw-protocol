@@ -21,7 +21,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/tests-57%20passed-brightgreen?style=flat-square&logo=node.js" alt="Tests" />
+  <img src="https://img.shields.io/badge/tests-60%20passed-brightgreen?style=flat-square&logo=node.js" alt="Tests" />
   <img src="https://img.shields.io/badge/TypeScript-5.8-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/Solidity-0.8.28-363636?style=flat-square&logo=solidity&logoColor=white" alt="Solidity" />
   <img src="https://img.shields.io/badge/Network-Base%20Sepolia-0052FF?style=flat-square&logo=ethereum&logoColor=white" alt="Base L2" />
@@ -71,28 +71,24 @@ Se você deseja usufruir da soberania do protocolo sem precisar gerenciar servid
 Para operar seu nó de forma 100% independente em sua própria máquina ou VPS:
 
 ```bash
-# 1. Clone o repositório
-git clone https://github.com/SilvioSLN/maivw-protocol.git
+# 1. Clone o repositório e os submódulos dos contratos
+git clone --recurse-submodules https://github.com/SilvioSLN/maivw-protocol.git
 cd maivw-protocol
 
-# 2. Configure as variáveis de ambiente
-cp .env.example .env
-
-# Gere segredos de alta entropia para seu nó
-sed -i "s/^JWT_SECRET=.*/JWT_SECRET=$(openssl rand -hex 32)/" .env
-sed -i "s/^MASTER_SECRET_KEY=.*/MASTER_SECRET_KEY=$(openssl rand -hex 32)/" .env
-sed -i "s/^INTERNAL_SERVICE_KEY=.*/INTERNAL_SERVICE_KEY=$(openssl rand -hex 32)/" .env
-
-# 3. Inicie os containers com Docker Compose
-docker compose up -d
+# 2. Inicie a demonstração local completa
+docker compose up -d --build
 ```
 
-O stack iniciará os serviços essenciais:
-- **Gateway P2P (`:3001`)**: Roteador Web3 P2P, verificação na blockchain e API REST Fastify.
-- **WebMaivw (`:3002`)**: Interface webmail corporativa em Next.js 15 com sandbox iframe.
-- **PostgreSQL & Redis**: Persistência relacional de contas/mensagens e filas assíncronas.
+O Compose inicia Anvil, implanta o Registry e conecta os serviços automaticamente. Abra:
 
-👉 Para o passo a passo completo com DNS e testnet, consulte o **[Guia de Instalação Docker](https://docs.maivw.com/users/quickstart-docker/)**.
+- **Dashboard:** `http://localhost:50443`
+- **Gateway:** `http://localhost:51443`
+- **WebMaivw:** `http://localhost:52443`
+- **RPC Anvil:** `http://localhost:55443`
+
+Use o convite `local-demo-admin-invite-change-before-testnet-2026` apenas para criar a conta na demonstração. As chaves e os segredos locais são públicos.
+
+Para Testnet, copie `.env.testnet.example` para `.env.testnet`, preencha RPC, proxy Registry, domínios, URLs HTTPS e segredos próprios, e execute `docker compose -f compose.testnet.yml --env-file .env.testnet up -d --build`. Consulte o **[Guia de Instalação Docker](https://docs.maivw.com/users/quickstart-docker/)**.
 
 ---
 

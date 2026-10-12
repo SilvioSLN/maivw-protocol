@@ -1,37 +1,37 @@
 ---
 title: Serviços, portas e persistência
-description: Referência do Compose e diferenças entre reinício, rebuild e remoção.
+description: Referência dos Compose local e Testnet, portas e volumes.
 ---
 
 O procedimento completo está em [instalação com Docker](/users/quickstart-docker/).
 
 | Serviço | Porta no host | Persistência |
 | --- | --- | --- |
-| PostgreSQL 16 | `127.0.0.1:5432` | `./data/postgres` → `/var/lib/postgresql/data` |
-| Redis 7 | `127.0.0.1:6379` | `./data/redis` → `/data`, AOF habilitado |
-| Gateway (Node 22) | `127.0.0.1:3001` | `./data/attachments` → `/app/data/attachments` |
-| WebMaivw | `127.0.0.1:3002` | Dados de negócio no Gateway |
-| Dashboard | `127.0.0.1:3000` | Consulta Gateway e blockchain |
+| Dashboard | `127.0.0.1:50443` | Consulta Gateway e blockchain |
+| Gateway | `127.0.0.1:51443` | `./data/attachments` e `./data/certs` |
+| WebMaivw | `127.0.0.1:52443` | Dados de negócio no Gateway |
+| PostgreSQL 16 | `127.0.0.1:53443` | `./data/postgres` |
+| Redis 7 | `127.0.0.1:54443` | `./data/redis`, AOF habilitado |
+| Anvil local | `127.0.0.1:55443` | volume `anvil-state` |
+| Endereço do deploy local | sem porta | volume `deploy-output` |
 
-Esses diretórios são **bind mounts**. `docker compose down -v` não apaga `./data/postgres`, `./data/redis` ou `./data/attachments`. Não use esse comando como procedimento de limpeza de dados.
+`docker-compose.yml` é a demonstração local e funciona sem `.env`. `compose.testnet.yml` exige `--env-file .env.testnet` preenchido a partir de `.env.testnet.example`. Não misture os arquivos: o primeiro contém credenciais públicas de desenvolvimento e o segundo exige dados próprios.
 
-## Configuração
+Todos os serviços usam uma rede Docker privada nomeada. O ambiente local usa `maivw-protocol-local-network` e a Testnet usa `maivw-protocol-testnet-network`, evitando resolução acidental de serviços homônimos de outros projetos. Para executar várias instalações do MAIVW na mesma máquina, defina um valor exclusivo em `MAIVW_DOCKER_NETWORK` no arquivo de ambiente de cada instalação.
 
-O `.env` da raiz é carregado no Gateway por `env_file`. O bloco `environment` do Compose tem precedência para portas e conexões internas. As variáveis `NEXT_PUBLIC_*` usadas pelo Next.js são incorporadas no build; alterar somente o ambiente do container não atualiza JavaScript já compilado.
+Os diretórios de dados são bind mounts. `docker compose down -v` remove os volumes nomeados do Anvil e do endereço implantado, mas não apaga `./data/postgres`, `./data/redis`, anexos ou certificados. Remover apenas um dos volumes blockchain/deploy cria inconsistência; recrie ambos juntos se desejar zerar a demonstração.
 
-Os Dockerfiles ainda instalam dependências sem lockfile compartilhado. Não presuma builds idênticos sem fixar as versões/imagens do ambiente de implantação.
+## Ordem de inicialização
 
-## Comandos
+O Anvil fica saudável, `contracts-deployer` compila e implanta ou reutiliza o proxy existente, e o Gateway lê `/deploy-output/contract-address.txt`. O Gateway aguarda também PostgreSQL e Redis. Webmail e Dashboard aguardam o health check completo do Gateway.
 
 ```bash
-docker compose logs --tail=100 gateway
+docker compose logs --tail=100 contracts-deployer gateway
 docker compose restart gateway
-# Recriar após mudanças de código/configuração pública do frontend:
 docker compose up -d --build
-# Parar mantendo os diretórios persistentes:
 docker compose down
 ```
 
-Ao iniciar, o Gateway executa `prisma db push`. Isso sincroniza o schema, mas não substitui um histórico de migrations nem um plano de atualização de produção. Faça backup e ensaie alterações de schema antes de atualizar.
+Os Dockerfiles do Gateway, Webmail e Dashboard usam lockfiles. A imagem Foundry está fixada por digest. Imagens base restantes ainda usam tags e devem entrar na política de atualização do operador.
 
-O Gateway aguarda os health checks de banco e Redis. Webmail e Dashboard aguardam `/health` do Gateway. Um nó saudável ainda pode ter SMTP inválido, saldo insuficiente ou permissões incorretas no contrato.
+Ao iniciar, o Gateway executa `prisma db push`. Isso é conveniente para a demonstração, mas não substitui migrations versionadas, backup e um procedimento de atualização de produção. Variáveis `NEXT_PUBLIC_*` entram no JavaScript durante o build; alterá-las exige `--build`.

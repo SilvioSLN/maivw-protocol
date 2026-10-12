@@ -9,7 +9,7 @@ Antes de operar com dados importantes, conclua os testes de restauração e as p
 
 O Compose mantém as portas no loopback. Use túnel SSH ou rede privada para acessar administração e Webmail. Para P2P público, configure certificado válido no proxy e exponha apenas as rotas necessárias à federação após a revisão de segurança. Não encaminhe indiscriminadamente toda a API administrativa para a internet.
 
-Aponte A/AAAA do hostname do Gateway ao servidor e configure o proxy para encaminhar ao serviço correto. Um proxy instalado no host acessa `127.0.0.1:3001`; um proxy em outro container deve usar a rede Docker e o nome `gateway`. HTTPS no proxy não implementa mTLS no cliente emissor.
+Aponte A/AAAA do hostname do Gateway ao servidor e configure o proxy para encaminhar ao serviço correto. Um proxy instalado no host acessa `127.0.0.1:51443`; um proxy em outro container deve usar a rede Docker e `gateway:3001`. HTTPS no proxy não implementa mTLS no cliente emissor.
 
 Defina `DEFAULT_P2P_ENDPOINT` e atualize o endpoint registrado no contrato quando mudar de host. Verifique URL, DNS, cadeia de certificados, roteamento e aceite real de uma mensagem. Não use `HEAD /api/v1/inbox` como prova de que um POST funcionará.
 

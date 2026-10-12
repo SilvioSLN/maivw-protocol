@@ -3,7 +3,7 @@ title: Guia do Webmail
 description: Contas administrativas, caixas postais e uso do cliente no piloto.
 ---
 
-Acesse o Webmail local em `http://localhost:3002`, após preparar o Gateway. Leia as [limitações atuais](/status/) antes de usar dados reais.
+Acesse o Webmail do Compose local em `http://localhost:52443`, após o Gateway ficar saudável. Leia as [limitações atuais](/status/) antes de usar dados reais.
 
 ## Contas
 

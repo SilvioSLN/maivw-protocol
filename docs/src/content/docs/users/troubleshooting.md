@@ -5,16 +5,16 @@ description: Verifique configuração, dependências, DNS, transporte e persist�
 
 ## Gateway não inicia
 
-Veja `docker compose logs --tail=100 gateway`. Confirme os três segredos, `ORACLE_SIGNER_TYPE` e a chave exigida para o modo escolhido. Campos vazios opcionais são tratados como ausentes pelo carregador; campos obrigatórios precisam ser preenchidos.
+Veja `docker compose logs --tail=100 contracts-deployer gateway`. No modo local, confirme primeiro se o deployer terminou com código zero. Em Testnet, confirme os quatro segredos, Registry, `ORACLE_SIGNER_TYPE` e a chave exigida.
 
-O Compose precisa de `.env`. Para teste local fora do Docker, `npm run dev` carrega o `.env` da raiz; gere Prisma e prepare o banco antes de iniciar.
+O Compose local não precisa de `.env`. O Compose de Testnet exige `--env-file .env.testnet`. Para desenvolvimento fora do Docker, `npm run dev` carrega o `.env` da raiz quando ele existe.
 
 ## Gateway degradado
 
 ```bash
 docker compose ps
-curl -i http://localhost:3001/health
-curl -i http://localhost:3001/health/live
+curl -i http://localhost:51443/health
+curl -i http://localhost:51443/health/live
 ```
 
 `503` em `/health` informa falha ou timeout em PostgreSQL, Redis ou consulta ao Registry. Verifique rede, credenciais, RPC, chain ID e endereço do proxy. `200` em `/health/live` confirma somente o processo HTTP. Saldo desconhecido do oráculo aparece como `null`, não como zero confirmado.
@@ -32,6 +32,8 @@ dig +short TXT _maivw-verify.example.com
 ```
 
 Compare o valor integral com o token do onboarding. Evite duplicar o domínio no nome do registro. O tempo de propagação depende do TTL e do provedor; não há prazo garantido. Não use simulação DNS para ativar domínios reais.
+
+Na demonstração local, `node-mode` informa `dnsMode: local-demo` e o check retorna `localBypass: true`; nenhuma consulta DNS é feita. Se isso ocorrer em uma Testnet, revise imediatamente `CHAIN_ID` e `RPC_URL`.
 
 ## Contrato rejeita transação
 
