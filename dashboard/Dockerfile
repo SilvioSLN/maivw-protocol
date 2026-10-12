@@ -1,13 +1,11 @@
 FROM node:22-alpine
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@10.22.0 --activate
 
 WORKDIR /app
 
-COPY package.json ./
-
-# Install deps with ignore-scripts to prevent pnpm 10+ build script errors
-RUN pnpm config set ignore-scripts true && pnpm install
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
 
 COPY tsconfig.json next.config.mjs ./
 COPY public/ public/
