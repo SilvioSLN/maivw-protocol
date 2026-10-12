@@ -25,6 +25,7 @@
   <img src="https://img.shields.io/badge/TypeScript-5.8-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/Solidity-0.8.28-363636?style=flat-square&logo=solidity&logoColor=white" alt="Solidity" />
   <img src="https://img.shields.io/badge/Network-Base%20Sepolia-0052FF?style=flat-square&logo=ethereum&logoColor=white" alt="Base L2" />
+  <img src="https://img.shields.io/badge/Network-Solana%20(Roadmap)-14F195?style=flat-square&logo=solana&logoColor=000000" alt="Solana" />
   <img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker" />
   <img src="https://img.shields.io/badge/License-GPL--3.0-blue?style=flat-square" alt="License" />
 </p>
@@ -123,7 +124,8 @@ A segurança e a transparência técnica são princípios inegociáveis do proje
 ### Próximos Passos no Roadmap:
 - [ ] **S07 — Criptografia de Ponta a Ponta (E2EE):** Projeto e implementação de gestão de chaves no cliente para sigilo absoluto de mensagens.
 - [ ] **Auditorias Formais de Segurança:** Revisão externa independente dos smart contracts Solidity.
-- [ ] **Expansão Multichain:** Suporte nativo a L2s adicionais (Arbitrum, Optimism, Polygon) com oráculo de estado.
+- [ ] **Expansão Multichain EVM:** Suporte nativo a L2s adicionais (Arbitrum, Optimism, Polygon) com oráculo de estado.
+- [ ] **Integração com a Rede Solana:** Expansão da ancoragem de identidade, registro de domínios e micro-taxas de liquidação para o ecossistema Solana (programas Anchor, liquidação ultrarrápida e suporte a carteiras Phantom/Solflare).
 
 ---
 
