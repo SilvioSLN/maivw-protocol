@@ -37,8 +37,8 @@ export const SUPPORTED_CHAINS: Record<number, ChainConfig> = {
   31337: {
     id: 31337,
     name: "Anvil Local",
-    rpc: "http://localhost:8545",
-    explorer: "http://localhost:8545",
+    rpc: process.env.NEXT_PUBLIC_RPC_URL || "http://localhost:55443",
+    explorer: process.env.NEXT_PUBLIC_RPC_URL || "http://localhost:55443",
     currency: { name: "Ether", symbol: "ETH", decimals: 18 },
   },
 };
