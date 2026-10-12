@@ -1,0 +1,204 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+/// Reputação granular por domínio e sub-identidade (Fase 7)
+model Reputation {
+  id              Int       @id @default(autoincrement())
+  domain          String
+  subIdentityId   String    @default("default")
+  reputationScore Int       @default(100)
+  isBlocked       Boolean   @default(false)
+  strikes         Int       @default(0)
+  lastViolation   DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([domain, subIdentityId])
+}
+
+/// Usuário cadastrado no ecossistema MAIVW (Fase 10)
+model User {
+  id               Int       @id @default(autoincrement())
+  email            String    @unique
+  passwordHash     String
+  displayName      String?
+  role             String    @default("user") // "admin" | "user"
+  stripeCustomerId String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  domains          Domain[]
+}
+
+/// Domínio corporativo de um usuário (Fase 10)
+model Domain {
+  id          Int          @id @default(autoincrement())
+  domainName  String       @unique
+  userId      Int
+  isVerified  Boolean      @default(false)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  apiKeys     ApiKey[]
+  walletVault WalletVault?
+  smtpConfig  SmtpConfig?
+  accounts    EmailAccount[]
+}
+
+/// Chave de API para autenticação de microsserviços do desenvolvedor (Fase 10)
+model ApiKey {
+  id          Int       @id @default(autoincrement())
+  keyHash     String    @unique
+  domainId    Int
+  name        String
+  environment String    @default("production")
+  createdAt   DateTime  @default(now())
+  lastUsedAt  DateTime?
+
+  domain      Domain    @relation(fields: [domainId], references: [id], onDelete: Cascade)
+}
+
+/// Cofre de chaves Web3 (KMS Mock com criptografia simétrica AES-256-GCM) (Fase 10)
+model WalletVault {
+  id                  Int      @id @default(autoincrement())
+  domainId            Int      @unique
+  publicKey           String
+  encryptedPrivateKey String
+  iv                  String
+  authTag             String
+  createdAt           DateTime @default(now())
+
+  domain              Domain   @relation(fields: [domainId], references: [id], onDelete: Cascade)
+}
+
+/// Configuração SMTP por domínio (provedor externo: Resend, SendGrid, SES)
+model SmtpConfig {
+  id                Int      @id @default(autoincrement())
+  domainId          Int      @unique
+  provider          String   @default("resend") // "resend" | "sendgrid" | "ses"
+  encryptedApiKey   String
+  iv                String
+  authTag           String
+  fromName          String   @default("MAIVW")
+  fromEmail         String?
+  isActive          Boolean  @default(true)
+  lastTestedAt      DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  domain            Domain   @relation(fields: [domainId], references: [id], onDelete: Cascade)
+}
+
+/// Contas de e-mail vinculadas a um domínio (criadas pelo admin)
+model EmailAccount {
+  id          Int      @id @default(autoincrement())
+  localPart   String                             // "contato", "suporte", etc.
+  domainId    Int
+  userId      Int?                               // Vinculado a um User para login
+  displayName String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  domain      Domain   @relation(fields: [domainId], references: [id], onDelete: Cascade)
+
+  @@unique([localPart, domainId])
+}
+
+/// Mensagens recebidas na caixa de entrada (Web3 e Legadas) (Fases 10 e 11)
+model Message {
+  id          Int      @id @default(autoincrement())
+  messageId   String   @unique
+  from        String
+  to          String
+  subject     String
+  body        String
+  msgClass    String
+  status      String   @default("received")
+  signature   String?
+  isLegacy    Boolean  @default(false)
+  isRead      Boolean  @default(false)
+  isRevoked   Boolean  @default(false)                   // Sinaliza revogação on-chain pós-entrega
+  revocationReason String?                               // Motivo da revogação (ex: Tag Spoofing ban)
+  domainId    Int?                               // Domínio ao qual a mensagem pertence
+  receivedAt  DateTime @default(now())
+}
+
+/// Rota Privada Out-of-Band para envio a Dark Endpoints (Modo Stealth)
+model PrivateRoute {
+  id                 Int      @id @default(autoincrement())
+  targetDomain       String   @unique
+  privateEndpointUrl String
+  stealthToken       String?
+  notes              String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+/// Configuração do Modo de Segurança / Stealth do domínio receptor
+model StealthConfig {
+  id                 Int      @id @default(autoincrement())
+  domainName         String   @unique
+  mode               String   @default("public") // "public" | "hybrid" | "dark"
+  isStealthEnabled   Boolean  @default(false)
+  inboundToken       String?  // Token exigido no header x-maivw-stealth-token
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+/// Pool / Cluster Regional de Endpoints P2P (Gestão pela Plataforma MAIVW)
+model EndpointPool {
+  id          Int               @id @default(autoincrement())
+  code        String            @unique // ex: "sa-east-1", "us-east-1", "default", "vip-providers"
+  name        String            // ex: "Cluster América do Sul (São Paulo)"
+  description String?
+  region      String?           @default("GLOBAL") // "BR", "US", "EU", "GLOBAL"
+  isDefault   Boolean           @default(false)
+  isActive    Boolean           @default(true)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  nodes       EndpointNode[]
+  domainRules DomainRouteRule[]
+}
+
+/// Nó / Instância de Gateway receptor dentro de um Pool P2P
+model EndpointNode {
+  id             Int          @id @default(autoincrement())
+  poolId         Int
+  name           String       // ex: "Gateway GRU-01 Primário"
+  endpointUrl    String       // ex: "https://node-gru-1.maivw.internal/api/v1/inbox"
+  weight         Int          @default(100) // Peso para Weighted Round-Robin (ex: 70, 30)
+  isActive       Boolean      @default(true) // Toggle administrativo
+  isHealthy      Boolean      @default(true) // Status do Circuit Breaker
+  failureCount   Int          @default(0)    // Falhas consecutivas de entrega/healthcheck
+  lastFailure    DateTime?
+  lastChecked    DateTime?
+  responseTimeMs Int?         // Métrica de latência observada
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  pool           EndpointPool @relation(fields: [poolId], references: [id], onDelete: Cascade)
+}
+
+/// Regra de roteamento atribuída pela plataforma (mapeia padrões de domínio a pools)
+model DomainRouteRule {
+  id            Int          @id @default(autoincrement())
+  domainPattern String       @unique // ex: "itau.com.br", "*.gov.br", ou domínio específico
+  poolId        Int
+  priority      Int          @default(0) // Maior prioridade avaliada primeiro
+  isActive      Boolean      @default(true)
+  notes         String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  pool          EndpointPool @relation(fields: [poolId], references: [id], onDelete: Cascade)
+}
+

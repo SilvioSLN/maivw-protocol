@@ -1,0 +1,41 @@
+{
+  "name": "@maivw/gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "MAIVW Gateway Híbrido — Backend Fastify",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "tsx --test test/**/*.test.ts"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.0.1",
+    "@google-cloud/kms": "^6.2.1",
+    "@prisma/client": "^5.22.0",
+    "asn1.js": "^5.4.1",
+    "bullmq": "^5.52.3",
+    "fastify": "^5.3.3",
+    "firebase-admin": "^14.4.0",
+    "ioredis": "^5.6.1",
+    "jsonwebtoken": "^9.0.3",
+    "keccak256": "^1.0.6",
+    "merkletreejs": "^0.4.1",
+    "nodemailer": "^10.0.11",
+    "resend": "^6.28.1",
+    "uuid": "^11.1.0",
+    "viem": "^2.30.5",
+    "zod": "^3.25.67"
+  },
+  "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^22.15.0",
+    "@types/nodemailer": "^8.0.2",
+    "@types/uuid": "^10.0.0",
+    "prisma": "^5.22.0",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
+  }
+}
