@@ -10,6 +10,7 @@ export default function SignupPage() {
   const router = useRouter();
   const { register, loginWithGoogle, loginWithGithub } = useAuth();
 
+  const [registrationToken, setRegistrationToken] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -18,7 +19,7 @@ export default function SignupPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
-  const isFormValid = email.includes("@") && password.length >= 6;
+  const isFormValid = email.includes("@") && password.length >= 12 && password.length <= 128 && registrationToken.length >= 32;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,7 +28,7 @@ export default function SignupPage() {
     setIsSubmitting(true);
     setError(null);
 
-    const result = await register(email.trim(), password);
+    const result = await register(email.trim(), password, undefined, registrationToken);
 
     if (result.ok) {
       setSuccess(true);
@@ -45,7 +46,7 @@ export default function SignupPage() {
     setIsSocialSubmitting("google");
     setError(null);
 
-    const result = await loginWithGoogle();
+    const result = await loginWithGoogle(registrationToken);
 
     if (result.ok) {
       if (result.isNewUser) {
@@ -64,7 +65,7 @@ export default function SignupPage() {
     setIsSocialSubmitting("github");
     setError(null);
 
-    const result = await loginWithGithub();
+    const result = await loginWithGithub(registrationToken);
 
     if (result.ok) {
       if (result.isNewUser) {
@@ -201,6 +202,15 @@ export default function SignupPage() {
               />
             </div>
 
+            <div>
+              <label htmlFor="registration-token" className="block text-xs font-medium text-neutral-300 mb-1.5">Código de convite do operador</label>
+              <input id="registration-token" type="password" value={registrationToken}
+                onChange={(event) => setRegistrationToken(event.target.value)} autoComplete="off"
+                className="w-full px-3.5 py-2.5 bg-[#121115] border border-white/[0.09] rounded-xl text-sm"
+                placeholder="Obrigatório também para novo cadastro social" />
+              <p className="mt-1 text-xs text-neutral-400">Solicite o código ao operador do nó. Use uma senha de 12 a 128 caracteres.</p>
+            </div>
+
             {/* Password Field */}
             <div>
               <label className="block text-xs font-medium text-neutral-300 mb-1.5">
@@ -213,7 +223,8 @@ export default function SignupPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••••••"
                   required
-                  minLength={6}
+                  minLength={12}
+                  maxLength={128}
                   autoComplete="new-password"
                   className="w-full px-3.5 py-2.5 pr-10 bg-[#121115] border border-white/[0.09] rounded-xl text-sm text-white placeholder-neutral-600 focus:outline-none focus:border-[#7d0000] focus:ring-1 focus:ring-[#7d0000] transition"
                 />

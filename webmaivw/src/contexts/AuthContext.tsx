@@ -51,9 +51,9 @@ interface AuthContextType {
   setSelectedDomainId: (id: number | null) => void;
   refreshDomains: () => Promise<void>;
   login: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
-  loginWithGoogle: () => Promise<{ ok: boolean; error?: string; isNewUser?: boolean }>;
-  loginWithGithub: () => Promise<{ ok: boolean; error?: string; isNewUser?: boolean }>;
-  register: (email: string, password: string, displayName?: string) => Promise<{ ok: boolean; data?: any; error?: string }>;
+  loginWithGoogle: (registrationToken?: string) => Promise<{ ok: boolean; error?: string; isNewUser?: boolean }>;
+  loginWithGithub: (registrationToken?: string) => Promise<{ ok: boolean; error?: string; isNewUser?: boolean }>;
+  register: (email: string, password: string, displayName?: string, registrationToken?: string) => Promise<{ ok: boolean; data?: any; error?: string }>;
   logout: () => void;
   refreshUser: () => Promise<void>;
   gatewayUrl: string;
@@ -166,7 +166,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const loginWithGoogle = async (): Promise<{ ok: boolean; error?: string; isNewUser?: boolean }> => {
+  const loginWithGoogle = async (registrationToken?: string): Promise<{ ok: boolean; error?: string; isNewUser?: boolean }> => {
     try {
       const { signInWithPopup } = await import("firebase/auth");
       const { auth, googleProvider } = await import("@/lib/firebase");
@@ -179,8 +179,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           idToken,
-          email: result.user.email,
-          displayName: result.user.displayName,
+          registrationToken,
         }),
       });
 
@@ -204,7 +203,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const loginWithGithub = async (): Promise<{ ok: boolean; error?: string; isNewUser?: boolean }> => {
+  const loginWithGithub = async (registrationToken?: string): Promise<{ ok: boolean; error?: string; isNewUser?: boolean }> => {
     try {
       const { signInWithPopup } = await import("firebase/auth");
       const { auth, githubProvider } = await import("@/lib/firebase");
@@ -217,8 +216,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           idToken,
-          email: result.user.email,
-          displayName: result.user.displayName,
+          registrationToken,
         }),
       });
 
@@ -242,12 +240,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const register = async (email: string, password: string, displayName?: string) => {
+  const register = async (email: string, password: string, displayName?: string, registrationToken?: string) => {
     try {
       const res = await fetch(`${gatewayUrl}/api/v1/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, displayName }),
+        body: JSON.stringify({ email, password, displayName, registrationToken }),
       });
 
       const data = await res.json();

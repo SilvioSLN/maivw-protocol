@@ -309,13 +309,19 @@ export default function InboxPage() {
       try {
         const params = new URLSearchParams();
         params.set("folder", folderToLoad);
-        if (user.email) params.set("email", user.email);
+
 
         const token = user?.token || (typeof window !== "undefined" ? localStorage.getItem("maivw_token") : null);
         const headers: Record<string, string> = {};
         if (token) headers["Authorization"] = `Bearer ${token}`;
 
         const res = await fetch(`${gatewayUrl}/api/v1/inbox/messages?${params.toString()}`, { headers });
+        if (!res.ok) {
+          setEmails([]);
+          setCounts({ inbox: 0, sent: 0, spam: 0, trash: 0 });
+          setActionNotice("Não foi possível acessar a caixa. Confira sua sessão e se a conta está ativa.");
+          return;
+        }
         if (res.ok) {
           const data = await res.json();
           if (data.counts) {
@@ -463,12 +469,19 @@ export default function InboxPage() {
     setShowQuotedThread(false);
   };
 
+  const mailboxHeaders = () => {
+    const token = user?.token || localStorage.getItem("maivw_token");
+    return { "Content-Type": "application/json", Authorization: `Bearer ${token || ""}` };
+  };
+
   // Mover mensagem para Lixeira
   const handleMoveToTrash = async (email: EmailMessage) => {
     try {
       const res = await fetch(`${gatewayUrl}/api/v1/inbox/messages/${email.id}`, {
         method: "DELETE",
+        headers: mailboxHeaders(),
       });
+      if (!res.ok) throw new Error("Ação não autorizada ou indisponível");
       if (res.ok) {
         setActionNotice("Mensagem movida para a Lixeira.");
         setTimeout(() => setActionNotice(null), 3000);
@@ -484,7 +497,9 @@ export default function InboxPage() {
     try {
       const res = await fetch(`${gatewayUrl}/api/v1/inbox/messages/${email.id}/restore`, {
         method: "PATCH",
+        headers: mailboxHeaders(),
       });
+      if (!res.ok) throw new Error("Ação não autorizada ou indisponível");
       if (res.ok) {
         setActionNotice("Mensagem restaurada com sucesso!");
         setTimeout(() => setActionNotice(null), 3000);
@@ -503,7 +518,9 @@ export default function InboxPage() {
     try {
       const res = await fetch(`${gatewayUrl}/api/v1/inbox/messages/${email.id}?permanent=true`, {
         method: "DELETE",
+        headers: mailboxHeaders(),
       });
+      if (!res.ok) throw new Error("Ação não autorizada ou indisponível");
       if (res.ok) {
         setActionNotice("Mensagem excluída definitivamente.");
         setTimeout(() => setActionNotice(null), 3000);
@@ -520,9 +537,11 @@ export default function InboxPage() {
       return;
     }
     try {
-      const res = await fetch(`${gatewayUrl}/api/v1/inbox/trash/empty?email=${encodeURIComponent(user?.email || "")}`, {
+      const res = await fetch(`${gatewayUrl}/api/v1/inbox/trash/empty`, {
         method: "DELETE",
+        headers: mailboxHeaders(),
       });
+      if (!res.ok) throw new Error("Ação não autorizada ou indisponível");
       if (res.ok) {
         setActionNotice("Lixeira esvaziada com sucesso!");
         setTimeout(() => setActionNotice(null), 3000);
@@ -538,9 +557,10 @@ export default function InboxPage() {
     try {
       const res = await fetch(`${gatewayUrl}/api/v1/inbox/messages/${email.id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: mailboxHeaders(),
         body: JSON.stringify({ status: "quarantined" }),
       });
+      if (!res.ok) throw new Error("Ação não autorizada ou indisponível");
       if (res.ok) {
         setActionNotice("Mensagem movida para Spam / Quarentena.");
         setTimeout(() => setActionNotice(null), 3000);

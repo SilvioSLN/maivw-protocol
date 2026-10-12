@@ -1273,7 +1273,7 @@ function AdminConsole() {
   // Create Email Account Handler
   const handleCreateAccount = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!viewingDomainId || !newLocalPart.trim() || newPassword.length < 6) return;
+    if (!viewingDomainId || !newLocalPart.trim() || newPassword.length < 12 || newPassword.length > 128) return;
 
     setIsCreatingAccount(true);
     setAccountError(null);
@@ -3945,7 +3945,8 @@ print(res.json())`}
                     onChange={(e) => setNewPassword(e.target.value)}
                     placeholder="••••••••••••"
                     required
-                    minLength={6}
+                    minLength={12}
+                    maxLength={128}
                     className="w-full px-3 py-2 pr-10 bg-[#150d0d] border border-white/[0.09] rounded-xl text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-[#7d0000]"
                   />
                   <button
@@ -3975,7 +3976,7 @@ print(res.json())`}
                 </button>
                 <button
                   type="submit"
-                  disabled={isCreatingAccount || !newLocalPart.trim() || newPassword.length < 6}
+                  disabled={isCreatingAccount || !newLocalPart.trim() || newPassword.length < 12 || newPassword.length > 128}
                   className="px-5 py-2 bg-gradient-to-r from-[#7d0000] to-[#990000] hover:from-[#900000] hover:to-[#b30000] text-white text-xs font-bold rounded-xl transition cursor-pointer shadow-md disabled:opacity-50"
                 >
                   {isCreatingAccount ? "Criando..." : "Criar Caixa"}
