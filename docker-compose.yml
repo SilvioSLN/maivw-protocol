@@ -14,6 +14,28 @@
 
 services:
   # ============================================
+  # Anvil — Local Ethereum Blockchain
+  # ============================================
+  anvil:
+    image: ghcr.io/foundry-rs/foundry:latest
+    entrypoint: [ "anvil" ]
+    command:
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8545"
+      - "--block-time"
+      - "2"
+    ports:
+      - "127.0.0.1:55443:8545"
+    healthcheck:
+      test: [ "CMD", "cast", "chain-id", "--rpc-url", "http://localhost:8545" ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  # ============================================
   # Postgres — Banco de Dados Relacional
   # ============================================
   postgres:
@@ -23,7 +45,7 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
       - POSTGRES_DB=maivw_reputation
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:53443:5432"
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
     healthcheck:
@@ -39,7 +61,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "127.0.0.1:6379:6379"
+      - "127.0.0.1:54443:6379"
     volumes:
       - ./data/redis:/data
     command: redis-server --appendonly yes
@@ -57,11 +79,12 @@ services:
       context: ./gateway
       dockerfile: Dockerfile
     ports:
-      - "127.0.0.1:3001:3001"
+      - "127.0.0.1:51443:3001"
     env_file:
       - .env
     volumes:
       - ./data/attachments:/app/data/attachments
+      - ./data/certs:/app/data/certs
     environment:
       - MAIVW_EDITION=community
       - GATEWAY_PORT=3001
@@ -75,6 +98,7 @@ services:
       - INTERNAL_SERVICE_KEY=${INTERNAL_SERVICE_KEY}
       - BASE_RPC_URL=${BASE_RPC_URL:-https://sepolia.base.org}
       - BASE_REGISTRY_ADDRESS=${BASE_REGISTRY_ADDRESS:-}
+      - REGISTRY_CONTRACT_ADDRESS=${REGISTRY_CONTRACT_ADDRESS:-}
     depends_on:
       redis:
         condition: service_healthy
@@ -95,7 +119,7 @@ services:
       context: ./webmaivw
       dockerfile: Dockerfile
       args:
-        - NEXT_PUBLIC_GATEWAY_URL=${NEXT_PUBLIC_GATEWAY_URL:-http://localhost:3001}
+        - NEXT_PUBLIC_GATEWAY_URL=${NEXT_PUBLIC_GATEWAY_URL:-http://localhost:51443}
         - NEXT_PUBLIC_RPC_URL=${NEXT_PUBLIC_RPC_URL:-https://sepolia.base.org}
         - NEXT_PUBLIC_CHAIN_ID=${NEXT_PUBLIC_CHAIN_ID:-84532}
         - NEXT_PUBLIC_REGISTRY_CONTRACT_ADDRESS=${NEXT_PUBLIC_REGISTRY_CONTRACT_ADDRESS:-}
@@ -107,12 +131,12 @@ services:
         - NEXT_PUBLIC_FIREBASE_APP_ID=${NEXT_PUBLIC_FIREBASE_APP_ID:-}
         - NEXT_PUBLIC_PAYMENT_API_URL=${NEXT_PUBLIC_PAYMENT_API_URL:-https://api-payment.maivw.com}
     environment:
-      - NEXT_PUBLIC_GATEWAY_URL=${NEXT_PUBLIC_GATEWAY_URL:-http://localhost:3001}
+      - NEXT_PUBLIC_GATEWAY_URL=${NEXT_PUBLIC_GATEWAY_URL:-http://localhost:51443}
       - NEXT_PUBLIC_RPC_URL=${NEXT_PUBLIC_RPC_URL:-https://sepolia.base.org}
       - NEXT_PUBLIC_CHAIN_ID=${NEXT_PUBLIC_CHAIN_ID:-84532}
       - NEXT_PUBLIC_REGISTRY_CONTRACT_ADDRESS=${NEXT_PUBLIC_REGISTRY_CONTRACT_ADDRESS:-}
     ports:
-      - "127.0.0.1:3002:3002"
+      - "127.0.0.1:52443:3002"
     depends_on:
       gateway:
         condition: service_healthy
@@ -125,17 +149,17 @@ services:
       context: ./dashboard
       dockerfile: Dockerfile
       args:
-        - NEXT_PUBLIC_GATEWAY_URL=${NEXT_PUBLIC_GATEWAY_URL:-http://localhost:3001}
+        - NEXT_PUBLIC_GATEWAY_URL=${NEXT_PUBLIC_GATEWAY_URL:-http://localhost:51443}
         - NEXT_PUBLIC_RPC_URL=${NEXT_PUBLIC_RPC_URL:-https://sepolia.base.org}
         - NEXT_PUBLIC_CHAIN_ID=${NEXT_PUBLIC_CHAIN_ID:-84532}
         - NEXT_PUBLIC_REGISTRY_CONTRACT_ADDRESS=${NEXT_PUBLIC_REGISTRY_CONTRACT_ADDRESS:-}
-        - NEXT_PUBLIC_WEBMAIVW_URL=${NEXT_PUBLIC_WEBMAIVW_URL:-http://localhost:3002}
+        - NEXT_PUBLIC_WEBMAIVW_URL=${NEXT_PUBLIC_WEBMAIVW_URL:-http://localhost:52443}
     environment:
-      - NEXT_PUBLIC_GATEWAY_URL=${NEXT_PUBLIC_GATEWAY_URL:-http://localhost:3001}
+      - NEXT_PUBLIC_GATEWAY_URL=${NEXT_PUBLIC_GATEWAY_URL:-http://localhost:51443}
       - NEXT_PUBLIC_RPC_URL=${NEXT_PUBLIC_RPC_URL:-https://sepolia.base.org}
       - NEXT_PUBLIC_CHAIN_ID=${NEXT_PUBLIC_CHAIN_ID:-84532}
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:50443:3000"
     depends_on:
       gateway:
         condition: service_healthy
