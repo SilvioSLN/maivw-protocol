@@ -26,7 +26,7 @@ Esta documentação descreve o código deste repositório. A existência de um r
 
 Utilize ambiente de desenvolvimento ou piloto controlado. As portas do Compose ficam vinculadas ao loopback do host. Não exponha toda a API por um proxy público: rotas de administração, onboarding e anexos ainda precisam de revisão de autenticação e autorização.
 
-Antes de oferecer serviço em produção, conclua a revisão de acesso por organização, assinatura de envelope, replay, onboarding e anexos; execute testes entre dois nós e restauração de backup. O checklist de engenharia está em `docs/IMPLEMENTATION-CHECKLIST.md` no repositório.
+Antes de oferecer serviço em produção, conclua a revisão de acesso por organização, assinatura de envelope, replay, onboarding e anexos; execute testes entre dois nós e restauração de backup.
 
 ## Dependências e confiança
 

@@ -115,7 +115,7 @@ maivw-protocol/
 O protocolo MAIVW está atualmente em estágio de **Pilotos Controlados / Testnet Pública**. 
 
 A segurança e a transparência técnica são princípios inegociáveis do projeto:
-- **Auditabilidade e Hardening:** 39 de 42 marcos de engenharia e segurança já foram concluídos e validados (ver [Checklist de Implementação](docs/IMPLEMENTATION-CHECKLIST.md)).
+- **Auditabilidade e Hardening:** Marcos de engenharia e segurança validados (ver [Estado dos Recursos](https://docs.maivw.com/status/)).
 - **Envelope v2 Canônico:** Assinatura estruturada EIP-191 com proteção ativa contra replay por ID e janela temporal.
 - **Ancoragem On-Chain / DANE (S08):** Validação mTLS criptografada ponta a ponta com impressões digitais de certificados ancoradas no contrato `MAIVWRegistry`.
 - **Anti-SSRF:** Proxy de imagens com resolução DNS segura contra redes privadas e metadados de nuvem.
@@ -142,7 +142,7 @@ Qualquer contribuição fortalece a soberania de dados e acelera o lançamento d
 - 📖 **Documentação Oficial:** [https://docs.maivw.com](https://docs.maivw.com)
 - 🌐 **Plataforma Gerenciada (Cloud):** [https://app.maivw.com](https://app.maivw.com)
 - 💳 **Doações e Patrocínio:** [Link Seguro Stripe](https://donate.stripe.com/cNi7sKeUIb5P96deZk2kw00)
-- 📋 **Checklist Técnico:** [docs/IMPLEMENTATION-CHECKLIST.md](docs/IMPLEMENTATION-CHECKLIST.md)
+- 📊 **Estado dos Recursos:** [https://docs.maivw.com/status/](https://docs.maivw.com/status/)
 
 ---
 
