@@ -1,0 +1,123 @@
+# MAIVW em uma Testnet EVM com Registry já implantado.
+# Uso: docker compose -f compose.testnet.yml --env-file .env.testnet up -d --build
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?configure POSTGRES_PASSWORD em .env.testnet}
+      POSTGRES_DB: maivw_reputation
+    ports:
+      - "127.0.0.1:53443:5432"
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d maivw_reputation"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    ports:
+      - "127.0.0.1:54443:6379"
+    volumes:
+      - ./data/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+    ports:
+      - "127.0.0.1:51443:3001"
+    volumes:
+      - ./data/attachments:/app/data/attachments
+      - ./data/certs:/app/data/certs
+    environment:
+      MAIVW_EDITION: community
+      GATEWAY_PORT: "3001"
+      GATEWAY_HOST: 0.0.0.0
+      GATEWAY_PUBLIC_URL: ${NEXT_PUBLIC_GATEWAY_URL:?configure NEXT_PUBLIC_GATEWAY_URL em .env.testnet}
+      RPC_URL: ${RPC_URL:?configure RPC_URL em .env.testnet}
+      CHAIN_ID: ${CHAIN_ID:?configure CHAIN_ID em .env.testnet}
+      REGISTRY_CONTRACT_ADDRESS: ${REGISTRY_CONTRACT_ADDRESS:?configure REGISTRY_CONTRACT_ADDRESS em .env.testnet}
+      BASE_RPC_URL: ${BASE_RPC_URL:-${RPC_URL}}
+      BASE_REGISTRY_ADDRESS: ${BASE_REGISTRY_ADDRESS:-${REGISTRY_CONTRACT_ADDRESS}}
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/maivw_reputation?schema=public
+      JWT_SECRET: ${JWT_SECRET:?configure JWT_SECRET em .env.testnet}
+      MASTER_SECRET_KEY: ${MASTER_SECRET_KEY:?configure MASTER_SECRET_KEY em .env.testnet}
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:?configure INTERNAL_SERVICE_KEY em .env.testnet}
+      ADMIN_REGISTRATION_TOKEN: ${ADMIN_REGISTRATION_TOKEN:?configure ADMIN_REGISTRATION_TOKEN em .env.testnet}
+      ORACLE_SIGNER_TYPE: ${ORACLE_SIGNER_TYPE:-local}
+      ORACLE_PRIVATE_KEY: ${ORACLE_PRIVATE_KEY:-}
+      GCP_KMS_KEY_VERSION: ${GCP_KMS_KEY_VERSION:-}
+      GCP_KMS_CREDENTIALS_BASE64: ${GCP_KMS_CREDENTIALS_BASE64:-}
+      ORACLE_MIN_BALANCE_WEI: ${ORACLE_MIN_BALANCE_WEI:-10000000000000000}
+      SENDER_DOMAIN: ${SENDER_DOMAIN:?configure SENDER_DOMAIN em .env.testnet}
+      MAIVW_CORE_DOMAIN: ${MAIVW_CORE_DOMAIN:?configure MAIVW_CORE_DOMAIN em .env.testnet}
+      DEFAULT_P2P_ENDPOINT: ${DEFAULT_P2P_ENDPOINT:?configure DEFAULT_P2P_ENDPOINT em .env.testnet}
+      PLATFORM_INGRESS_HOSTS: ${PLATFORM_INGRESS_HOSTS:-}
+      IS_CLOUD: "false"
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  webmaivw:
+    build:
+      context: ./webmaivw
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_GATEWAY_URL: ${NEXT_PUBLIC_GATEWAY_URL:?configure NEXT_PUBLIC_GATEWAY_URL em .env.testnet}
+        NEXT_PUBLIC_RPC_URL: ${NEXT_PUBLIC_RPC_URL:-${RPC_URL}}
+        NEXT_PUBLIC_CHAIN_ID: ${CHAIN_ID}
+        NEXT_PUBLIC_REGISTRY_CONTRACT_ADDRESS: ${REGISTRY_CONTRACT_ADDRESS}
+        NEXT_PUBLIC_FIREBASE_API_KEY: ${NEXT_PUBLIC_FIREBASE_API_KEY:-}
+        NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN:-}
+        NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${NEXT_PUBLIC_FIREBASE_PROJECT_ID:-}
+        NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: ${NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET:-}
+        NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID:-}
+        NEXT_PUBLIC_FIREBASE_APP_ID: ${NEXT_PUBLIC_FIREBASE_APP_ID:-}
+        NEXT_PUBLIC_PAYMENT_API_URL: ""
+    ports:
+      - "127.0.0.1:52443:3002"
+    depends_on:
+      gateway:
+        condition: service_healthy
+
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_GATEWAY_URL: ${NEXT_PUBLIC_GATEWAY_URL}
+        NEXT_PUBLIC_RPC_URL: ${NEXT_PUBLIC_RPC_URL:-${RPC_URL}}
+        NEXT_PUBLIC_CHAIN_ID: ${CHAIN_ID}
+        NEXT_PUBLIC_REGISTRY_CONTRACT_ADDRESS: ${REGISTRY_CONTRACT_ADDRESS}
+        NEXT_PUBLIC_WEBMAIVW_URL: ${NEXT_PUBLIC_WEBMAIVW_URL:?configure NEXT_PUBLIC_WEBMAIVW_URL em .env.testnet}
+    ports:
+      - "127.0.0.1:50443:3000"
+    depends_on:
+      gateway:
+        condition: service_healthy
+
+networks:
+  default:
+    name: ${MAIVW_DOCKER_NETWORK:-maivw-protocol-testnet-network}
+    driver: bridge

@@ -1,165 +1,162 @@
-# ==============================================================================
-# MAIVW Community Edition — Self-Hosted Docker Compose
-# ==============================================================================
-# Este arquivo sobe o stack 100% Open Source do MAIVW:
-#   - Banco de Dados (PostgreSQL 16)
-#   - Fila & Cache (Redis 7)
-#   - Gateway P2P & SMTP (Fastify)
-#   - WebMaivw (Webmail Moderno Next.js)
-#   - Dashboard de Observabilidade On-Chain
-#
-# Para rodar:
-#   docker compose up -d
-# ==============================================================================
+# MAIVW Community Edition — demonstração local completa.
+# Inicie sem criar .env: docker compose up -d --build
+# Os valores padrão deste arquivo são públicos e servem somente para o Anvil local.
 
 services:
-  # ============================================
-  # Anvil — Local Ethereum Blockchain
-  # ============================================
   anvil:
-    image: ghcr.io/foundry-rs/foundry:latest
-    entrypoint: [ "anvil" ]
-    command:
-      - "--host"
-      - "0.0.0.0"
-      - "--port"
-      - "8545"
-      - "--block-time"
-      - "2"
+    image: ghcr.io/foundry-rs/foundry@sha256:0c00cb0bda1ab1b91c9a6bf60f4c76c09c1a8870824b6d4718afbabacf6f9a17
+    entrypoint: ["anvil"]
+    user: "0:0"
+    command: ["--host", "0.0.0.0", "--port", "8545", "--chain-id", "31337", "--block-time", "2", "--state", "/data/state.json", "--state-interval", "1"]
     ports:
       - "127.0.0.1:55443:8545"
+    volumes:
+      - anvil-state:/data
     healthcheck:
-      test: [ "CMD", "cast", "chain-id", "--rpc-url", "http://localhost:8545" ]
-      interval: 5s
+      test: ["CMD", "cast", "chain-id", "--rpc-url", "http://localhost:8545"]
+      interval: 3s
       timeout: 3s
-      retries: 10
-      start_period: 5s
+      retries: 20
+      start_period: 3s
 
-  # ============================================
-  # Postgres — Banco de Dados Relacional
-  # ============================================
+  contracts-deployer:
+    build:
+      context: ./contracts
+      dockerfile: Dockerfile
+      target: deployer
+    entrypoint: ["sh", "script/deploy-local.sh"]
+    user: "0:0"
+    environment:
+      RPC_URL: http://anvil:8545
+      CHAIN_ID: "31337"
+      DEPLOYER_PRIVATE_KEY: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+      DEPLOY_OUTPUT_DIR: /deploy-output
+    volumes:
+      - deploy-output:/deploy-output
+    depends_on:
+      anvil:
+        condition: service_healthy
+    restart: "no"
+
   postgres:
     image: postgres:16-alpine
     environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
-      - POSTGRES_DB=maivw_reputation
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: maivw_reputation
     ports:
       - "127.0.0.1:53443:5432"
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U postgres -d maivw_reputation" ]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d maivw_reputation"]
       interval: 5s
       timeout: 3s
       retries: 10
       start_period: 5s
 
-  # ============================================
-  # Redis — Fila de Mensagens & Cache
-  # ============================================
   redis:
     image: redis:7-alpine
+    command: redis-server --appendonly yes
     ports:
       - "127.0.0.1:54443:6379"
     volumes:
       - ./data/redis:/data
-    command: redis-server --appendonly yes
     healthcheck:
-      test: [ "CMD", "redis-cli", "ping" ]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
-      retries: 5
+      retries: 10
 
-  # ============================================
-  # Gateway — Motor P2P, Inbound/Outbound SMTP
-  # ============================================
   gateway:
     build:
       context: ./gateway
       dockerfile: Dockerfile
     ports:
       - "127.0.0.1:51443:3001"
-    env_file:
-      - .env
     volumes:
       - ./data/attachments:/app/data/attachments
       - ./data/certs:/app/data/certs
+      - deploy-output:/deploy-output:ro
     environment:
-      - MAIVW_EDITION=community
-      - GATEWAY_PORT=3001
-      - GATEWAY_HOST=0.0.0.0
-      - RPC_URL=${RPC_URL:-https://sepolia.base.org}
-      - CHAIN_ID=${CHAIN_ID:-84532}
-      - REDIS_URL=redis://redis:6379
-      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/maivw_reputation?schema=public
-      - JWT_SECRET=${JWT_SECRET}
-      - MASTER_SECRET_KEY=${MASTER_SECRET_KEY}
-      - INTERNAL_SERVICE_KEY=${INTERNAL_SERVICE_KEY}
-      - BASE_RPC_URL=${BASE_RPC_URL:-https://sepolia.base.org}
-      - BASE_REGISTRY_ADDRESS=${BASE_REGISTRY_ADDRESS:-}
-      - REGISTRY_CONTRACT_ADDRESS=${REGISTRY_CONTRACT_ADDRESS:-}
+      MAIVW_EDITION: community
+      GATEWAY_PORT: "3001"
+      GATEWAY_HOST: 0.0.0.0
+      GATEWAY_PUBLIC_URL: ${NEXT_PUBLIC_GATEWAY_URL:-http://localhost:51443}
+      RPC_URL: http://anvil:8545
+      CHAIN_ID: "31337"
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/maivw_reputation?schema=public
+      JWT_SECRET: ${JWT_SECRET:-local-demo-jwt-secret-change-before-testnet-2026}
+      MASTER_SECRET_KEY: ${MASTER_SECRET_KEY:-local-demo-master-key-change-before-testnet-2026}
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:-local-demo-internal-key-change-before-testnet-2026}
+      ADMIN_REGISTRATION_TOKEN: ${ADMIN_REGISTRATION_TOKEN:-local-demo-admin-invite-change-before-testnet-2026}
+      DEPLOYER_PRIVATE_KEY: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+      ORACLE_SIGNER_TYPE: local
+      ORACLE_PRIVATE_KEY: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+      ORACLE_MIN_BALANCE_WEI: "10000000000000000"
+      SENDER_DOMAIN: demo.local
+      MAIVW_CORE_DOMAIN: demo.local
+      DEFAULT_P2P_ENDPOINT: http://gateway:3001/api/v1/inbox
+      BASE_RPC_URL: http://anvil:8545
+      IS_CLOUD: "false"
     depends_on:
       redis:
         condition: service_healthy
       postgres:
         condition: service_healthy
+      contracts-deployer:
+        condition: service_completed_successfully
     healthcheck:
-      test: [ "CMD", "node", "-e", "fetch('http://localhost:3001/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))" ]
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 10s
       timeout: 5s
-      retries: 5
-      start_period: 15s
+      retries: 10
+      start_period: 20s
 
-  # ============================================
-  # WebMaivw — Interface Webmail Corporativa
-  # ============================================
   webmaivw:
     build:
       context: ./webmaivw
       dockerfile: Dockerfile
       args:
-        - NEXT_PUBLIC_GATEWAY_URL=${NEXT_PUBLIC_GATEWAY_URL:-http://localhost:51443}
-        - NEXT_PUBLIC_RPC_URL=${NEXT_PUBLIC_RPC_URL:-https://sepolia.base.org}
-        - NEXT_PUBLIC_CHAIN_ID=${NEXT_PUBLIC_CHAIN_ID:-84532}
-        - NEXT_PUBLIC_REGISTRY_CONTRACT_ADDRESS=${NEXT_PUBLIC_REGISTRY_CONTRACT_ADDRESS:-}
-        - NEXT_PUBLIC_FIREBASE_API_KEY=${NEXT_PUBLIC_FIREBASE_API_KEY:-}
-        - NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=${NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN:-}
-        - NEXT_PUBLIC_FIREBASE_PROJECT_ID=${NEXT_PUBLIC_FIREBASE_PROJECT_ID:-}
-        - NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=${NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET:-}
-        - NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=${NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID:-}
-        - NEXT_PUBLIC_FIREBASE_APP_ID=${NEXT_PUBLIC_FIREBASE_APP_ID:-}
-        - NEXT_PUBLIC_PAYMENT_API_URL=${NEXT_PUBLIC_PAYMENT_API_URL:-https://api-payment.maivw.com}
-    environment:
-      - NEXT_PUBLIC_GATEWAY_URL=${NEXT_PUBLIC_GATEWAY_URL:-http://localhost:51443}
-      - NEXT_PUBLIC_RPC_URL=${NEXT_PUBLIC_RPC_URL:-https://sepolia.base.org}
-      - NEXT_PUBLIC_CHAIN_ID=${NEXT_PUBLIC_CHAIN_ID:-84532}
-      - NEXT_PUBLIC_REGISTRY_CONTRACT_ADDRESS=${NEXT_PUBLIC_REGISTRY_CONTRACT_ADDRESS:-}
+        NEXT_PUBLIC_GATEWAY_URL: ${NEXT_PUBLIC_GATEWAY_URL:-http://localhost:51443}
+        NEXT_PUBLIC_RPC_URL: ${NEXT_PUBLIC_RPC_URL:-http://localhost:55443}
+        NEXT_PUBLIC_CHAIN_ID: "31337"
+        NEXT_PUBLIC_REGISTRY_CONTRACT_ADDRESS: ""
+        NEXT_PUBLIC_FIREBASE_API_KEY: ${NEXT_PUBLIC_FIREBASE_API_KEY:-}
+        NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN:-}
+        NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${NEXT_PUBLIC_FIREBASE_PROJECT_ID:-}
+        NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: ${NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET:-}
+        NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID:-}
+        NEXT_PUBLIC_FIREBASE_APP_ID: ${NEXT_PUBLIC_FIREBASE_APP_ID:-}
+        NEXT_PUBLIC_PAYMENT_API_URL: ""
     ports:
       - "127.0.0.1:52443:3002"
     depends_on:
       gateway:
         condition: service_healthy
 
-  # ============================================
-  # Dashboard — Observabilidade On-Chain
-  # ============================================
   dashboard:
     build:
       context: ./dashboard
       dockerfile: Dockerfile
       args:
-        - NEXT_PUBLIC_GATEWAY_URL=${NEXT_PUBLIC_GATEWAY_URL:-http://localhost:51443}
-        - NEXT_PUBLIC_RPC_URL=${NEXT_PUBLIC_RPC_URL:-https://sepolia.base.org}
-        - NEXT_PUBLIC_CHAIN_ID=${NEXT_PUBLIC_CHAIN_ID:-84532}
-        - NEXT_PUBLIC_REGISTRY_CONTRACT_ADDRESS=${NEXT_PUBLIC_REGISTRY_CONTRACT_ADDRESS:-}
-        - NEXT_PUBLIC_WEBMAIVW_URL=${NEXT_PUBLIC_WEBMAIVW_URL:-http://localhost:52443}
-    environment:
-      - NEXT_PUBLIC_GATEWAY_URL=${NEXT_PUBLIC_GATEWAY_URL:-http://localhost:51443}
-      - NEXT_PUBLIC_RPC_URL=${NEXT_PUBLIC_RPC_URL:-https://sepolia.base.org}
-      - NEXT_PUBLIC_CHAIN_ID=${NEXT_PUBLIC_CHAIN_ID:-84532}
+        NEXT_PUBLIC_GATEWAY_URL: ${NEXT_PUBLIC_GATEWAY_URL:-http://localhost:51443}
+        NEXT_PUBLIC_RPC_URL: ${NEXT_PUBLIC_RPC_URL:-http://localhost:55443}
+        NEXT_PUBLIC_CHAIN_ID: "31337"
+        NEXT_PUBLIC_REGISTRY_CONTRACT_ADDRESS: ""
+        NEXT_PUBLIC_WEBMAIVW_URL: ${NEXT_PUBLIC_WEBMAIVW_URL:-http://localhost:52443}
     ports:
       - "127.0.0.1:50443:3000"
     depends_on:
       gateway:
         condition: service_healthy
+
+volumes:
+  anvil-state:
+  deploy-output:
+
+networks:
+  default:
+    name: ${MAIVW_DOCKER_NETWORK:-maivw-protocol-local-network}
+    driver: bridge
