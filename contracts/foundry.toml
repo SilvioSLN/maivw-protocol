@@ -1,0 +1,34 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+solc_version = "0.8.28"
+optimizer = true
+optimizer_runs = 1
+via_ir = true
+cbor_metadata = false
+bytecode_hash = "none"
+ffi = false
+
+# Remappings for OpenZeppelin
+remappings = [
+    "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/",
+    "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+    "@openzeppelin/=lib/openzeppelin-contracts/",
+    "forge-std/=lib/forge-std/src/"
+]
+
+[rpc_endpoints]
+anvil = "http://anvil:8545"
+anvil_local = "http://localhost:8545"
+amoy = "${AMOY_RPC_URL}"
+base_sepolia = "${BASE_SEPOLIA_RPC_URL}"
+
+[etherscan]
+amoy = { key = "${POLYGONSCAN_API_KEY}", chain = 80002 }
+base_sepolia = { key = "${BASESCAN_API_KEY}", url = "https://api-sepolia.basescan.org/api", chain = 84532 }
+
+[fmt]
+line_length = 120
+tab_width = 4
+bracket_spacing = true

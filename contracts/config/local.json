@@ -1,0 +1,24 @@
+{
+  "chainId": 31337,
+  "networkName": "anvil-local",
+  "standardFee": "10000000000000000000",
+  "providerFee": "1000000000000000000000",
+  "mirrorFee": "3000000000000000",
+  "slashDelay": 0,
+  "recoveryDelay": 0,
+  "startup": {
+    "requiredStake": "1000000000000000000",
+    "dailyLimit": 50000,
+    "penaltyPerStrike": "50000000000000000"
+  },
+  "growth": {
+    "requiredStake": "10000000000000000000",
+    "dailyLimit": 1000000,
+    "penaltyPerStrike": "50000000000000000"
+  },
+  "enterprise": {
+    "requiredStake": "100000000000000000000",
+    "dailyLimit": 1000000000,
+    "penaltyPerStrike": "50000000000000000"
+  }
+}

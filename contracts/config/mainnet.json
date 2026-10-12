@@ -1,0 +1,24 @@
+{
+  "chainId": 8453,
+  "networkName": "base-mainnet",
+  "standardFee": "1000000000000000",
+  "providerFee": "5000000000000000",
+  "mirrorFee": "3000000000000000",
+  "slashDelay": 172800,
+  "recoveryDelay": 259200,
+  "startup": {
+    "requiredStake": "10000000000000000",
+    "dailyLimit": 50000,
+    "penaltyPerStrike": "500000000000000"
+  },
+  "growth": {
+    "requiredStake": "100000000000000000",
+    "dailyLimit": 1000000,
+    "penaltyPerStrike": "500000000000000"
+  },
+  "enterprise": {
+    "requiredStake": "1000000000000000000",
+    "dailyLimit": 1000000000,
+    "penaltyPerStrike": "500000000000000"
+  }
+}
