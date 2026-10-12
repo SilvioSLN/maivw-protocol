@@ -1,13 +1,9 @@
 FROM node:22-alpine
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
-
 WORKDIR /app
 
-COPY package.json ./
-
-# Install deps with ignore-scripts to prevent pnpm 10+ build script errors
-RUN pnpm config set ignore-scripts true && pnpm install
+COPY package.json package-lock.json ./
+RUN npm ci
 
 COPY tsconfig.json next.config.mjs tailwind.config.js postcss.config.mjs ./
 COPY public/ public/
@@ -42,9 +38,9 @@ ENV NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=$NEXT_PUBLIC_FIREBASE_MESSAGING_SEN
 ARG NEXT_PUBLIC_FIREBASE_APP_ID=
 ENV NEXT_PUBLIC_FIREBASE_APP_ID=$NEXT_PUBLIC_FIREBASE_APP_ID
 
-RUN pnpm run build
+RUN npm run build
 
 ENV NODE_ENV=production
 EXPOSE 3002
 
-CMD ["pnpm", "run", "start"]
+CMD ["npm", "run", "start"]

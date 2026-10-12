@@ -129,7 +129,9 @@ export default function OnboardingPage() {
     oracleAddress?: string;
     contractOracleAddress?: string;
     remoteOracleUrl?: string;
+    defaultEndpoint?: string;
     defaultEndpointPattern?: string;
+    dnsMode?: "local-demo" | "public-dns";
   } | null>(null);
   const [p2pEndpoint, setP2pEndpoint] = useState<string>("");
   const [p2pEndpointError, setP2pEndpointError] = useState<string | null>(null);
@@ -145,6 +147,7 @@ export default function OnboardingPage() {
           const data = await res.json();
           setNodeMode(data);
           if (Number.isInteger(data.chainId)) setTargetChainId(data.chainId);
+          if (data.defaultEndpoint) setP2pEndpoint(data.defaultEndpoint);
         }
       } catch {
         // Fallback para autodetecção local
@@ -168,6 +171,27 @@ export default function OnboardingPage() {
         window.location.hostname === "127.0.0.1" ||
         !window.location.hostname.includes("maivw.com")
       : true;
+
+  const endpointRequiresHttps = nodeMode?.dnsMode !== "local-demo";
+
+  const validateP2pEndpoint = (endpoint: string): boolean => {
+    if (!endpoint) return true;
+    try {
+      const parsed = new URL(endpoint);
+      if (endpointRequiresHttps && parsed.protocol !== "https:") {
+        setP2pEndpointError("O endpoint P2P deve usar HTTPS fora da demonstração local.");
+        return false;
+      }
+      if (!endpointRequiresHttps && parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        setP2pEndpointError("O endpoint P2P deve usar HTTP ou HTTPS.");
+        return false;
+      }
+      return true;
+    } catch {
+      setP2pEndpointError("Informe uma URL válida para o endpoint P2P.");
+      return false;
+    }
+  };
 
   // Auth Guard: redirect to /signup if not logged in
   useEffect(() => {
@@ -311,7 +335,7 @@ export default function OnboardingPage() {
     if (chainId === 31337) {
       return {
         name: "Anvil Local",
-        url: `http://localhost:8545/tx/${txHash}`,
+        url: process.env.NEXT_PUBLIC_RPC_URL || "http://localhost:55443",
       };
     }
     return {
@@ -538,10 +562,7 @@ export default function OnboardingPage() {
     if (!challengeToken || !user?.id) return;
 
     const trimmedEndpoint = p2pEndpoint.trim();
-    if (trimmedEndpoint && !trimmedEndpoint.startsWith("https://")) {
-      setP2pEndpointError("O endpoint P2P deve obrigatoriamente iniciar com https://");
-      return;
-    }
+    if (!validateP2pEndpoint(trimmedEndpoint)) return;
     setP2pEndpointError(null);
 
     setIsRegisteringWeb3Direct(true);
@@ -654,10 +675,7 @@ export default function OnboardingPage() {
     if (!challengeToken || !user?.id) return;
 
     const trimmedEndpoint = p2pEndpoint.trim();
-    if (trimmedEndpoint && !trimmedEndpoint.startsWith("https://")) {
-      setP2pEndpointError("O endpoint P2P deve obrigatoriamente iniciar com https://");
-      return;
-    }
+    if (!validateP2pEndpoint(trimmedEndpoint)) return;
     setP2pEndpointError(null);
 
     setIsRegisteringOnChain(true);
@@ -1175,10 +1193,10 @@ export default function OnboardingPage() {
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
                         <Network className="w-4 h-4 text-blue-400" />
-                        <span className="text-xs font-bold text-white">Endpoint de Recepção P2P (Inbound HTTPS)</span>
+                        <span className="text-xs font-bold text-white">Endpoint de Recepção P2P</span>
                       </div>
                       <span className="text-[10px] px-2 py-0.5 rounded bg-blue-500/10 text-blue-300 border border-blue-500/20 font-mono">
-                        HTTPS Obrigatório
+                        {endpointRequiresHttps ? "HTTPS obrigatório" : "HTTP local permitido"}
                       </span>
                     </div>
                     <div className="text-[11px] text-neutral-400">
@@ -1192,12 +1210,12 @@ export default function OnboardingPage() {
                           setP2pEndpoint(e.target.value);
                           if (p2pEndpointError) setP2pEndpointError(null);
                         }}
-                        placeholder={`https://mw-p2p.${domainName || "empresa.com"}/api/v1/inbox`}
+                        placeholder={nodeMode?.defaultEndpoint || `https://mw-p2p.${domainName || "empresa.com"}/api/v1/inbox`}
                         className="flex-1 bg-black/60 border border-white/[0.1] rounded-xl px-3.5 py-2.5 text-xs font-mono text-white placeholder-neutral-600 focus:outline-none focus:border-blue-500/60"
                       />
                       <button
                         type="button"
-                        onClick={() => setP2pEndpoint(`https://mw-p2p.${domainName.trim().toLowerCase()}/api/v1/inbox`)}
+                        onClick={() => setP2pEndpoint(nodeMode?.defaultEndpoint || `https://mw-p2p.${domainName.trim().toLowerCase()}/api/v1/inbox`)}
                         className="px-3 py-2.5 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-neutral-300 rounded-xl text-xs font-medium cursor-pointer transition shrink-0"
                         title="Restaurar padrão"
                       >
