@@ -8,7 +8,7 @@ import type { PrismaClient } from "@prisma/client";
 import type { KeyManagementService } from "../services/KeyManagementService.js";
 import type { OracleService } from "../services/OracleService.js";
 import type { LedgerService } from "../services/LedgerService.js";
-import type { EnvConfig } from "../config.js";
+import { isLocalDemoConfig, type EnvConfig } from "../config.js";
 import type { Address } from "viem";
 
 const ChallengeSchema = z.object({
@@ -22,19 +22,14 @@ const CheckDnsSchema = z.object({
   simulate: z.literal(false).optional(),
 });
 
-const HttpsUrlSchema = z
-  .string()
-  .url("O endpoint P2P deve ser uma URL válida")
-  .refine((url) => url.startsWith("https://"), {
-    message: "O endpoint P2P deve obrigatoriamente utilizar o protocolo seguro HTTPS (https://)",
-  });
+const EndpointUrlSchema = z.string().url("O endpoint P2P deve ser uma URL válida");
 
 const VerifyAndRegisterSchema = z.object({
   domainName: z.string().min(3),
   userId: z.number().int().positive(),
   token: z.string().min(8),
   publicKey: z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional(),
-  endpointUrl: HttpsUrlSchema.optional(),
+  endpointUrl: EndpointUrlSchema.optional(),
   simulateDns: z.literal(false).optional(),
   targetChainId: z.number().int().optional(),
 });
@@ -45,7 +40,7 @@ const ClaimProofSchema = z.object({
   token: z.string().min(8),
   callerAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/),
   publicKey: z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional(),
-  endpointUrl: HttpsUrlSchema.optional(),
+  endpointUrl: EndpointUrlSchema.optional(),
   targetChainId: z.number().int().optional(),
   simulateDns: z.literal(false).optional(),
 });
@@ -53,7 +48,7 @@ const ClaimProofSchema = z.object({
 const FinalizeWeb3RegistrationSchema = z.object({
   domainId: z.number().int().positive(),
   txHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
-  endpointUrl: HttpsUrlSchema.optional(),
+  endpointUrl: EndpointUrlSchema.optional(),
   targetChainId: z.number().int().optional(),
 });
 
@@ -76,7 +71,12 @@ interface OnboardingRouteOptions {
 
 export async function onboardingRoutes(app: FastifyInstance, options: OnboardingRouteOptions) {
   const { prisma, kms, oracle, ledger, config } = options;
+  const isLocalDemo = Boolean(config && isLocalDemoConfig(config));
   async function hasDnsChallenge(domain: string, expected: string): Promise<boolean> {
+    if (isLocalDemo) {
+      app.log.info({ domain }, "[ONBOARDING] desafio DNS aprovado no modo de demonstração local");
+      return true;
+    }
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const records = await Promise.race([
@@ -96,6 +96,11 @@ export async function onboardingRoutes(app: FastifyInstance, options: Onboarding
     if (body.userId !== undefined && body.userId !== current.id) return reply.status(403).send({ error: "Usuário não corresponde à sessão" });
     if (body.targetChainId !== undefined && body.targetChainId !== config.CHAIN_ID) return reply.status(400).send({ error: "Use a rede configurada neste nó" });
     if (body.simulate === true || body.simulateDns === true) return reply.status(400).send({ error: "Simulação DNS desativada" });
+    if (body.endpointUrl !== undefined) {
+      const endpoint = EndpointUrlSchema.safeParse(body.endpointUrl);
+      if (!endpoint.success) return reply.status(400).send({ error: "Endpoint P2P inválido" });
+      if (!isLocalDemo && new URL(endpoint.data).protocol !== "https:") return reply.status(400).send({ error: "Endpoint P2P deve usar HTTPS fora do Anvil local" });
+    }
     if (body.domainName !== undefined) {
       const domain = ChallengeSchema.shape.domainName.safeParse(body.domainName);
       if (!domain.success) return reply.status(400).send({ error: "Domínio inválido" });
@@ -110,8 +115,8 @@ export async function onboardingRoutes(app: FastifyInstance, options: Onboarding
     }
   }
 
-  const MAIVW_CORE_DOMAIN = process.env.MAIVW_CORE_DOMAIN || "maivw.org";
-  const DEFAULT_P2P_ENDPOINT = process.env.DEFAULT_P2P_ENDPOINT || `https://mw.${MAIVW_CORE_DOMAIN}/api/v1/inbox`;
+  const MAIVW_CORE_DOMAIN = config?.MAIVW_CORE_DOMAIN || "maivw.org";
+  const DEFAULT_P2P_ENDPOINT = config?.DEFAULT_P2P_ENDPOINT || `https://mw.${MAIVW_CORE_DOMAIN}/api/v1/inbox`;
 
   /**
    * GET /api/v1/onboarding/node-mode
@@ -145,7 +150,9 @@ export async function onboardingRoutes(app: FastifyInstance, options: Onboarding
       oracleAddress: myOracleAddress,
       contractOracleAddress: contractOracle,
       remoteOracleUrl: config.MAIVW_ORACLE_URL || "https://api-test.maivw.com",
-      defaultEndpointPattern: "https://mw-p2p.{domain}/api/v1/inbox",
+      defaultEndpoint: DEFAULT_P2P_ENDPOINT,
+      defaultEndpointPattern: isLocalDemo ? DEFAULT_P2P_ENDPOINT : "https://mw-p2p.{domain}/api/v1/inbox",
+      dnsMode: isLocalDemo ? "local-demo" : "public-dns",
     };
   });
 
@@ -234,6 +241,20 @@ export async function onboardingRoutes(app: FastifyInstance, options: Onboarding
     const cleanDomain = domainName.toLowerCase().trim();
     const challengeHost = `_maivw-verify.${cleanDomain}`;
     const expectedValue = `maivw-verification=${token}`;
+
+    if (isLocalDemo) {
+      return {
+        domain: cleanDomain,
+        isPosseVerified: true,
+        localBypass: true,
+        records: {
+          txt: { verified: true, found: [expectedValue] },
+          mx: { verified: false },
+          spf: { verified: false },
+          dmarc: { verified: false },
+        },
+      };
+    }
 
     let isPosseVerified = false;
     let foundTxts: string[] = [];
@@ -422,7 +443,7 @@ export async function onboardingRoutes(app: FastifyInstance, options: Onboarding
       basescanUrl = `https://amoy.polygonscan.com/tx/${txHash}`;
     } else if (effectiveChainId === 31337) {
       networkName = "Anvil Local";
-      basescanUrl = `http://localhost:8545/tx/${txHash}`;
+      basescanUrl = `http://localhost:55443`;
     }
 
     return reply.status(201).send({
@@ -531,7 +552,7 @@ export async function onboardingRoutes(app: FastifyInstance, options: Onboarding
       standardFeeWei = 10000000000000000000n; // 10 ETH
       standardFeeFormatted = "10 ETH";
       networkName = "Anvil Local";
-      explorerUrl = "http://localhost:8545";
+      explorerUrl = "http://localhost:55443";
     }
 
     // 5. Oráculo assina a Prova autorizando especificamente a carteira do usuário (callerAddress)
@@ -611,7 +632,7 @@ export async function onboardingRoutes(app: FastifyInstance, options: Onboarding
       basescanUrl = `https://amoy.polygonscan.com/tx/${txHash}`;
     } else if (effectiveChainId === 31337) {
       networkName = "Anvil Local";
-      basescanUrl = `http://localhost:8545/tx/${txHash}`;
+      basescanUrl = "http://localhost:55443";
     }
 
     return reply.status(200).send({

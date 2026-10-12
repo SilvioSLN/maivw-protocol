@@ -25,7 +25,7 @@ export const EnvSchema = z.object({
   RESEND_API_KEY: z.string().optional(),
   ADMIN_REGISTRATION_TOKEN: z.string().min(32).optional(),
   JWT_SECRET: z.string().min(16, "JWT_SECRET deve ser configurado no ambiente"),
-  BASE_RPC_URL: z.string().url().default("https://sepolia.base.org"),
+  BASE_RPC_URL: z.string().url().default("http://localhost:8545"),
   BASE_REGISTRY_ADDRESS: z.string().optional(),
   ARBITRUM_RPC_URL: z.string().url().default("https://sepolia-rollup.arbitrum.io/rpc"),
   ARBITRUM_REGISTRY_ADDRESS: z.string().optional(),
@@ -45,7 +45,7 @@ export const EnvSchema = z.object({
     (value) => value === "true" ? true : value === "false" ? false : value,
     z.boolean().default(false),
   ),
-  DEFAULT_P2P_ENDPOINT: z.string().optional(),
+  DEFAULT_P2P_ENDPOINT: z.string().url().optional(),
   TLS_CERT_PATH: z.string().optional(),
   TLS_KEY_PATH: z.string().optional(),
   MTLS_STRICT_MODE: z.preprocess(
@@ -59,6 +59,43 @@ export const EnvSchema = z.object({
 });
 
 export type EnvConfig = z.infer<typeof EnvSchema>;
+
+const ANVIL_ACCOUNT_ZERO_PRIVATE_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+
+export function isLocalDemoConfig(config: Pick<EnvConfig, "CHAIN_ID" | "RPC_URL">): boolean {
+  if (config.CHAIN_ID !== 31337) return false;
+  try {
+    const hostname = new URL(config.RPC_URL).hostname.toLowerCase();
+    return hostname === "anvil" || hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || hostname === "[::1]";
+  } catch {
+    return false;
+  }
+}
+
+export function environmentSafetyErrors(config: EnvConfig): string[] {
+  if (isLocalDemoConfig(config)) return [];
+
+  const errors: string[] = [];
+  if (!config.REGISTRY_CONTRACT_ADDRESS || !/^0x[a-fA-F0-9]{40}$/.test(config.REGISTRY_CONTRACT_ADDRESS)) {
+    errors.push("REGISTRY_CONTRACT_ADDRESS válido é obrigatório fora do Anvil local");
+  }
+
+  for (const name of ["JWT_SECRET", "MASTER_SECRET_KEY", "INTERNAL_SERVICE_KEY", "ADMIN_REGISTRATION_TOKEN"] as const) {
+    const value = config[name];
+    if (value?.startsWith("local-demo-")) errors.push(`${name} usa um valor público reservado à demonstração local`);
+  }
+
+  if (config.ORACLE_PRIVATE_KEY?.toLowerCase() === ANVIL_ACCOUNT_ZERO_PRIVATE_KEY) {
+    errors.push("ORACLE_PRIVATE_KEY usa a conta pública #0 do Anvil");
+  }
+  if (config.DEPLOYER_PRIVATE_KEY?.toLowerCase() === ANVIL_ACCOUNT_ZERO_PRIVATE_KEY) {
+    errors.push("DEPLOYER_PRIVATE_KEY usa a conta pública #0 do Anvil");
+  }
+  if (config.DEFAULT_P2P_ENDPOINT && new URL(config.DEFAULT_P2P_ENDPOINT).protocol !== "https:") {
+    errors.push("DEFAULT_P2P_ENDPOINT deve usar HTTPS fora do Anvil local");
+  }
+  return errors;
+}
 
 export function parseEnvironment(env: NodeJS.ProcessEnv) {
   return EnvSchema.safeParse(
@@ -103,6 +140,13 @@ export function loadConfig(): EnvConfig {
     console.error(
       "[CONFIG] ❌ Configuração inválida: ORACLE_SIGNER_TYPE='gcp-kms' exige que GCP_KMS_KEY_VERSION seja definido."
     );
+    process.exit(1);
+  }
+
+  const safetyErrors = environmentSafetyErrors(result.data);
+  if (safetyErrors.length > 0) {
+    console.error("[CONFIG] ❌ Configuração insegura para uma rede externa:");
+    for (const error of safetyErrors) console.error(`- ${error}`);
     process.exit(1);
   }
 

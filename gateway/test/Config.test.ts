@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { EnvSchema, parseEnvironment } from "../src/config.js";
+import { EnvSchema, environmentSafetyErrors, isLocalDemoConfig, parseEnvironment } from "../src/config.js";
 
 test("IS_CLOUD interprets string false as false and rejects ambiguous flags", () => {
   const required = { JWT_SECRET: "a".repeat(32), MASTER_SECRET_KEY: "b".repeat(32), INTERNAL_SERVICE_KEY: "c".repeat(32) };
@@ -8,6 +8,31 @@ test("IS_CLOUD interprets string false as false and rejects ambiguous flags", ()
     assert.equal(EnvSchema.parse({ ...required, IS_CLOUD: input }).IS_CLOUD, expected);
   }
   assert.equal(EnvSchema.safeParse({ ...required, IS_CLOUD: "no" }).success, false);
+});
+
+test("local demo is restricted to chain 31337 on a loopback or Docker Anvil RPC", () => {
+  assert.equal(isLocalDemoConfig({ CHAIN_ID: 31337, RPC_URL: "http://anvil:8545" }), true);
+  assert.equal(isLocalDemoConfig({ CHAIN_ID: 31337, RPC_URL: "http://localhost:55443" }), true);
+  assert.equal(isLocalDemoConfig({ CHAIN_ID: 84532, RPC_URL: "https://sepolia.base.org" }), false);
+  assert.equal(isLocalDemoConfig({ CHAIN_ID: 31337, RPC_URL: "https://rpc.example.com" }), false);
+});
+
+test("external networks reject local demo secrets, keys, endpoints and missing Registry", () => {
+  const config = EnvSchema.parse({
+    CHAIN_ID: 84532,
+    RPC_URL: "https://sepolia.base.org",
+    JWT_SECRET: "local-demo-jwt-secret-change-before-testnet-2026",
+    MASTER_SECRET_KEY: "local-demo-master-key-change-before-testnet-2026",
+    INTERNAL_SERVICE_KEY: "local-demo-internal-key-change-before-testnet-2026",
+    ADMIN_REGISTRATION_TOKEN: "local-demo-admin-invite-change-before-testnet-2026",
+    ORACLE_PRIVATE_KEY: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+    DEFAULT_P2P_ENDPOINT: "http://gateway:3001/api/v1/inbox",
+  });
+  const errors = environmentSafetyErrors(config);
+  assert.equal(errors.length, 7);
+  assert.ok(errors.some((error) => error.includes("REGISTRY_CONTRACT_ADDRESS")));
+  assert.ok(errors.some((error) => error.includes("ORACLE_PRIVATE_KEY")));
+  assert.ok(errors.some((error) => error.includes("HTTPS")));
 });
 
 test("empty optional Docker values use defaults without bypassing required secrets", () => {
