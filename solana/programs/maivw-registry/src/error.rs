@@ -52,4 +52,16 @@ pub enum MaivwError {
     InvalidFeeSplit,
     #[msg("stake vault accounting does not match its token account")]
     InvalidStakeVault,
+    #[msg("oracle signer does not match the configured oracle key")]
+    UnauthorizedOracle,
+    #[msg("amount must be greater than zero")]
+    InvalidAmount,
+    #[msg("operation requires a provider origin record")]
+    NotProvider,
+    #[msg("domain status does not allow this operation")]
+    InvalidDomainStatus,
+    #[msg("strike counter overflowed")]
+    StrikeOverflow,
+    #[msg("sub-identity hash must not be zero")]
+    InvalidSubIdentity,
 }

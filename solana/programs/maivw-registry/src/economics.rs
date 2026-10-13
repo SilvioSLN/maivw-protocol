@@ -61,6 +61,36 @@ pub fn transfer_tokens<'info>(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
+pub fn transfer_tokens_signed<'info>(
+    token_program: Pubkey,
+    mint: AccountInfo<'info>,
+    from: AccountInfo<'info>,
+    to: AccountInfo<'info>,
+    authority: AccountInfo<'info>,
+    amount: u64,
+    decimals: u8,
+    signer_seeds: &[&[&[u8]]],
+) -> Result<()> {
+    if amount == 0 {
+        return Ok(());
+    }
+    token::transfer_checked(
+        CpiContext::new_with_signer(
+            token_program,
+            TransferChecked {
+                from,
+                mint,
+                to,
+                authority,
+            },
+            signer_seeds,
+        ),
+        amount,
+        decimals,
+    )
+}
+
 fn basis_points(amount: u64, basis_points: u64) -> Result<u64> {
     let value = u128::from(amount)
         .checked_mul(u128::from(basis_points))

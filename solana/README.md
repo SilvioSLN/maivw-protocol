@@ -25,6 +25,7 @@ A carteira é ignorada pelo Git e nunca deve receber ativos reais.
 | `DomainRecord` | `['domain', domain_hash]` | Estado de domínio `Origin` ou `Mirror` |
 | `OriginClaimReceipt` | `['origin-claim', domain_hash, nonce]` | Consumo append-only de uma autorização global |
 | `StakeVault` | `['stake-vault', domain_hash]` | Metadados e contabilidade da caução isolada |
+| `SubIdentityStrike` | `['sub-identity-strike', domain_hash, sub_identity_hash]` | Contador de warnings por subidentidade do provider |
 
 `DomainRecord` reserva espaço para domínio DNS de 253 bytes e endpoint de 512
 bytes. Os testes serializam o pior caso, comparam o tamanho declarado e calculam
@@ -57,6 +58,19 @@ transfere exatamente `standardFee`: 10% para o founder vault, 25% para o treasur
 vault e o restante para o stake vault do domínio. `register_provider` também
 exige o claim, mas transfere 100% do `requiredStake` do tier para o stake vault e
 grava seu limite diário. Lamports de rent nunca são lidos como caução.
+
+`issue_warning` exige a assinatura direta do oracle configurado, incrementa os
+contadores agregado e por subidentidade, cobra
+`min(penaltyPerStrike, currentStake)` do stake vault para o treasury vault e
+suspende o provider quando o saldo fica abaixo do mínimo do tier. Warnings podem
+continuar drenando um provider suspenso. `top_up_stake` aceita aporte SPL de
+qualquer signer, mas uma recarga parcial não reativa: é preciso recompor todo o
+`requiredStake`. Ambas as instruções incrementam `originSequence`.
+
+Tokens enviados diretamente ao ATA do stake vault sem passar pelo programa são
+tratados como excedente não contabilizado: satisfazem solvência, mas não elevam
+`currentStake`. Isso impede que depósitos não solicitados bloqueiem as operações
+e evita que terceiros alterem a caução canônica fora de `top_up_stake`.
 
 O layout normativo de `payloadHash` está em
 [`SOLANA_REGISTRATION_PAYLOAD_V1.md`](../specs/multichain/SOLANA_REGISTRATION_PAYLOAD_V1.md).

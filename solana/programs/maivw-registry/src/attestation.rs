@@ -211,17 +211,17 @@ mod tests {
             recovery_delay_seconds: 1,
             tiers: [
                 crate::state::ProviderTierConfig {
-                    required_stake: 1,
+                    required_stake: 10,
                     daily_limit: 1,
                     penalty_per_strike: 1,
                 },
                 crate::state::ProviderTierConfig {
-                    required_stake: 2,
+                    required_stake: 20,
                     daily_limit: 2,
                     penalty_per_strike: 1,
                 },
                 crate::state::ProviderTierConfig {
-                    required_stake: 3,
+                    required_stake: 30,
                     daily_limit: 3,
                     penalty_per_strike: 1,
                 },

@@ -48,6 +48,10 @@ Cada tier define `requiredStake`, `dailyLimit` e `penaltyPerStrike` em unidades 
 
 Uma advertência cobra `min(penaltyPerStrike, currentStake)` e credita o treasury vault. Quando a caução fica abaixo de `requiredStake`, o provedor é suspenso. Top-up aceita somente o mint configurado e só reativa ao recompor todo o mínimo do tier; não altera tier ou limite por si só.
 
+`penaltyPerStrike` deve ser maior que zero e não pode drenar o stake inicial em menos de dez warnings (`penaltyPerStrike × 10 <= requiredStake`), mantendo a mesma proteção econômica do Registry EVM.
+
+O saldo SPL do vault deve ser maior ou igual ao stake contabilizado. Um depósito direto e não solicitado pode criar excedente, mas esse excedente não aumenta `currentStake`, não reativa o provedor e não participa do cálculo de penalidade. Apenas `top_up_stake` credita novo stake canônico. Essa separação evita tanto a apropriação de doações acidentais quanto bloqueio das operações por dust enviado por terceiros.
+
 ## Slashing, bounty e burn
 
 O slash remove toda a caução do domínio e calcula:

@@ -72,15 +72,68 @@
         { "name": "args", "type": { "defined": { "name": "maivw_registry::registration::RegisterProviderArgs" } } },
         { "name": "envelope", "type": "bytes" }
       ]
+    },
+    {
+      "name": "top_up_stake",
+      "discriminator": [152, 222, 110, 73, 38, 18, 139, 17],
+      "accounts": [
+        { "name": "funder", "writable": true, "signer": true },
+        { "name": "config" },
+        { "name": "domain_record", "writable": true },
+        { "name": "stake_vault", "writable": true },
+        { "name": "funder_token", "writable": true },
+        { "name": "mint" },
+        { "name": "stake_vault_token", "writable": true },
+        { "name": "token_program" }
+      ],
+      "args": [{ "name": "args", "type": { "defined": { "name": "maivw_registry::provider::TopUpStakeArgs" } } }]
+    },
+    {
+      "name": "issue_warning",
+      "discriminator": [43, 72, 145, 216, 202, 199, 67, 102],
+      "accounts": [
+        { "name": "oracle", "writable": true, "signer": true },
+        { "name": "config" },
+        { "name": "domain_record", "writable": true },
+        { "name": "sub_identity_strike", "writable": true },
+        { "name": "stake_vault", "writable": true },
+        { "name": "mint" },
+        { "name": "stake_vault_token", "writable": true },
+        { "name": "treasury_vault_authority" },
+        { "name": "treasury_vault", "writable": true },
+        { "name": "token_program" },
+        { "name": "associated_token_program" },
+        { "name": "system_program" }
+      ],
+      "args": [{ "name": "args", "type": { "defined": { "name": "maivw_registry::provider::IssueWarningArgs" } } }]
     }
   ],
   "accounts": [
     { "name": "maivw_registry::state::DomainRecord", "discriminator": [130, 61, 36, 125, 56, 48, 189, 247] },
     { "name": "maivw_registry::state::OriginClaimReceipt", "discriminator": [228, 140, 49, 209, 88, 178, 253, 196] },
     { "name": "maivw_registry::state::RegistryConfig", "discriminator": [23, 118, 10, 246, 173, 231, 243, 156] },
-    { "name": "maivw_registry::state::StakeVault", "discriminator": [192, 112, 65, 125, 129, 151, 173, 226] }
+    { "name": "maivw_registry::state::StakeVault", "discriminator": [192, 112, 65, 125, 129, 151, 173, 226] },
+    { "name": "maivw_registry::state::SubIdentityStrike", "discriminator": [47, 50, 208, 20, 210, 192, 245, 105] }
+  ],
+  "events": [
+    { "name": "maivw_registry::StakeToppedUp", "discriminator": [198, 194, 194, 30, 127, 26, 161, 239] },
+    { "name": "maivw_registry::WarningIssued", "discriminator": [213, 152, 42, 98, 199, 162, 84, 83] }
   ],
   "types": [
+    {
+      "name": "maivw_registry::provider::IssueWarningArgs",
+      "type": { "kind": "struct", "fields": [
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "sub_identity_hash", "type": { "array": ["u8", 32] } }
+      ] }
+    },
+    {
+      "name": "maivw_registry::provider::TopUpStakeArgs",
+      "type": { "kind": "struct", "fields": [
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "amount", "type": "u64" }
+      ] }
+    },
     {
       "name": "maivw_registry::registration::InitializeRegistryArgs",
       "type": { "kind": "struct", "fields": [
@@ -234,6 +287,44 @@
         { "name": "token_account", "type": "pubkey" }, { "name": "original_registration_amount", "type": "u64" },
         { "name": "current_stake", "type": "u64" }
       ] }
+    },
+    {
+      "name": "maivw_registry::state::SubIdentityStrike",
+      "type": { "kind": "struct", "fields": [
+        { "name": "schema_version", "type": "u16" },
+        { "name": "bump", "type": "u8" },
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "sub_identity_hash", "type": { "array": ["u8", 32] } },
+        { "name": "strikes", "type": "u32" },
+        { "name": "last_warned_at", "type": "i64" }
+      ] }
+    },
+    {
+      "name": "maivw_registry::StakeToppedUp",
+      "type": { "kind": "struct", "fields": [
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "funder", "type": "pubkey" },
+        { "name": "amount", "type": "u64" },
+        { "name": "current_stake", "type": "u64" },
+        { "name": "reactivated", "type": "bool" },
+        { "name": "origin_sequence", "type": "u64" },
+        { "name": "timestamp", "type": "i64" }
+      ] }
+    },
+    {
+      "name": "maivw_registry::WarningIssued",
+      "type": { "kind": "struct", "fields": [
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "sub_identity_hash", "type": { "array": ["u8", 32] } },
+        { "name": "oracle", "type": "pubkey" },
+        { "name": "provider_strikes", "type": "u32" },
+        { "name": "sub_identity_strikes", "type": "u32" },
+        { "name": "penalty_charged", "type": "u64" },
+        { "name": "current_stake", "type": "u64" },
+        { "name": "suspended", "type": "bool" },
+        { "name": "origin_sequence", "type": "u64" },
+        { "name": "timestamp", "type": "i64" }
+      ] }
     }
   ],
   "errors": [
@@ -261,6 +352,12 @@
     { "code": 6021, "name": "InvalidAssetDecimals", "msg": "token decimals do not match registry configuration" },
     { "code": 6022, "name": "ArithmeticOverflow", "msg": "economic calculation overflowed" },
     { "code": 6023, "name": "InvalidFeeSplit", "msg": "fee split does not conserve the full payment" },
-    { "code": 6024, "name": "InvalidStakeVault", "msg": "stake vault accounting does not match its token account" }
+    { "code": 6024, "name": "InvalidStakeVault", "msg": "stake vault accounting does not match its token account" },
+    { "code": 6025, "name": "UnauthorizedOracle", "msg": "oracle signer does not match the configured oracle key" },
+    { "code": 6026, "name": "InvalidAmount", "msg": "amount must be greater than zero" },
+    { "code": 6027, "name": "NotProvider", "msg": "operation requires a provider origin record" },
+    { "code": 6028, "name": "InvalidDomainStatus", "msg": "domain status does not allow this operation" },
+    { "code": 6029, "name": "StrikeOverflow", "msg": "strike counter overflowed" },
+    { "code": 6030, "name": "InvalidSubIdentity", "msg": "sub-identity hash must not be zero" }
   ]
 }

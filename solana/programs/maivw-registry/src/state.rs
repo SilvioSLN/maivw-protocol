@@ -4,9 +4,10 @@ use crate::{
     ID,
     constants::{
         DOMAIN_RECORD_SEED, DOMAIN_SCHEMA_VERSION, MAX_DOMAIN_LEN, MAX_ENDPOINT_LEN,
-        ORIGIN_CLAIM_RECEIPT_SEED, PROVIDER_TIER_COUNT, RECEIPT_SCHEMA_VERSION,
-        REGISTRY_CONFIG_SEED, REGISTRY_SCHEMA_VERSION, STAKE_VAULT_SCHEMA_VERSION,
-        STAKE_VAULT_SEED,
+        MIN_STRIKES_TO_DRAIN, ORIGIN_CLAIM_RECEIPT_SEED, PROVIDER_TIER_COUNT,
+        RECEIPT_SCHEMA_VERSION, REGISTRY_CONFIG_SEED, REGISTRY_SCHEMA_VERSION,
+        STAKE_VAULT_SCHEMA_VERSION, STAKE_VAULT_SEED, SUB_IDENTITY_STRIKE_SCHEMA_VERSION,
+        SUB_IDENTITY_STRIKE_SEED,
     },
     error::MaivwError,
 };
@@ -152,7 +153,11 @@ impl RegistryConfig {
             require!(
                 tier.required_stake > 0
                     && tier.daily_limit > 0
-                    && tier.penalty_per_strike <= tier.required_stake,
+                    && tier.penalty_per_strike > 0
+                    && tier
+                        .penalty_per_strike
+                        .checked_mul(MIN_STRIKES_TO_DRAIN)
+                        .is_some_and(|maximum| maximum <= tier.required_stake),
                 MaivwError::InvalidRegistryConfig
             );
         }
@@ -267,14 +272,15 @@ impl DomainRecord {
                 );
                 require!(
                     self.original_registration_amount > 0
-                        && self.current_stake > 0
-                        && self.current_stake <= self.original_registration_amount
-                        && self.attested_stake == self.current_stake,
+                        && self.attested_stake == self.current_stake
+                        && (!matches!(self.status, DomainStatus::Active) || self.current_stake > 0),
                     MaivwError::InvalidDomainRecord
                 );
                 match self.provider_tier {
                     ProviderTier::None => require!(
-                        self.provider == Pubkey::default() && self.attested_daily_limit == 0,
+                        self.provider == Pubkey::default()
+                            && self.attested_daily_limit == 0
+                            && self.current_stake <= self.original_registration_amount,
                         MaivwError::InvalidDomainRecord
                     ),
                     _ => require!(
@@ -356,9 +362,43 @@ impl StakeVault {
                 && self.domain_hash != [0; 32]
                 && self.mint != Pubkey::default()
                 && self.token_account != Pubkey::default()
-                && self.current_stake == token_amount
-                && self.current_stake <= self.original_registration_amount,
+                && self.original_registration_amount > 0
+                && token_amount >= self.current_stake,
             MaivwError::InvalidStakeVault
+        );
+        Ok(())
+    }
+}
+
+#[account]
+#[derive(Debug)]
+pub struct SubIdentityStrike {
+    pub schema_version: u16,
+    pub bump: u8,
+    pub domain_hash: [u8; 32],
+    pub sub_identity_hash: [u8; 32],
+    pub strikes: u32,
+    pub last_warned_at: i64,
+}
+
+impl SubIdentityStrike {
+    pub const DATA_LEN: usize = 79;
+    pub const SPACE: usize = 8 + Self::DATA_LEN;
+
+    pub fn pda(domain_hash: &[u8; 32], sub_identity_hash: &[u8; 32]) -> (Pubkey, u8) {
+        Pubkey::find_program_address(
+            &[SUB_IDENTITY_STRIKE_SEED, domain_hash, sub_identity_hash],
+            &ID,
+        )
+    }
+
+    pub fn validate(&self) -> Result<()> {
+        require!(
+            self.schema_version == SUB_IDENTITY_STRIKE_SCHEMA_VERSION
+                && self.domain_hash != [0; 32]
+                && self.sub_identity_hash != [0; 32]
+                && self.strikes > 0,
+            MaivwError::InvalidSubIdentity
         );
         Ok(())
     }
@@ -513,12 +553,27 @@ mod tests {
         vault.try_serialize(&mut vault_bytes).unwrap();
         assert_eq!(vault_bytes.len(), StakeVault::SPACE);
         assert!(vault.validate(65).is_ok());
+        assert!(vault.validate(66).is_ok());
         assert!(vault.validate(64).is_err());
+
+        let strike = SubIdentityStrike {
+            schema_version: SUB_IDENTITY_STRIKE_SCHEMA_VERSION,
+            bump: 1,
+            domain_hash: [1; 32],
+            sub_identity_hash: [2; 32],
+            strikes: 1,
+            last_warned_at: 1,
+        };
+        let mut strike_bytes = Vec::new();
+        strike.try_serialize(&mut strike_bytes).unwrap();
+        assert_eq!(strike_bytes.len(), SubIdentityStrike::SPACE);
+        assert!(strike.validate().is_ok());
 
         assert!(Rent::default().minimum_balance(DomainRecord::SPACE) > 0);
         assert!(Rent::default().minimum_balance(RegistryConfig::SPACE) > 0);
         assert!(Rent::default().minimum_balance(OriginClaimReceipt::SPACE) > 0);
         assert!(Rent::default().minimum_balance(StakeVault::SPACE) > 0);
+        assert!(Rent::default().minimum_balance(SubIdentityStrike::SPACE) > 0);
     }
 
     #[test]
@@ -537,6 +592,14 @@ mod tests {
         let mut invalid = valid;
         invalid.tiers[1].required_stake = invalid.tiers[0].required_stake;
         assert!(invalid.validate().is_err());
+
+        let mut zero_penalty = config();
+        zero_penalty.tiers[0].penalty_per_strike = 0;
+        assert!(zero_penalty.validate().is_err());
+
+        let mut drains_too_fast = config();
+        drains_too_fast.tiers[0].penalty_per_strike = 2;
+        assert!(drains_too_fast.validate().is_err());
     }
 
     #[test]
@@ -559,6 +622,26 @@ mod tests {
                 .is_ok()
         );
 
+        let mut suspended_provider = record(RecordKind::Origin, local_network, local_registry);
+        suspended_provider.status = DomainStatus::Suspended;
+        suspended_provider.current_stake = 0;
+        suspended_provider.attested_stake = 0;
+        assert!(
+            suspended_provider
+                .validate(local_network, local_registry)
+                .is_ok()
+        );
+
+        let mut topped_up_provider = record(RecordKind::Origin, local_network, local_registry);
+        topped_up_provider.current_stake = u64::MAX;
+        topped_up_provider.attested_stake = u64::MAX;
+        topped_up_provider.original_registration_amount = 1;
+        assert!(
+            topped_up_provider
+                .validate(local_network, local_registry)
+                .is_ok()
+        );
+
         let mut evm_mirror = record(RecordKind::Mirror, [9; 32], [8; 32]);
         evm_mirror.origin.family = NetworkFamily::Evm;
         evm_mirror.operational_key.algorithm = KeyAlgorithm::Secp256k1EvmAddress;
@@ -575,5 +658,9 @@ mod tests {
             OriginClaimReceipt::pda(&[1; 32], &[4; 32])
         );
         assert_ne!(StakeVault::pda(&[1; 32]), StakeVault::pda(&[2; 32]));
+        assert_ne!(
+            SubIdentityStrike::pda(&[1; 32], &[3; 32]),
+            SubIdentityStrike::pda(&[1; 32], &[4; 32])
+        );
     }
 }
