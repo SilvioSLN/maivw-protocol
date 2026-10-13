@@ -302,6 +302,7 @@ contract MAIVWRegistry is
     error SlashNotReady();
     error RecoveryNotReady();
     error FeeExceedsCap();
+    error MirrorIsReadOnly();
 
     // ============================================
     //  Modifiers
@@ -315,6 +316,7 @@ contract MAIVWRegistry is
     modifier onlyDomainAdmin(bytes32 _h) {
         CompanyProfile storage p = profiles[_h];
         if (p.status != DomainStatus.ACTIVE) revert DomainNotActive();
+        if (domainMirrors[_h].isMirror) revert MirrorIsReadOnly();
         if (msg.sender != p.adminKey) revert UnauthorizedDomainCaller();
         _;
     }
@@ -515,7 +517,7 @@ contract MAIVWRegistry is
         uint256 _deadline,
         bytes calldata _oracleProof
     ) external payable whenNotPaused {
-        _validateRegistrationInputs(bytes(_domain), bytes(_endpoint), _publicKey, _adminKey);
+        _validateCompanyRegistrationInputs(bytes(_domain), bytes(_endpoint), _publicKey, _adminKey, _isProvider);
 
         uint256 expectedFee = _isProvider ? providerFee : standardFee;
         if (msg.value != expectedFee) revert IncorrectFee();
@@ -650,7 +652,14 @@ contract MAIVWRegistry is
         uint256 _deadline,
         bytes calldata _oracleProof
     ) external payable whenNotPaused {
-        _validateRegistrationInputs(bytes(_domain), bytes(_endpoint), _publicKey, _adminKey);
+        _validateReclaimRegistrationInputs(
+            bytes(_domain),
+            bytes(_endpoint),
+            _publicKey,
+            _adminKey,
+            _isProvider,
+            _tier
+        );
 
         bytes32 h = _hash(_domain);
         CompanyProfile storage p = profiles[h];
@@ -660,8 +669,8 @@ contract MAIVWRegistry is
         {
             uint256 expectedFee = standardFee;
             if (_isProvider) {
-                ProviderTier t = ProviderTier(_tier);
-                expectedFee = (t != ProviderTier.NONE) ? tierConfigs[t].requiredStake : providerFee;
+                ProviderTier tier = ProviderTier(_tier);
+                expectedFee = (tier != ProviderTier.NONE) ? tierConfigs[tier].requiredStake : providerFee;
             }
             if (msg.value != expectedFee) revert IncorrectFee();
         }
@@ -811,7 +820,7 @@ contract MAIVWRegistry is
 
         emit WarningTicketIssued(_providerDomain, _subIdentity, p.strikeCount);
 
-        if (domainStakes[h] == 0 && p.status == DomainStatus.ACTIVE) {
+        if (domainStakes[h] < tierConfigs[tier].requiredStake && p.status == DomainStatus.ACTIVE) {
             p.status = DomainStatus.SUSPENDED;
             emit DomainStatusChanged(h, DomainStatus.ACTIVE, DomainStatus.SUSPENDED);
             emit ProviderSuspended(_providerDomain, block.timestamp);
@@ -925,26 +934,28 @@ contract MAIVWRegistry is
     //  Account Recovery & Keys (Bloco E)
     // ============================================
 
-    /// @notice Atualiza a chave pública de assinatura de e-mails (apenas o admin do domínio)
+    /// @notice Atualiza a chave hot de assinatura; somente a chave admin cold da origem pode rotacioná-la.
     function updatePublicKey(string calldata _domain, address _newPublicKey) external {
         _validateKey(_newPublicKey);
         bytes32 h = _hash(_domain);
         CompanyProfile storage p = profiles[h];
         if (p.status != DomainStatus.ACTIVE) revert DomainNotActive();
-        if (msg.sender != p.adminKey && msg.sender != p.publicKey) revert UnauthorizedDomainCaller();
+        if (domainMirrors[h].isMirror) revert MirrorIsReadOnly();
+        if (msg.sender != p.adminKey) revert UnauthorizedDomainCaller();
 
         address old = p.publicKey;
         p.publicKey = _newPublicKey;
         emit PublicKeyUpdated(_domain, old, _newPublicKey);
     }
 
-    /// @notice Atualiza o endpoint de recebimento (apenas o admin do domínio)
+    /// @notice Atualiza o endpoint de recebimento; somente a chave admin cold da origem.
     function updateEndpoint(string calldata _domain, string calldata _newEndpoint) external {
         _validateEndpoint(bytes(_newEndpoint));
         bytes32 h = _hash(_domain);
         CompanyProfile storage p = profiles[h];
         if (p.status != DomainStatus.ACTIVE) revert DomainNotActive();
-        if (msg.sender != p.adminKey && msg.sender != p.publicKey) revert UnauthorizedDomainCaller();
+        if (domainMirrors[h].isMirror) revert MirrorIsReadOnly();
+        if (msg.sender != p.adminKey) revert UnauthorizedDomainCaller();
 
         string memory old = p.endpointUrl;
         p.endpointUrl = _newEndpoint;
@@ -956,7 +967,8 @@ contract MAIVWRegistry is
         bytes32 h = _hash(_domain);
         CompanyProfile storage p = profiles[h];
         if (p.status != DomainStatus.ACTIVE) revert DomainNotActive();
-        if (msg.sender != p.adminKey && msg.sender != p.publicKey) revert UnauthorizedDomainCaller();
+        if (domainMirrors[h].isMirror) revert MirrorIsReadOnly();
+        if (msg.sender != p.adminKey) revert UnauthorizedDomainCaller();
 
         domainTlsFingerprints[h] = _fingerprint;
         emit DomainTlsFingerprintUpdated(h, _domain, _fingerprint, block.timestamp);
@@ -978,9 +990,12 @@ contract MAIVWRegistry is
     /// @notice Aceite da administração da chave cold
     function acceptAdminKey(string calldata _domain) external {
         bytes32 h = _hash(_domain);
+        CompanyProfile storage p = profiles[h];
+        if (p.status != DomainStatus.ACTIVE) revert DomainNotActive();
+        if (domainMirrors[h].isMirror) revert MirrorIsReadOnly();
         if (msg.sender != pendingAdminKey[h]) revert UnauthorizedDomainCaller();
-        address old = profiles[h].adminKey;
-        profiles[h].adminKey = msg.sender;
+        address old = p.adminKey;
+        p.adminKey = msg.sender;
         delete pendingAdminKey[h];
         emit AdminKeyUpdated(_domain, old, msg.sender);
     }
@@ -996,6 +1011,7 @@ contract MAIVWRegistry is
         bytes32 h = _hash(_domain);
         CompanyProfile storage p = profiles[h];
         if (p.status != DomainStatus.ACTIVE) revert DomainNotActive();
+        if (domainMirrors[h].isMirror) revert MirrorIsReadOnly();
         _validateKey(_newAdminKey);
         _validateKey(_newPublicKey);
 
@@ -1036,6 +1052,8 @@ contract MAIVWRegistry is
 
         delete pendingRecovery[h];
         CompanyProfile storage p = profiles[h];
+        if (domainMirrors[h].isMirror) revert MirrorIsReadOnly();
+        delete pendingAdminKey[h];
         p.adminKey = r.newAdminKey;
         p.publicKey = r.newPublicKey;
         p.epoch += 1;
@@ -1057,6 +1075,7 @@ contract MAIVWRegistry is
         bytes32 h = _hash(_senderDomain);
         CompanyProfile storage p = profiles[h];
         if (p.status != DomainStatus.ACTIVE) revert DomainNotActive();
+        if (domainMirrors[h].isMirror) revert MirrorIsReadOnly();
         if (msg.sender != p.publicKey && msg.sender != p.adminKey && msg.sender != oracleNode) {
             revert UnauthorizedDomainCaller();
         }
@@ -1119,14 +1138,13 @@ contract MAIVWRegistry is
         if (genesisCount >= MAX_GENESIS_DOMAINS) revert GenesisExhausted();
         if (_tier == ProviderTier.NONE) revert InvalidTier();
         _validateRegistrationInputs(bytes(_domain), bytes(_endpoint), _publicKey, msg.sender);
+        if (msg.value != tierConfigs[_tier].requiredStake) revert IncorrectFee();
 
         bytes32 h = _hash(_domain);
         genesisCount++;
 
-        if (msg.value > 0) {
-            _addStake(h, msg.value);
-            domainTotalFees[h] = msg.value;
-        }
+        _addStake(h, msg.value);
+        domainTotalFees[h] = msg.value;
 
         providerTiers[h] = _tier;
         _registerNew(h, _domain);
@@ -1330,6 +1348,35 @@ contract MAIVWRegistry is
         _validateEndpoint(_e);
         _validateKey(_pubKey);
         _validateKey(_admKey);
+    }
+
+    function _validateCompanyRegistrationInputs(
+        bytes calldata _d,
+        bytes calldata _e,
+        address _pubKey,
+        address _admKey,
+        bool _isProvider
+    ) internal pure {
+        _validateRegistrationInputs(_d, _e, _pubKey, _admKey);
+        if (_isProvider) revert InvalidTier();
+    }
+
+    function _validateReclaimRegistrationInputs(
+        bytes calldata _d,
+        bytes calldata _e,
+        address _pubKey,
+        address _admKey,
+        bool _isProvider,
+        uint8 _tier
+    ) internal pure {
+        _validateRegistrationInputs(_d, _e, _pubKey, _admKey);
+        if (_isProvider) {
+            if (_tier < uint8(ProviderTier.STARTUP) || _tier > uint8(ProviderTier.ENTERPRISE)) {
+                revert InvalidTier();
+            }
+        } else if (_tier != uint8(ProviderTier.NONE)) {
+            revert InvalidTier();
+        }
     }
 
     bytes1 private constant DOT = 0x2e;

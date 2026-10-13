@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import {DomainStatus, ProviderTier, CompanyProfile, MirrorInfo} from "./MAIVWRegistry.sol";
+import {DomainStatus, ProviderTier, CompanyProfile} from "./MAIVWRegistry.sol";
 
 interface IMAIVWRegistry {
     function getCompanyProfile(string calldata _domain) external view returns (CompanyProfile memory);
@@ -11,9 +11,8 @@ interface IMAIVWRegistry {
     function domainMirrors(bytes32 _hash) external view returns (bool isMirror, uint256 originChainId, uint256 mirroredAt);
     function domainStakes(bytes32 _hash) external view returns (uint256);
     function providerTiers(bytes32 _hash) external view returns (ProviderTier);
+    function getAllowedDailyVolume(string calldata _domain) external view returns (uint256);
     function QUARANTINE_PERIOD() external view returns (uint256);
-    function QUARANTINE_DAILY_VOLUME() external view returns (uint256);
-    function NORMAL_DAILY_VOLUME() external view returns (uint256);
 }
 
 /// @title MAIVWRegistryLens
@@ -80,39 +79,27 @@ contract MAIVWRegistryLens {
         results = new EnrichedProfile[](len);
 
         uint256 quarantinePeriod = reg.QUARANTINE_PERIOD();
-        uint256 quarantineVol = reg.QUARANTINE_DAILY_VOLUME();
-        uint256 normalVol = reg.NORMAL_DAILY_VOLUME();
 
         for (uint256 i = 0; i < len; ++i) {
-            string calldata d = domains[i];
-            CompanyProfile memory p = reg.getCompanyProfile(d);
-            bytes32 h = keccak256(bytes(d));
+            results[i] = _getEnrichedProfile(reg, domains[i], quarantinePeriod);
+        }
+    }
 
-            (bool isMirror, uint256 originChainId, ) = reg.domainMirrors(h);
-            uint256 stake = reg.domainStakes(h);
-            ProviderTier tier = reg.providerTiers(h);
+    function _getEnrichedProfile(
+        IMAIVWRegistry reg,
+        string calldata domain,
+        uint256 quarantinePeriod
+    ) private view returns (EnrichedProfile memory result) {
+        bytes32 h = keccak256(bytes(domain));
+        result.profile = reg.getCompanyProfile(domain);
+        result.stake = reg.domainStakes(h);
+        result.tier = reg.providerTiers(h);
+        (result.isMirror, result.originChainId, ) = reg.domainMirrors(h);
 
-            bool inQuarantine = false;
-            uint256 dailyLimit = 0;
-
-            if (p.status == DomainStatus.ACTIVE) {
-                if (block.timestamp - p.registrationTime < quarantinePeriod) {
-                    inQuarantine = true;
-                    dailyLimit = quarantineVol;
-                } else {
-                    dailyLimit = normalVol;
-                }
-            }
-
-            results[i] = EnrichedProfile({
-                profile: p,
-                stake: stake,
-                tier: tier,
-                isMirror: isMirror,
-                originChainId: originChainId,
-                inQuarantine: inQuarantine,
-                effectiveDailyLimit: dailyLimit
-            });
+        if (result.profile.status != DomainStatus.ACTIVE) return result;
+        result.effectiveDailyLimit = reg.getAllowedDailyVolume(domain);
+        if (!result.profile.isProvider && block.timestamp - result.profile.registrationTime < quarantinePeriod) {
+            result.inQuarantine = true;
         }
     }
 }

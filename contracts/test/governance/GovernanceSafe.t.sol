@@ -33,6 +33,7 @@ contract GovernanceSafeTest is Test {
 
     function setUp() public {
         vm.deal(deployer, 100 ether);
+        vm.deal(safeGov, 100 ether);
         vm.deal(attacker, 100 ether);
         vm.deal(providerAdmin, 100 ether);
 
@@ -154,7 +155,12 @@ contract GovernanceSafeTest is Test {
     function test_GuardianCanVetoAbusivePendingSlash() public {
         // Registra provedor via genesis
         vm.prank(safeGov);
-        registry.registerGenesisProvider("provider-veto.com", "https://api.veto.com", providerKey, ProviderTier.STARTUP);
+        registry.registerGenesisProvider{value: 0.01 ether}(
+            "provider-veto.com",
+            "https://api.veto.com",
+            providerKey,
+            ProviderTier.STARTUP
+        );
 
         // Oráculo propõe slash com contestação (janela de 48h)
         address[] memory reporters = new address[](1);

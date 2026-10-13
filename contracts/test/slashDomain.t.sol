@@ -224,13 +224,13 @@ contract SlashDomainTest is BaseTest {
         vm.prank(oracle);
         registry.issueWarningTicket("sendgrid.com", "sub_user_123");
         assertEq(registry.getCompanyProfile("sendgrid.com").strikeCount, 1);
-        assertTrue(registry.isDomainActive("sendgrid.com"));
+        assertFalse(registry.isDomainActive("sendgrid.com"));
 
         // Strike 2
         vm.prank(oracle);
         registry.issueWarningTicket("sendgrid.com", "sub_user_456");
         assertEq(registry.getCompanyProfile("sendgrid.com").strikeCount, 2);
-        assertTrue(registry.isDomainActive("sendgrid.com"));
+        assertFalse(registry.isDomainActive("sendgrid.com"));
 
         // Mais advertências até o esgotamento total do saldo
         for (uint256 i = 3; i <= 20; i++) {

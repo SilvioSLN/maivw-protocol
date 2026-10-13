@@ -39,14 +39,27 @@ contract MAIVWRegistryTest is BaseTest {
     }
 
     function test_RegisterProviderCompany() public {
-        _registerCompanyHelper(
+        uint256 deadline = block.timestamp + 3600;
+        bytes memory sig = _signRegister(
+            registry,
             "sendgrid.com",
-            "https://api.sendgrid.com/maivw/inbox",
             providerC,
             providerC,
             providerC,
             true,
-            1000 ether
+            uint8(ProviderTier.ENTERPRISE),
+            deadline
+        );
+
+        vm.prank(providerC);
+        registry.registerProvider{value: 100 ether}(
+            "sendgrid.com",
+            "https://api.sendgrid.com/maivw/inbox",
+            providerC,
+            providerC,
+            uint8(ProviderTier.ENTERPRISE),
+            deadline,
+            sig
         );
 
         CompanyProfile memory profile = registry.getCompanyProfile("sendgrid.com");
@@ -122,7 +135,7 @@ contract MAIVWRegistryTest is BaseTest {
         bytes memory sig = _signRegister(registry, "sendgrid.com", providerC, providerC, providerC, true, 0, deadline);
 
         vm.prank(providerC);
-        vm.expectRevert(MAIVWRegistry.IncorrectFee.selector);
+        vm.expectRevert(MAIVWRegistry.InvalidTier.selector);
         registry.registerCompany{value: 10 ether}(
             "sendgrid.com",
             "https://api.sendgrid.com/maivw/inbox",

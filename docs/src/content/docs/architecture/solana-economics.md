@@ -46,7 +46,7 @@ Os cálculos usam basis points com denominador `10_000`. Founder recebe `1_000`,
 
 Cada tier define `requiredStake`, `dailyLimit` e `penaltyPerStrike` em unidades mínimas do mint. O valor pago precisa ser exatamente `requiredStake` e **100% vira caução**, em paridade com o Registry EVM atual. Não há split founder/treasury no registro de provider.
 
-Uma advertência cobra `min(penaltyPerStrike, currentStake)` e credita o treasury vault. Quando a caução chega a zero, o provedor é suspenso. Top-up aceita somente o mint configurado e não altera tier ou limite por si só.
+Uma advertência cobra `min(penaltyPerStrike, currentStake)` e credita o treasury vault. Quando a caução fica abaixo de `requiredStake`, o provedor é suspenso. Top-up aceita somente o mint configurado e só reativa ao recompor todo o mínimo do tier; não altera tier ou limite por si só.
 
 ## Slashing, bounty e burn
 

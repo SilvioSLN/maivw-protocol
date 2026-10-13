@@ -249,7 +249,7 @@ contract MAIVWRegistryEconomicsTest is BaseTest {
     //  4. Opção Nuclear: Saldo Zerado e Reativação Segura (C-04)
     // ============================================
 
-    function test_ProviderSuspension_WhenBalanceZero_AndReactivation() public {
+    function test_ProviderSuspension_WhenBelowMinimum_AndReactivation() public {
         uint256 deadline = block.timestamp + 3600;
         bytes memory sig = _signRegister(
             registry,
@@ -278,10 +278,11 @@ contract MAIVWRegistryEconomicsTest is BaseTest {
             registry.issueWarningTicket("monitored-esp.com", string(abi.encodePacked("sub-", vm.toString(i))));
         }
 
-        assertTrue(registry.isDomainActive("monitored-esp.com"));
+        assertFalse(registry.isDomainActive("monitored-esp.com"));
         assertEq(registry.domainStakes(keccak256(bytes("monitored-esp.com"))), 0.05 ether);
 
-        // 20ª infração zera o caução -> Provedor é SUSPENSO
+        // A primeira infração já suspende ao cair abaixo do mínimo do tier;
+        // as demais continuam drenando a caução até zero.
         vm.prank(oracle);
         registry.issueWarningTicket("monitored-esp.com", "sub-20");
 
