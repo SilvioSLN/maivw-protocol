@@ -35,6 +35,8 @@ O fluxo de registro começa com uma reserva no catálogo:
 
 O catálogo não substitui a propriedade on-chain. Ele impede concorrência entre ledgers que não conseguem consultar um ao outro durante a mesma transação. Todas as decisões e transições do catálogo precisam permanecer auditáveis.
 
+As regras transacionais, de expiração e de recuperação estão em [Catálogo de origem e concorrência](/architecture/origin-catalog-and-concurrency/).
+
 ## Identificadores
 
 ### DomainId
