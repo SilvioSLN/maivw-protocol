@@ -1,0 +1,118 @@
+{
+  "schema": "maivw-full-lifecycle-v1",
+  "description": "Normative state-transition fixtures for origin and mirror implementations.",
+  "scenarios": [
+    {
+      "id": "solana-origin-domain-lifecycle",
+      "originNetwork": "solana:4uhcVJyU9pJkvQyS88uRDiswHXSCkY3zQawwpjk2NsNY",
+      "domain": "alice.maivw.com",
+      "steps": [
+        {
+          "operation": "register",
+          "epoch": 1,
+          "sequence": 1,
+          "status": "active",
+          "publicKey": { "algorithm": "ed25519-solana-pubkey", "value": "0x1111111111111111111111111111111111111111111111111111111111111111" },
+          "canonicalStake": "65000000"
+        },
+        {
+          "operation": "update",
+          "epoch": 1,
+          "sequence": 2,
+          "status": "active",
+          "publicKey": { "algorithm": "ed25519-solana-pubkey", "value": "0x2222222222222222222222222222222222222222222222222222222222222222" },
+          "canonicalStake": "65000000"
+        },
+        {
+          "operation": "recovery",
+          "epoch": 2,
+          "sequence": 1,
+          "status": "active",
+          "publicKey": { "algorithm": "ed25519-solana-pubkey", "value": "0x3333333333333333333333333333333333333333333333333333333333333333" },
+          "canonicalStake": "65000000"
+        },
+        {
+          "operation": "reclaim",
+          "epoch": 3,
+          "sequence": 1,
+          "status": "active",
+          "publicKey": { "algorithm": "ed25519-solana-pubkey", "value": "0x4444444444444444444444444444444444444444444444444444444444444444" },
+          "canonicalStake": "65000000"
+        }
+      ]
+    },
+    {
+      "id": "evm-origin-provider-enforcement",
+      "originNetwork": "evm:8453",
+      "domain": "relay.maivw.com",
+      "steps": [
+        {
+          "operation": "register_provider",
+          "epoch": 1,
+          "sequence": 1,
+          "status": "active",
+          "providerTier": "professional",
+          "strikes": 0,
+          "canonicalStake": "900000000000000000000"
+        },
+        {
+          "operation": "warning",
+          "epoch": 1,
+          "sequence": 2,
+          "status": "active",
+          "providerTier": "professional",
+          "strikes": 1,
+          "canonicalStake": "900000000000000000000"
+        },
+        {
+          "operation": "slash",
+          "epoch": 1,
+          "sequence": 3,
+          "status": "suspended",
+          "providerTier": "professional",
+          "strikes": 2,
+          "canonicalStake": "450000000000000000000"
+        }
+      ]
+    },
+    {
+      "id": "solana-to-evm-mirror-lifecycle",
+      "originNetwork": "solana:4uhcVJyU9pJkvQyS88uRDiswHXSCkY3zQawwpjk2NsNY",
+      "destinationNetwork": "evm:8453",
+      "domain": "alice.maivw.com",
+      "steps": [
+        {
+          "operation": "register_mirror",
+          "attestationAction": 2,
+          "epoch": 3,
+          "sequence": 1,
+          "status": "active",
+          "originTxReference": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "attestedStake": "65000000",
+          "spendableLocalStake": "0"
+        },
+        {
+          "operation": "sync_mirror",
+          "attestationAction": 3,
+          "epoch": 3,
+          "sequence": 2,
+          "status": "suspended",
+          "originTxReference": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "attestedStake": "45000000",
+          "spendableLocalStake": "0"
+        },
+        {
+          "operation": "revoke_mirror",
+          "attestationAction": 4,
+          "epoch": 3,
+          "sequence": 3,
+          "status": "revoked",
+          "originTxReference": "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "attestedStake": "45000000",
+          "spendableLocalStake": "0",
+          "tombstone": true
+        }
+      ]
+    }
+  ]
+}
