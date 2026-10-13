@@ -57,6 +57,7 @@ export default defineConfig({
 				] },
 				{ label: 'Arquitetura e protocolo', items: [
 					{ label: 'Visão geral', slug: 'architecture/overview' },
+					{ label: 'Origem e espelhamento multichain', slug: 'architecture/multichain-origin-and-mirroring' },
 					{ label: 'Fluxos do Gateway', slug: 'developers/architecture-spec' },
 					{ label: 'Garantias e limites', slug: 'developers/security-matrix' },
 					{ label: 'Especificação P2P', slug: 'developers/p2p-handshake-spec' },

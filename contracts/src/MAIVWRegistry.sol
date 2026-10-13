@@ -745,6 +745,11 @@ contract MAIVWRegistry is
         delete providerTiers[_h];
         delete domainMirrors[_h];
         delete domainTotalFees[_h];
+        delete pendingAdminKey[_h];
+        delete pendingRecovery[_h];
+        delete pendingSlashes[_h];
+        delete domainTlsFingerprints[_h];
+        frozen[_h] = false;
         p.strikeCount = 0;
         p.epoch += 1;
     }
