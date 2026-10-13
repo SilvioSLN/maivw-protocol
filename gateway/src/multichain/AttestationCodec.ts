@@ -67,12 +67,24 @@ function u64(value: bigint): Hex {
   return numberToHex(value, { size: 8 });
 }
 
+function assertKindAction(kind: AttestationKind, action: AttestationAction): void {
+  const valid =
+    (kind === AttestationKind.ORIGIN_CLAIM && action === AttestationAction.REGISTER_ORIGIN) ||
+    (kind === AttestationKind.STATE_ATTESTATION &&
+      action >= AttestationAction.REGISTER_MIRROR &&
+      action <= AttestationAction.REVOKE_MIRROR);
+  if (!valid) {
+    throw new Error(`invalid attestation kind/action pair: ${kind}/${action}`);
+  }
+}
+
 /**
  * Produces the fixed-width V1 envelope shared by TypeScript, Rust and Solidity.
  * Integer fields use unsigned big-endian encoding. Dynamic data is committed
  * through payloadHash/evidenceHash and never concatenated directly.
  */
 export function encodeAttestationV1(input: AttestationV1): Hex {
+  assertKindAction(input.kind, input.action);
   assertBytes32("domainHash", input.domainHash);
   assertBytes32("originNetworkHash", input.originNetworkHash);
   assertBytes32("originRegistry", input.originRegistry);
@@ -129,4 +141,3 @@ export function assertSolanaRegistryBytes(value: Hex): Hex {
   assertBytes32("solanaRegistry", value);
   return value;
 }
-

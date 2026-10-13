@@ -27,6 +27,7 @@ out/
 broadcast/
 cache/
 artifacts/
+solana/target/
 
 # Credentials, Keys & Certificates
 keys/

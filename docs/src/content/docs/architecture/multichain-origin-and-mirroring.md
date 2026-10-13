@@ -197,18 +197,9 @@ Autoriza criação, sincronização ou revogação de mirror e inclui:
 
 Os codecs Rust, TypeScript e Solidity devem compartilhar vetores de teste. Para o MVP, o signer permanece secp256k1 para compatibilidade com o KMS atual; na Solana a transação usa o precompile secp256k1 e o programa inspeciona a instrução de verificação.
 
-## Economia Solana — decisão ainda aberta
+## Economia Solana
 
-A implementação não deve fixar valores antes de decidir:
-
-- SOL ou SPL Token para fee/stake;
-- ativo permitido e decimals;
-- como representar burn verificável;
-- quem financia rent;
-- split founder/treasury/stake/reporter;
-- política de mudança do ativo.
-
-O schema deve separar o saldo de rent da caução. Mirrors não recebem stake local e o relayer paga a criação inicial das contas de mirror no MVP.
+A política econômica do MVP está definida em [Economia do Registry Solana](/architecture/solana-economics/). Em resumo: taxa e caução usam um único mint SPL fixado por versão; SOL fica restrito a transaction fees e rent; mirrors não recebem stake local; e o relayer paga a criação inicial das contas de mirror.
 
 ## Falhas e confiança
 
@@ -225,4 +216,3 @@ O schema deve separar o saldo de rent da caução. Mirrors não recebem stake lo
 - Ponte trustless/light-client entre EVM e Solana.
 - Promoção automática de mirror após falha da origem.
 - Wallet Solana obrigatória para usuário quando o relayer puder patrocinar a operação.
-

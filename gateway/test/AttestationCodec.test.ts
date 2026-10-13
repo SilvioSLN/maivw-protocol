@@ -81,6 +81,15 @@ describe("AttestationCodec V1", () => {
       () => encodeAttestationV1({ ...fixture(), deadline: 1n << 64n }),
       /deadline must fit an unsigned 64-bit integer/,
     );
+    assert.throws(
+      () =>
+        encodeAttestationV1({
+          ...fixture(),
+          kind: AttestationKind.ORIGIN_CLAIM,
+          action: AttestationAction.SYNC_MIRROR,
+        }),
+      /invalid attestation kind\/action pair/,
+    );
   });
 
   it("supports an origin claim addressed to its chosen origin registry", () => {

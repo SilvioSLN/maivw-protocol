@@ -31,5 +31,8 @@ Network identifiers use canonical strings such as `evm:8453` or `solana:<cluster
 
 EVM registry addresses are left-padded with twelve zero bytes. Solana program IDs use their raw 32 decoded bytes. Conversion of domain keys between secp256k1 and Ed25519 is forbidden.
 
-The JSON files under `fixtures/` are normative test vectors. Implementations must reproduce both `encoded` and `digest` exactly.
+The JSON files under `fixtures/` are normative test vectors. Implementations must reproduce both `encoded` and `digest` exactly. The maintained implementations are:
 
+- TypeScript: `gateway/src/multichain/AttestationCodec.ts`
+- Solidity: `contracts/src/libraries/MAIVWAttestationV1.sol`
+- Rust: `solana/crates/maivw-attestation/src/lib.rs`
