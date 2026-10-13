@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use maivw_attestation::AttestationV1;
+use maivw_attestation::{AttestationAction, AttestationKind, AttestationV1};
 use solana_instruction::Instruction;
 use solana_instructions_sysvar::{load_current_index_checked, load_instruction_at_checked};
 use solana_sdk_ids::ed25519_program;
@@ -29,7 +29,7 @@ pub fn verify(
     config: &RegistryConfig,
     instructions_sysvar: &AccountInfo<'_>,
     envelope: &[u8],
-) -> Result<()> {
+) -> Result<AttestationV1> {
     let now = Clock::get()?.unix_timestamp;
     let attestation = validate_envelope(config, envelope, now)?;
 
@@ -43,7 +43,56 @@ pub fn verify(
         attestation
             .digest()
             .map_err(|_| error!(MaivwError::InvalidAttestation))?,
-    )
+    )?;
+    Ok(attestation)
+}
+
+pub fn verify_origin_claim(
+    config: &RegistryConfig,
+    instructions_sysvar: &AccountInfo<'_>,
+    envelope: &[u8],
+    expected_domain_hash: [u8; 32],
+    expected_payload_hash: [u8; 32],
+    expected_nonce: [u8; 32],
+) -> Result<AttestationV1> {
+    let attestation = verify(config, instructions_sysvar, envelope)?;
+    validate_origin_claim(
+        &attestation,
+        config,
+        expected_domain_hash,
+        expected_payload_hash,
+        expected_nonce,
+    )?;
+    Ok(attestation)
+}
+
+fn validate_origin_claim(
+    attestation: &AttestationV1,
+    config: &RegistryConfig,
+    expected_domain_hash: [u8; 32],
+    expected_payload_hash: [u8; 32],
+    expected_nonce: [u8; 32],
+) -> Result<()> {
+    require!(
+        matches!(attestation.kind, AttestationKind::OriginClaim)
+            && matches!(attestation.action, AttestationAction::RegisterOrigin)
+            && attestation.domain_hash == expected_domain_hash
+            && attestation.origin_network_hash == config.network_hash
+            && attestation.origin_registry == ID.to_bytes()
+            && attestation.nonce == expected_nonce
+            && attestation.global_domain_epoch == 0
+            && attestation.origin_sequence == 0,
+        MaivwError::InvalidOriginClaim
+    );
+    require!(
+        attestation.payload_hash == expected_payload_hash,
+        MaivwError::InvalidRegistrationPayload
+    );
+    require!(
+        attestation.evidence_hash != [0; 32],
+        MaivwError::MissingOriginEvidence
+    );
+    Ok(())
 }
 
 fn validate_envelope(
@@ -141,8 +190,6 @@ fn checked_slice(data: &[u8], offset: u16, size: usize) -> Result<&[u8]> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use maivw_attestation::{AttestationAction, AttestationKind};
-
     fn config() -> RegistryConfig {
         RegistryConfig {
             schema_version: 1,
@@ -152,6 +199,8 @@ mod tests {
             guardian: Pubkey::new_unique(),
             oracle_key: [1; 32],
             asset_mint: Pubkey::new_unique(),
+            token_program: anchor_spl::token::ID,
+            asset_decimals: 9,
             treasury: Pubkey::new_unique(),
             founder: Pubkey::new_unique(),
             network_hash: [2; 32],
@@ -255,5 +304,28 @@ mod tests {
         let mut zero_nonce = envelope();
         zero_nonce.nonce = [0; 32];
         assert!(validate_envelope(&registry, &zero_nonce.encode().unwrap(), 100).is_err());
+    }
+
+    #[test]
+    fn origin_claim_binds_origin_domain_payload_and_initial_version() {
+        let registry = config();
+        let mut claim = envelope();
+        claim.kind = AttestationKind::OriginClaim;
+        claim.action = AttestationAction::RegisterOrigin;
+        claim.domain_hash = [3; 32];
+        claim.origin_network_hash = registry.network_hash;
+        claim.origin_registry = ID.to_bytes();
+        claim.global_domain_epoch = 0;
+        claim.origin_sequence = 0;
+        claim.payload_hash = [7; 32];
+        claim.evidence_hash = [8; 32];
+
+        assert!(validate_origin_claim(&claim, &registry, [3; 32], [7; 32], [6; 32]).is_ok());
+        assert!(validate_origin_claim(&claim, &registry, [4; 32], [7; 32], [6; 32]).is_err());
+        assert!(validate_origin_claim(&claim, &registry, [3; 32], [9; 32], [6; 32]).is_err());
+        assert!(validate_origin_claim(&claim, &registry, [3; 32], [7; 32], [9; 32]).is_err());
+
+        claim.evidence_hash = [0; 32];
+        assert!(validate_origin_claim(&claim, &registry, [3; 32], [7; 32], [6; 32]).is_err());
     }
 }

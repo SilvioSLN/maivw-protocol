@@ -34,4 +34,22 @@ pub enum MaivwError {
     InvalidOriginReference,
     #[msg("mirror records must identify a distinct origin deployment")]
     InvalidMirrorReference,
+    #[msg("origin claim does not authorize this registration")]
+    InvalidOriginClaim,
+    #[msg("origin claim payload does not match the registration")]
+    InvalidRegistrationPayload,
+    #[msg("origin claim must carry DNS evidence")]
+    MissingOriginEvidence,
+    #[msg("provider tier is invalid")]
+    InvalidProviderTier,
+    #[msg("token mint or token program does not match registry configuration")]
+    InvalidAsset,
+    #[msg("token decimals do not match registry configuration")]
+    InvalidAssetDecimals,
+    #[msg("economic calculation overflowed")]
+    ArithmeticOverflow,
+    #[msg("fee split does not conserve the full payment")]
+    InvalidFeeSplit,
+    #[msg("stake vault accounting does not match its token account")]
+    InvalidStakeVault,
 }

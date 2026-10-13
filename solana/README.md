@@ -2,8 +2,8 @@
 
 Workspace Anchor do Registry MAIVW capaz de operar como origem canônica ou como
 espelho de uma origem EVM/Solana. A implementação é incremental; o estado deste
-marco cobre o schema base e a autenticação de atestações, ainda sem instruções de
-mutação do registro.
+marco cobre o schema base, autenticação de atestações, inicialização do registry
+e registros de origem para domínios e provedores com pagamento SPL atômico.
 
 ## Toolchain fixada
 
@@ -21,8 +21,10 @@ A carteira é ignorada pelo Git e nunca deve receber ativos reais.
 
 | Conta | Seeds | Objetivo |
 |---|---|---|
-| `RegistryConfig` | `['registry-config']` | Governança, oráculo, ativo econômico, fees, delays e tiers |
+| `RegistryConfig` | `['registry-config']` | Governança, oráculo, mint/token program, fees, delays e tiers |
 | `DomainRecord` | `['domain', domain_hash]` | Estado de domínio `Origin` ou `Mirror` |
+| `OriginClaimReceipt` | `['origin-claim', domain_hash, nonce]` | Consumo append-only de uma autorização global |
+| `StakeVault` | `['stake-vault', domain_hash]` | Metadados e contabilidade da caução isolada |
 
 `DomainRecord` reserva espaço para domínio DNS de 253 bytes e endpoint de 512
 bytes. Os testes serializam o pior caso, comparam o tamanho declarado e calculam
@@ -40,6 +42,21 @@ o rent mínimo correspondente.
 6. deadline vigente e nonce diferente de zero;
 7. a conta real do instructions sysvar.
 
-O consumo persistente do nonce será feito pelo `OriginClaimReceipt` em SM-027.
-Até essa conta existir, `verify_attestation` é uma verificação sem mutação e não
-deve ser usada isoladamente como prova de consumo único.
+`verify_attestation` continua disponível como verificação sem mutação. As
+instruções `register_domain` e `register_provider` fazem o consumo persistente
+criando `OriginClaimReceipt`; portanto, somente elas oferecem proteção contra
+replay de cadastro.
+
+## Inicialização e registros de origem
+
+`initialize_registry` cria uma única configuração no PDA global, fixa o SPL
+Token Program clássico, mint e decimals, e valida roles, fees, delays e tiers.
+
+`register_domain` exige `OriginClaimV1`, cria domínio/recibo/vault atomicamente e
+transfere exatamente `standardFee`: 10% para o founder vault, 25% para o treasury
+vault e o restante para o stake vault do domínio. `register_provider` também
+exige o claim, mas transfere 100% do `requiredStake` do tier para o stake vault e
+grava seu limite diário. Lamports de rent nunca são lidos como caução.
+
+O layout normativo de `payloadHash` está em
+[`SOLANA_REGISTRATION_PAYLOAD_V1.md`](../specs/multichain/SOLANA_REGISTRATION_PAYLOAD_V1.md).

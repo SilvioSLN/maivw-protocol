@@ -8,66 +8,232 @@
   },
   "instructions": [
     {
+      "name": "initialize_registry",
+      "discriminator": [189, 181, 20, 17, 174, 57, 249, 59],
+      "accounts": [
+        { "name": "authority", "writable": true, "signer": true },
+        { "name": "config", "writable": true },
+        { "name": "mint" },
+        { "name": "token_program" },
+        { "name": "system_program" }
+      ],
+      "args": [{ "name": "args", "type": { "defined": { "name": "maivw_registry::registration::InitializeRegistryArgs" } } }]
+    },
+    {
       "name": "verify_attestation",
       "discriminator": [144, 30, 116, 186, 33, 176, 35, 60],
       "accounts": [{ "name": "config" }, { "name": "instructions" }],
       "args": [{ "name": "envelope", "type": "bytes" }]
+    },
+    {
+      "name": "register_domain",
+      "discriminator": [236, 7, 208, 151, 173, 149, 73, 104],
+      "accounts": [
+        { "name": "registrant", "writable": true, "signer": true },
+        { "name": "config" },
+        { "name": "domain_record", "writable": true },
+        { "name": "claim_receipt", "writable": true },
+        { "name": "stake_vault", "writable": true },
+        { "name": "registrant_token", "writable": true },
+        { "name": "mint" },
+        { "name": "founder_vault_authority" },
+        { "name": "founder_vault", "writable": true },
+        { "name": "treasury_vault_authority" },
+        { "name": "treasury_vault", "writable": true },
+        { "name": "stake_vault_token", "writable": true },
+        { "name": "instructions" },
+        { "name": "token_program" },
+        { "name": "associated_token_program" },
+        { "name": "system_program" }
+      ],
+      "args": [
+        { "name": "args", "type": { "defined": { "name": "maivw_registry::registration::RegisterDomainArgs" } } },
+        { "name": "envelope", "type": "bytes" }
+      ]
+    },
+    {
+      "name": "register_provider",
+      "discriminator": [254, 209, 54, 184, 46, 197, 109, 78],
+      "accounts": [
+        { "name": "registrant", "writable": true, "signer": true },
+        { "name": "config" },
+        { "name": "domain_record", "writable": true },
+        { "name": "claim_receipt", "writable": true },
+        { "name": "stake_vault", "writable": true },
+        { "name": "registrant_token", "writable": true },
+        { "name": "mint" },
+        { "name": "stake_vault_token", "writable": true },
+        { "name": "instructions" },
+        { "name": "token_program" },
+        { "name": "associated_token_program" },
+        { "name": "system_program" }
+      ],
+      "args": [
+        { "name": "args", "type": { "defined": { "name": "maivw_registry::registration::RegisterProviderArgs" } } },
+        { "name": "envelope", "type": "bytes" }
+      ]
     }
   ],
   "accounts": [
-    {
-      "name": "maivw_registry::state::RegistryConfig",
-      "discriminator": [23, 118, 10, 246, 173, 231, 243, 156]
-    }
+    { "name": "maivw_registry::state::DomainRecord", "discriminator": [130, 61, 36, 125, 56, 48, 189, 247] },
+    { "name": "maivw_registry::state::OriginClaimReceipt", "discriminator": [228, 140, 49, 209, 88, 178, 253, 196] },
+    { "name": "maivw_registry::state::RegistryConfig", "discriminator": [23, 118, 10, 246, 173, 231, 243, 156] },
+    { "name": "maivw_registry::state::StakeVault", "discriminator": [192, 112, 65, 125, 129, 151, 173, 226] }
   ],
   "types": [
     {
+      "name": "maivw_registry::registration::InitializeRegistryArgs",
+      "type": { "kind": "struct", "fields": [
+        { "name": "guardian", "type": "pubkey" },
+        { "name": "oracle_key", "type": { "array": ["u8", 32] } },
+        { "name": "treasury", "type": "pubkey" },
+        { "name": "founder", "type": "pubkey" },
+        { "name": "network_hash", "type": { "array": ["u8", 32] } },
+        { "name": "standard_fee", "type": "u64" },
+        { "name": "provider_fee", "type": "u64" },
+        { "name": "mirror_fee", "type": "u64" },
+        { "name": "slash_delay_seconds", "type": "u64" },
+        { "name": "recovery_delay_seconds", "type": "u64" },
+        { "name": "tiers", "type": { "array": [{ "defined": { "name": "maivw_registry::state::ProviderTierConfig" } }, 3] } }
+      ] }
+    },
+    {
+      "name": "maivw_registry::registration::RegisterDomainArgs",
+      "type": { "kind": "struct", "fields": [
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "claim_nonce", "type": { "array": ["u8", 32] } },
+        { "name": "domain", "type": "string" },
+        { "name": "endpoint", "type": "string" },
+        { "name": "operational_key", "type": { "array": ["u8", 32] } },
+        { "name": "admin_key", "type": { "array": ["u8", 32] } },
+        { "name": "tls_fingerprint", "type": { "array": ["u8", 32] } }
+      ] }
+    },
+    {
+      "name": "maivw_registry::registration::RegisterProviderArgs",
+      "type": { "kind": "struct", "fields": [
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "claim_nonce", "type": { "array": ["u8", 32] } },
+        { "name": "domain", "type": "string" },
+        { "name": "endpoint", "type": "string" },
+        { "name": "operational_key", "type": { "array": ["u8", 32] } },
+        { "name": "admin_key", "type": { "array": ["u8", 32] } },
+        { "name": "tls_fingerprint", "type": { "array": ["u8", 32] } },
+        { "name": "tier", "type": { "defined": { "name": "maivw_registry::state::ProviderTier" } } }
+      ] }
+    },
+    {
       "name": "maivw_registry::state::ProviderTierConfig",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          { "name": "required_stake", "type": "u64" },
-          { "name": "daily_limit", "type": "u64" },
-          { "name": "penalty_per_strike", "type": "u64" }
-        ]
-      }
+      "type": { "kind": "struct", "fields": [
+        { "name": "required_stake", "type": "u64" },
+        { "name": "daily_limit", "type": "u64" },
+        { "name": "penalty_per_strike", "type": "u64" }
+      ] }
+    },
+    {
+      "name": "maivw_registry::state::ProviderTier",
+      "repr": { "kind": "rust" },
+      "type": { "kind": "enum", "variants": [{ "name": "None" }, { "name": "Basic" }, { "name": "Trusted" }, { "name": "Institutional" }] }
+    },
+    {
+      "name": "maivw_registry::state::NetworkFamily",
+      "repr": { "kind": "rust" },
+      "type": { "kind": "enum", "variants": [{ "name": "Evm" }, { "name": "Solana" }] }
+    },
+    {
+      "name": "maivw_registry::state::RecordKind",
+      "repr": { "kind": "rust" },
+      "type": { "kind": "enum", "variants": [{ "name": "Origin" }, { "name": "Mirror" }] }
+    },
+    {
+      "name": "maivw_registry::state::DomainStatus",
+      "repr": { "kind": "rust" },
+      "type": { "kind": "enum", "variants": [{ "name": "Active" }, { "name": "Suspended" }, { "name": "Revoked" }] }
+    },
+    {
+      "name": "maivw_registry::state::KeyAlgorithm",
+      "repr": { "kind": "rust" },
+      "type": { "kind": "enum", "variants": [{ "name": "None" }, { "name": "Secp256k1EvmAddress" }, { "name": "Ed25519SolanaPubkey" }, { "name": "Ed25519Raw" }] }
+    },
+    {
+      "name": "maivw_registry::state::NetworkReference",
+      "type": { "kind": "struct", "fields": [
+        { "name": "family", "type": { "defined": { "name": "maivw_registry::state::NetworkFamily" } } },
+        { "name": "network_hash", "type": { "array": ["u8", 32] } }
+      ] }
+    },
+    {
+      "name": "maivw_registry::state::KeyDescriptor",
+      "type": { "kind": "struct", "fields": [
+        { "name": "algorithm", "type": { "defined": { "name": "maivw_registry::state::KeyAlgorithm" } } },
+        { "name": "value", "type": { "array": ["u8", 32] } }
+      ] }
+    },
+    {
+      "name": "maivw_registry::state::TransactionReference",
+      "type": { "kind": "struct", "fields": [
+        { "name": "family", "type": { "defined": { "name": "maivw_registry::state::NetworkFamily" } } },
+        { "name": "hash", "type": { "array": ["u8", 32] } }
+      ] }
     },
     {
       "name": "maivw_registry::state::RegistryConfig",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          { "name": "schema_version", "type": "u16" },
-          { "name": "bump", "type": "u8" },
-          { "name": "active", "type": "bool" },
-          { "name": "authority", "type": "pubkey" },
-          { "name": "guardian", "type": "pubkey" },
-          { "name": "oracle_key", "type": { "array": ["u8", 32] } },
-          { "name": "asset_mint", "type": "pubkey" },
-          { "name": "treasury", "type": "pubkey" },
-          { "name": "founder", "type": "pubkey" },
-          { "name": "network_hash", "type": { "array": ["u8", 32] } },
-          { "name": "standard_fee", "type": "u64" },
-          { "name": "provider_fee", "type": "u64" },
-          { "name": "mirror_fee", "type": "u64" },
-          { "name": "slash_delay_seconds", "type": "u64" },
-          { "name": "recovery_delay_seconds", "type": "u64" },
-          {
-            "name": "tiers",
-            "type": {
-              "array": [
-                {
-                  "defined": {
-                    "name": "maivw_registry::state::ProviderTierConfig"
-                  }
-                },
-                3
-              ]
-            }
-          },
-          { "name": "created_at", "type": "i64" }
-        ]
-      }
+      "type": { "kind": "struct", "fields": [
+        { "name": "schema_version", "type": "u16" }, { "name": "bump", "type": "u8" },
+        { "name": "active", "type": "bool" }, { "name": "authority", "type": "pubkey" },
+        { "name": "guardian", "type": "pubkey" }, { "name": "oracle_key", "type": { "array": ["u8", 32] } },
+        { "name": "asset_mint", "type": "pubkey" }, { "name": "token_program", "type": "pubkey" },
+        { "name": "asset_decimals", "type": "u8" }, { "name": "treasury", "type": "pubkey" },
+        { "name": "founder", "type": "pubkey" }, { "name": "network_hash", "type": { "array": ["u8", 32] } },
+        { "name": "standard_fee", "type": "u64" }, { "name": "provider_fee", "type": "u64" },
+        { "name": "mirror_fee", "type": "u64" }, { "name": "slash_delay_seconds", "type": "u64" },
+        { "name": "recovery_delay_seconds", "type": "u64" },
+        { "name": "tiers", "type": { "array": [{ "defined": { "name": "maivw_registry::state::ProviderTierConfig" } }, 3] } },
+        { "name": "created_at", "type": "i64" }
+      ] }
+    },
+    {
+      "name": "maivw_registry::state::DomainRecord",
+      "type": { "kind": "struct", "fields": [
+        { "name": "schema_version", "type": "u16" }, { "name": "bump", "type": "u8" },
+        { "name": "kind", "type": { "defined": { "name": "maivw_registry::state::RecordKind" } } },
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } }, { "name": "domain", "type": "string" },
+        { "name": "origin", "type": { "defined": { "name": "maivw_registry::state::NetworkReference" } } },
+        { "name": "origin_registry", "type": { "array": ["u8", 32] } },
+        { "name": "operational_key", "type": { "defined": { "name": "maivw_registry::state::KeyDescriptor" } } },
+        { "name": "admin_key", "type": { "defined": { "name": "maivw_registry::state::KeyDescriptor" } } },
+        { "name": "endpoint", "type": "string" }, { "name": "tls_fingerprint", "type": { "array": ["u8", 32] } },
+        { "name": "status", "type": { "defined": { "name": "maivw_registry::state::DomainStatus" } } },
+        { "name": "global_domain_epoch", "type": "u64" }, { "name": "origin_sequence", "type": "u64" },
+        { "name": "provider", "type": "pubkey" },
+        { "name": "provider_tier", "type": { "defined": { "name": "maivw_registry::state::ProviderTier" } } },
+        { "name": "strikes", "type": "u32" }, { "name": "created_at", "type": "i64" },
+        { "name": "updated_at", "type": "i64" }, { "name": "attested_stake", "type": "u64" },
+        { "name": "attested_daily_limit", "type": "u64" }, { "name": "original_registration_amount", "type": "u64" },
+        { "name": "current_stake", "type": "u64" },
+        { "name": "origin_transaction", "type": { "defined": { "name": "maivw_registry::state::TransactionReference" } } }
+      ] }
+    },
+    {
+      "name": "maivw_registry::state::OriginClaimReceipt",
+      "type": { "kind": "struct", "fields": [
+        { "name": "schema_version", "type": "u16" }, { "name": "bump", "type": "u8" },
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "origin_network_hash", "type": { "array": ["u8", 32] } },
+        { "name": "origin_registry", "type": { "array": ["u8", 32] } },
+        { "name": "nonce", "type": { "array": ["u8", 32] } },
+        { "name": "attestation_digest", "type": { "array": ["u8", 32] } },
+        { "name": "consumed_by", "type": "pubkey" }, { "name": "consumed_at", "type": "i64" }
+      ] }
+    },
+    {
+      "name": "maivw_registry::state::StakeVault",
+      "type": { "kind": "struct", "fields": [
+        { "name": "schema_version", "type": "u16" }, { "name": "bump", "type": "u8" },
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } }, { "name": "mint", "type": "pubkey" },
+        { "name": "token_account", "type": "pubkey" }, { "name": "original_registration_amount", "type": "u64" },
+        { "name": "current_stake", "type": "u64" }
+      ] }
     }
   ],
   "errors": [
@@ -86,6 +252,15 @@
     { "code": 6012, "name": "InvalidDomain", "msg": "domain must be canonical lowercase ASCII" },
     { "code": 6013, "name": "InvalidDomainHash", "msg": "domain hash does not match the canonical domain" },
     { "code": 6014, "name": "InvalidOriginReference", "msg": "origin records must identify this Solana deployment" },
-    { "code": 6015, "name": "InvalidMirrorReference", "msg": "mirror records must identify a distinct origin deployment" }
+    { "code": 6015, "name": "InvalidMirrorReference", "msg": "mirror records must identify a distinct origin deployment" },
+    { "code": 6016, "name": "InvalidOriginClaim", "msg": "origin claim does not authorize this registration" },
+    { "code": 6017, "name": "InvalidRegistrationPayload", "msg": "origin claim payload does not match the registration" },
+    { "code": 6018, "name": "MissingOriginEvidence", "msg": "origin claim must carry DNS evidence" },
+    { "code": 6019, "name": "InvalidProviderTier", "msg": "provider tier is invalid" },
+    { "code": 6020, "name": "InvalidAsset", "msg": "token mint or token program does not match registry configuration" },
+    { "code": 6021, "name": "InvalidAssetDecimals", "msg": "token decimals do not match registry configuration" },
+    { "code": 6022, "name": "ArithmeticOverflow", "msg": "economic calculation overflowed" },
+    { "code": 6023, "name": "InvalidFeeSplit", "msg": "fee split does not conserve the full payment" },
+    { "code": 6024, "name": "InvalidStakeVault", "msg": "stake vault accounting does not match its token account" }
   ]
 }

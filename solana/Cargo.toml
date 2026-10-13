@@ -8,7 +8,8 @@ license = "MIT"
 rust-version = "1.93"
 
 [workspace.dependencies]
-anchor-lang = "=1.0.1"
+anchor-lang = { version = "=1.0.1", features = ["init-if-needed"] }
+anchor-spl = { version = "=1.0.1", default-features = false, features = ["associated_token", "token"] }
 maivw-attestation = { path = "crates/maivw-attestation" }
 solana-instruction = "=3.5.1"
 solana-instructions-sysvar = "=3.0.1"
