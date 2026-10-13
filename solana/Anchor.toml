@@ -1,0 +1,23 @@
+[toolchain]
+anchor_version = "1.0.1"
+solana_version = "3.1.10"
+package_manager = "npm"
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+maivw_registry = "8MybG5qUxPpe3vVQB47VtMVUEknBuBk9yuQydr8XxRy9"
+
+[provider]
+cluster = "Localnet"
+wallet = "tests/fixtures/local-authority.json"
+
+[scripts]
+test = "cargo test --workspace --locked"
+
+[test]
+startup_wait = 10000
+shutdown_wait = 2000
+upgradeable = true

@@ -49,3 +49,25 @@ fn rejects_invalid_kind_action_pair() {
     attestation.kind = AttestationKind::OriginClaim;
     assert!(attestation.encode().is_err());
 }
+
+#[test]
+fn decodes_the_canonical_envelope() {
+    let expected = fixture();
+    let encoded = expected.encode().expect("valid fixture");
+    assert_eq!(AttestationV1::decode(&encoded), Ok(expected));
+}
+
+#[test]
+fn rejects_non_canonical_wire_values() {
+    let encoded = fixture().encode().expect("valid fixture");
+
+    let mut bad_magic = encoded;
+    bad_magic[0] ^= 1;
+    assert!(AttestationV1::decode(&bad_magic).is_err());
+
+    let mut bad_reserved = encoded;
+    bad_reserved[11] = 1;
+    assert!(AttestationV1::decode(&bad_reserved).is_err());
+
+    assert!(AttestationV1::decode(&encoded[..encoded.len() - 1]).is_err());
+}

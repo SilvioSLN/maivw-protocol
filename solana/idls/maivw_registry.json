@@ -1,0 +1,91 @@
+{
+  "address": "8MybG5qUxPpe3vVQB47VtMVUEknBuBk9yuQydr8XxRy9",
+  "metadata": {
+    "name": "maivw_registry",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "MAIVW origin and mirror registry for Solana"
+  },
+  "instructions": [
+    {
+      "name": "verify_attestation",
+      "discriminator": [144, 30, 116, 186, 33, 176, 35, 60],
+      "accounts": [{ "name": "config" }, { "name": "instructions" }],
+      "args": [{ "name": "envelope", "type": "bytes" }]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "maivw_registry::state::RegistryConfig",
+      "discriminator": [23, 118, 10, 246, 173, 231, 243, 156]
+    }
+  ],
+  "types": [
+    {
+      "name": "maivw_registry::state::ProviderTierConfig",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "required_stake", "type": "u64" },
+          { "name": "daily_limit", "type": "u64" },
+          { "name": "penalty_per_strike", "type": "u64" }
+        ]
+      }
+    },
+    {
+      "name": "maivw_registry::state::RegistryConfig",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "schema_version", "type": "u16" },
+          { "name": "bump", "type": "u8" },
+          { "name": "active", "type": "bool" },
+          { "name": "authority", "type": "pubkey" },
+          { "name": "guardian", "type": "pubkey" },
+          { "name": "oracle_key", "type": { "array": ["u8", 32] } },
+          { "name": "asset_mint", "type": "pubkey" },
+          { "name": "treasury", "type": "pubkey" },
+          { "name": "founder", "type": "pubkey" },
+          { "name": "network_hash", "type": { "array": ["u8", 32] } },
+          { "name": "standard_fee", "type": "u64" },
+          { "name": "provider_fee", "type": "u64" },
+          { "name": "mirror_fee", "type": "u64" },
+          { "name": "slash_delay_seconds", "type": "u64" },
+          { "name": "recovery_delay_seconds", "type": "u64" },
+          {
+            "name": "tiers",
+            "type": {
+              "array": [
+                {
+                  "defined": {
+                    "name": "maivw_registry::state::ProviderTierConfig"
+                  }
+                },
+                3
+              ]
+            }
+          },
+          { "name": "created_at", "type": "i64" }
+        ]
+      }
+    }
+  ],
+  "errors": [
+    { "code": 6000, "name": "RegistryPaused", "msg": "registry is paused" },
+    { "code": 6001, "name": "InvalidInstructionsSysvar", "msg": "invalid instructions sysvar" },
+    { "code": 6002, "name": "InvalidAttestation", "msg": "attestation envelope is malformed" },
+    { "code": 6003, "name": "InvalidDestination", "msg": "attestation destination does not match this deployment" },
+    { "code": 6004, "name": "AttestationExpired", "msg": "attestation has expired" },
+    { "code": 6005, "name": "ZeroNonce", "msg": "attestation nonce must not be zero" },
+    { "code": 6006, "name": "MissingEd25519Instruction", "msg": "the immediately preceding instruction must be Ed25519 verification" },
+    { "code": 6007, "name": "InvalidEd25519Instruction", "msg": "only one canonical Ed25519 signature is accepted" },
+    { "code": 6008, "name": "InvalidOracleSigner", "msg": "Ed25519 signer does not match the configured oracle" },
+    { "code": 6009, "name": "InvalidSignedMessage", "msg": "Ed25519 message does not match the attestation digest" },
+    { "code": 6010, "name": "InvalidRegistryConfig", "msg": "registry configuration is invalid" },
+    { "code": 6011, "name": "InvalidDomainRecord", "msg": "domain record is invalid" },
+    { "code": 6012, "name": "InvalidDomain", "msg": "domain must be canonical lowercase ASCII" },
+    { "code": 6013, "name": "InvalidDomainHash", "msg": "domain hash does not match the canonical domain" },
+    { "code": 6014, "name": "InvalidOriginReference", "msg": "origin records must identify this Solana deployment" },
+    { "code": 6015, "name": "InvalidMirrorReference", "msg": "mirror records must identify a distinct origin deployment" }
+  ]
+}

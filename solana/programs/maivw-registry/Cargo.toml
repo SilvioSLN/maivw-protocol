@@ -1,0 +1,26 @@
+[package]
+name = "maivw-registry"
+version = "0.1.0"
+description = "MAIVW origin and mirror registry for Solana"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "maivw_registry"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build"]
+
+[dependencies]
+anchor-lang.workspace = true
+maivw-attestation.workspace = true
+solana-instruction.workspace = true
+solana-instructions-sysvar.workspace = true
+solana-sdk-ids.workspace = true

@@ -1,0 +1,259 @@
+use anchor_lang::prelude::*;
+use maivw_attestation::AttestationV1;
+use solana_instruction::Instruction;
+use solana_instructions_sysvar::{load_current_index_checked, load_instruction_at_checked};
+use solana_sdk_ids::ed25519_program;
+
+use crate::{
+    ID,
+    constants::{
+        ATTESTATION_DIGEST_SIZE, CURRENT_INSTRUCTION_INDEX, ED25519_OFFSETS_SIZE,
+        ED25519_OFFSETS_START, ED25519_PUBLIC_KEY_SIZE, ED25519_SIGNATURE_SIZE,
+    },
+    error::MaivwError,
+    state::RegistryConfig,
+};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Ed25519Offsets {
+    signature_offset: u16,
+    signature_instruction_index: u16,
+    public_key_offset: u16,
+    public_key_instruction_index: u16,
+    message_data_offset: u16,
+    message_data_size: u16,
+    message_instruction_index: u16,
+}
+
+pub fn verify(
+    config: &RegistryConfig,
+    instructions_sysvar: &AccountInfo<'_>,
+    envelope: &[u8],
+) -> Result<()> {
+    let now = Clock::get()?.unix_timestamp;
+    let attestation = validate_envelope(config, envelope, now)?;
+
+    let current_index = load_current_index_checked(instructions_sysvar)?;
+    require!(current_index > 0, MaivwError::MissingEd25519Instruction);
+    let ed25519_instruction =
+        load_instruction_at_checked(usize::from(current_index - 1), instructions_sysvar)?;
+    verify_ed25519_instruction(
+        &ed25519_instruction,
+        config.oracle_key,
+        attestation
+            .digest()
+            .map_err(|_| error!(MaivwError::InvalidAttestation))?,
+    )
+}
+
+fn validate_envelope(
+    config: &RegistryConfig,
+    envelope: &[u8],
+    unix_timestamp: i64,
+) -> Result<AttestationV1> {
+    config.validate()?;
+    let attestation =
+        AttestationV1::decode(envelope).map_err(|_| error!(MaivwError::InvalidAttestation))?;
+    require!(
+        attestation.destination_network_hash == config.network_hash
+            && attestation.destination_registry == ID.to_bytes(),
+        MaivwError::InvalidDestination
+    );
+    require!(
+        attestation.deadline >= u64::try_from(unix_timestamp).unwrap_or(0),
+        MaivwError::AttestationExpired
+    );
+    require!(attestation.nonce != [0; 32], MaivwError::ZeroNonce);
+    Ok(attestation)
+}
+
+fn verify_ed25519_instruction(
+    instruction: &Instruction,
+    expected_oracle: [u8; 32],
+    expected_digest: [u8; 32],
+) -> Result<()> {
+    require_keys_eq!(
+        instruction.program_id,
+        ed25519_program::ID,
+        MaivwError::MissingEd25519Instruction
+    );
+    require!(
+        instruction.accounts.is_empty(),
+        MaivwError::InvalidEd25519Instruction
+    );
+    let data = &instruction.data;
+    require!(
+        data.len() >= ED25519_OFFSETS_START + ED25519_OFFSETS_SIZE && data[0] == 1 && data[1] == 0,
+        MaivwError::InvalidEd25519Instruction
+    );
+    let offsets = parse_offsets(data)?;
+    require!(
+        offsets.signature_instruction_index == CURRENT_INSTRUCTION_INDEX
+            && offsets.public_key_instruction_index == CURRENT_INSTRUCTION_INDEX
+            && offsets.message_instruction_index == CURRENT_INSTRUCTION_INDEX
+            && usize::from(offsets.message_data_size) == ATTESTATION_DIGEST_SIZE,
+        MaivwError::InvalidEd25519Instruction
+    );
+
+    let signature = checked_slice(data, offsets.signature_offset, ED25519_SIGNATURE_SIZE)?;
+    require!(
+        signature.iter().any(|byte| *byte != 0),
+        MaivwError::InvalidEd25519Instruction
+    );
+    let public_key = checked_slice(data, offsets.public_key_offset, ED25519_PUBLIC_KEY_SIZE)?;
+    require!(
+        public_key == expected_oracle,
+        MaivwError::InvalidOracleSigner
+    );
+    let message = checked_slice(data, offsets.message_data_offset, ATTESTATION_DIGEST_SIZE)?;
+    require!(message == expected_digest, MaivwError::InvalidSignedMessage);
+    Ok(())
+}
+
+fn parse_offsets(data: &[u8]) -> Result<Ed25519Offsets> {
+    let value = |position| {
+        u16::from_le_bytes(
+            data[position..position + 2]
+                .try_into()
+                .expect("bounds checked by caller"),
+        )
+    };
+    Ok(Ed25519Offsets {
+        signature_offset: value(2),
+        signature_instruction_index: value(4),
+        public_key_offset: value(6),
+        public_key_instruction_index: value(8),
+        message_data_offset: value(10),
+        message_data_size: value(12),
+        message_instruction_index: value(14),
+    })
+}
+
+fn checked_slice(data: &[u8], offset: u16, size: usize) -> Result<&[u8]> {
+    let start = usize::from(offset);
+    let end = start
+        .checked_add(size)
+        .ok_or_else(|| error!(MaivwError::InvalidEd25519Instruction))?;
+    data.get(start..end)
+        .ok_or_else(|| error!(MaivwError::InvalidEd25519Instruction))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use maivw_attestation::{AttestationAction, AttestationKind};
+
+    fn config() -> RegistryConfig {
+        RegistryConfig {
+            schema_version: 1,
+            bump: 1,
+            active: true,
+            authority: Pubkey::new_unique(),
+            guardian: Pubkey::new_unique(),
+            oracle_key: [1; 32],
+            asset_mint: Pubkey::new_unique(),
+            treasury: Pubkey::new_unique(),
+            founder: Pubkey::new_unique(),
+            network_hash: [2; 32],
+            standard_fee: 1,
+            provider_fee: 1,
+            mirror_fee: 1,
+            slash_delay_seconds: 1,
+            recovery_delay_seconds: 1,
+            tiers: [
+                crate::state::ProviderTierConfig {
+                    required_stake: 1,
+                    daily_limit: 1,
+                    penalty_per_strike: 1,
+                },
+                crate::state::ProviderTierConfig {
+                    required_stake: 2,
+                    daily_limit: 2,
+                    penalty_per_strike: 1,
+                },
+                crate::state::ProviderTierConfig {
+                    required_stake: 3,
+                    daily_limit: 3,
+                    penalty_per_strike: 1,
+                },
+            ],
+            created_at: 1,
+        }
+    }
+
+    fn envelope() -> AttestationV1 {
+        AttestationV1 {
+            kind: AttestationKind::StateAttestation,
+            action: AttestationAction::SyncMirror,
+            domain_hash: [3; 32],
+            origin_network_hash: [4; 32],
+            origin_registry: [5; 32],
+            destination_network_hash: [2; 32],
+            destination_registry: ID.to_bytes(),
+            global_domain_epoch: 1,
+            origin_sequence: 1,
+            nonce: [6; 32],
+            deadline: 100,
+            payload_hash: [7; 32],
+            evidence_hash: [8; 32],
+        }
+    }
+
+    fn put_u16(data: &mut [u8], offset: usize, value: u16) {
+        data[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+    }
+
+    fn instruction(oracle: [u8; 32], digest: [u8; 32]) -> Instruction {
+        let mut data = vec![0_u8; 144];
+        data[0] = 1;
+        put_u16(&mut data, 2, 48);
+        put_u16(&mut data, 4, CURRENT_INSTRUCTION_INDEX);
+        put_u16(&mut data, 6, 16);
+        put_u16(&mut data, 8, CURRENT_INSTRUCTION_INDEX);
+        put_u16(&mut data, 10, 112);
+        put_u16(&mut data, 12, 32);
+        put_u16(&mut data, 14, CURRENT_INSTRUCTION_INDEX);
+        data[16..48].copy_from_slice(&oracle);
+        data[48..112].fill(7);
+        data[112..144].copy_from_slice(&digest);
+        Instruction {
+            program_id: ed25519_program::ID,
+            accounts: vec![],
+            data,
+        }
+    }
+
+    #[test]
+    fn accepts_one_local_ed25519_signature_over_exact_digest() {
+        assert!(
+            verify_ed25519_instruction(&instruction([1; 32], [2; 32]), [1; 32], [2; 32]).is_ok()
+        );
+    }
+
+    #[test]
+    fn rejects_signer_message_and_cross_instruction_references() {
+        let valid = instruction([1; 32], [2; 32]);
+        assert!(verify_ed25519_instruction(&valid, [3; 32], [2; 32]).is_err());
+        assert!(verify_ed25519_instruction(&valid, [1; 32], [3; 32]).is_err());
+
+        let mut cross_instruction = valid;
+        put_u16(&mut cross_instruction.data, 14, 0);
+        assert!(verify_ed25519_instruction(&cross_instruction, [1; 32], [2; 32]).is_err());
+    }
+
+    #[test]
+    fn validates_destination_deadline_and_nonce() {
+        let registry = config();
+        let valid = envelope();
+        assert!(validate_envelope(&registry, &valid.encode().unwrap(), 100).is_ok());
+
+        let mut wrong_destination = envelope();
+        wrong_destination.destination_network_hash = [9; 32];
+        assert!(validate_envelope(&registry, &wrong_destination.encode().unwrap(), 100).is_err());
+        assert!(validate_envelope(&registry, &valid.encode().unwrap(), 101).is_err());
+
+        let mut zero_nonce = envelope();
+        zero_nonce.nonce = [0; 32];
+        assert!(validate_envelope(&registry, &zero_nonce.encode().unwrap(), 100).is_err());
+    }
+}
