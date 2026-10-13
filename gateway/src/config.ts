@@ -13,6 +13,7 @@ export const EnvSchema = z.object({
   REDIS_URL: z.string().default("redis://localhost:6379"),
   DATABASE_URL: z.string().default("postgresql://postgres:postgres@localhost:5432/maivw_reputation?schema=public"),
   REGISTRY_CONTRACT_ADDRESS: z.string().optional(),
+  MIRROR_REGISTRY_V2_ADDRESS: z.string().optional(),
   // ATENÇÃO: Chaves padrão abaixo são contas de teste públicas do Anvil/Hardhat (Account #0, #1, #2).
   DEPLOYER_PRIVATE_KEY: z.string().optional(),
   ORACLE_PRIVATE_KEY: z.string().optional(),
@@ -110,6 +111,7 @@ export function parseEnvironment(env: NodeJS.ProcessEnv) {
 export function loadConfig(): EnvConfig {
   // Tentar ler contract address do arquivo gerado pelo deploy container
   let contractAddress = process.env.REGISTRY_CONTRACT_ADDRESS;
+  let mirrorRegistryV2Address = process.env.MIRROR_REGISTRY_V2_ADDRESS;
   
   if (!contractAddress) {
     try {
@@ -123,9 +125,21 @@ export function loadConfig(): EnvConfig {
     }
   }
 
+  if (!mirrorRegistryV2Address) {
+    try {
+      mirrorRegistryV2Address = readFileSync(
+        "/deploy-output/mirror-registry-v2-address.txt",
+        "utf-8",
+      ).trim() || undefined;
+    } catch {
+      // Deploy legado ou execução fora do Docker.
+    }
+  }
+
   const env = {
     ...process.env,
     ...(contractAddress ? { REGISTRY_CONTRACT_ADDRESS: contractAddress } : {}),
+    ...(mirrorRegistryV2Address ? { MIRROR_REGISTRY_V2_ADDRESS: mirrorRegistryV2Address } : {}),
   };
 
   const result = parseEnvironment(env);
@@ -685,5 +699,83 @@ export const REGISTRY_ABI = [
       { name: "fingerprint", type: "bytes32", indexed: true },
       { name: "timestamp", type: "uint256", indexed: false },
     ],
+  },
+] as const;
+
+/** ABI de leitura do registry upgradeable dedicado a mirrors multichain V2. */
+export const MIRROR_REGISTRY_V2_ABI = [
+  {
+    name: "getMirrorProfile",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "_domain", type: "string" }],
+    outputs: [{
+      name: "",
+      type: "tuple",
+      components: [
+        { name: "domain", type: "string" },
+        { name: "endpointUrl", type: "string" },
+        { name: "publicKey", type: "tuple", components: [
+          { name: "algorithm", type: "uint8" },
+          { name: "keyData", type: "bytes32" },
+        ] },
+        { name: "adminKey", type: "tuple", components: [
+          { name: "algorithm", type: "uint8" },
+          { name: "keyData", type: "bytes32" },
+        ] },
+        { name: "tlsFingerprint", type: "bytes32" },
+        { name: "status", type: "uint8" },
+        { name: "isProvider", type: "bool" },
+        { name: "tier", type: "uint8" },
+        { name: "strikeCount", type: "uint32" },
+        { name: "registrationTime", type: "uint64" },
+      ],
+    }],
+  },
+  {
+    name: "getMirrorVersion",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "_domain", type: "string" }],
+    outputs: [{
+      name: "",
+      type: "tuple",
+      components: [
+        { name: "originNetworkHash", type: "bytes32" },
+        { name: "originRegistry", type: "bytes32" },
+        { name: "globalDomainEpoch", type: "uint64" },
+        { name: "originSequence", type: "uint64" },
+        { name: "originTxReference", type: "bytes32" },
+        { name: "lastPayloadHash", type: "bytes32" },
+        { name: "attestedStake", type: "uint256" },
+        { name: "dailyLimit", type: "uint256" },
+        { name: "updatedAt", type: "uint64" },
+        { name: "revoked", type: "bool" },
+        { name: "exists", type: "bool" },
+      ],
+    }],
+  },
+  {
+    name: "getTypedKeys",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "_domain", type: "string" }],
+    outputs: [
+      { name: "publicKey", type: "tuple", components: [
+        { name: "algorithm", type: "uint8" },
+        { name: "keyData", type: "bytes32" },
+      ] },
+      { name: "adminKey", type: "tuple", components: [
+        { name: "algorithm", type: "uint8" },
+        { name: "keyData", type: "bytes32" },
+      ] },
+    ],
+  },
+  {
+    name: "isMirrorActive",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "_domain", type: "string" }],
+    outputs: [{ name: "", type: "bool" }],
   },
 ] as const;

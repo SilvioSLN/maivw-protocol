@@ -5,6 +5,7 @@ import "forge-std/Script.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import "../src/MAIVWRegistry.sol";
 import "../src/MAIVWRegistryLens.sol";
+import "../src/MAIVWMirrorRegistryV2.sol";
 
 /// @title DeployScript — Deploy do MAIVWRegistry v2 e MAIVWRegistryLens
 contract DeployScript is Script {
@@ -70,12 +71,21 @@ contract DeployScript is Script {
         bytes memory initData = abi.encodeCall(MAIVWRegistry.initialize, (cfg));
         ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
         MAIVWRegistry registry = MAIVWRegistry(address(proxy));
+        MAIVWMirrorRegistryV2 mirrorImpl = new MAIVWMirrorRegistryV2();
+        ERC1967Proxy mirrorProxy = new ERC1967Proxy(
+            address(mirrorImpl),
+            abi.encodeCall(
+                MAIVWMirrorRegistryV2.initialize,
+                (deployer, deployer, deployer, address(registry))
+            )
+        );
         MAIVWRegistryLens lens = new MAIVWRegistryLens();
 
         console.log("============================================");
         console.log("  Implementation (Logica):     ", address(impl));
         console.log("  PROXY (Endereco Oficial):    ", address(proxy));
         console.log("  MAIVWRegistryLens:           ", address(lens));
+        console.log("  Mirror Registry V2 Proxy:    ", address(mirrorProxy));
         console.log("  Standard Fee (wei):          ", registry.standardFee());
         console.log("  Provider Fee (wei):          ", registry.providerFee());
         console.log("============================================");

@@ -5,6 +5,7 @@ import "forge-std/Script.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import "../src/MAIVWRegistry.sol";
 import "../src/MAIVWRegistryLens.sol";
+import "../src/MAIVWMirrorRegistryV2.sol";
 
 /// @title DeployMainnetScript — Script de Deploy Canônico para Base Sepolia e Base Mainnet
 /// @notice Configura a governança nativa da Safe Multi-sig (2-de-3) como Owner e Guardian dedicado desde o Bloco 0
@@ -94,7 +95,18 @@ contract DeployMainnetScript is Script {
         ERC1967Proxy proxy = new ERC1967Proxy(address(logic), initData);
         MAIVWRegistry registry = MAIVWRegistry(address(proxy));
 
-        // 4. Deploy do Lens de Consulta Otimizada (View-only)
+        // 4. Deploy do Registry UUPS dedicado a mirrors multichain V2
+        MAIVWMirrorRegistryV2 mirrorLogic = new MAIVWMirrorRegistryV2();
+        ERC1967Proxy mirrorProxy = new ERC1967Proxy(
+            address(mirrorLogic),
+            abi.encodeCall(
+                MAIVWMirrorRegistryV2.initialize,
+                (safeGov, guardian, oracleNode, address(registry))
+            )
+        );
+        MAIVWMirrorRegistryV2 mirrorRegistry = MAIVWMirrorRegistryV2(address(mirrorProxy));
+
+        // 5. Deploy do Lens de Consulta Otimizada (View-only)
         MAIVWRegistryLens lens = new MAIVWRegistryLens();
 
         vm.stopBroadcast();
@@ -106,12 +118,18 @@ contract DeployMainnetScript is Script {
         require(registry.guardian() == guardian, "ERRO CRITICO: Guardian do proxy nao bate com guardian");
         require(registry.oracleNode() == oracleNode, "ERRO CRITICO: OracleNode do proxy nao bate com oracleNode");
         require(registry.treasury() == treasury, "ERRO CRITICO: Treasury do proxy nao bate com treasury");
+        require(mirrorRegistry.owner() == safeGov, "ERRO CRITICO: Owner do mirror nao bate com safeGov");
+        require(mirrorRegistry.guardian() == guardian, "ERRO CRITICO: Guardian do mirror nao bate com guardian");
+        require(mirrorRegistry.oracleNode() == oracleNode, "ERRO CRITICO: Oracle do mirror nao bate com oracleNode");
+        require(mirrorRegistry.legacyRegistry() == address(registry), "ERRO CRITICO: Registry legado do mirror invalido");
 
         console.log("====================================================");
         console.log("  SUCESSO: CONTRATOS IMPLANTADOS COM GOVERNANCA SAFE");
         console.log("====================================================");
         console.log("  Proxy Oficial (Registro):    ", address(proxy));
         console.log("  Logica da Implementacao:     ", address(logic));
+        console.log("  Mirror Registry V2 Proxy:    ", address(mirrorProxy));
+        console.log("  Mirror Registry V2 Logica:   ", address(mirrorLogic));
         console.log("  MAIVWRegistryLens:           ", address(lens));
         console.log("  Owner Verificado:            ", registry.owner());
         console.log("  Guardian Verificado:         ", registry.guardian());

@@ -1,7 +1,27 @@
-import { decodeEventLog, parseAbi, createPublicClient, createWalletClient, http, parseEther, type Address, type PublicClient, type Hex } from "viem";
+import { decodeEventLog, parseAbi, createPublicClient, createWalletClient, http, padHex, parseEther, type Address, type PublicClient, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { foundry } from "viem/chains";
-import { REGISTRY_ABI, type EnvConfig } from "../config.js";
+import { MIRROR_REGISTRY_V2_ABI, REGISTRY_ABI, type EnvConfig } from "../config.js";
+
+export interface TypedKeyDescriptor {
+  algorithm: number;
+  keyData: Hex;
+}
+
+export interface TypedDomainIdentity {
+  source: "mirror-v2" | "registry-v2";
+  domain: string;
+  endpointUrl: string;
+  publicKey: TypedKeyDescriptor;
+  adminKey: TypedKeyDescriptor;
+  status: number;
+  isActive: boolean;
+  originNetworkHash?: Hex;
+  originRegistry?: Hex;
+  globalDomainEpoch: bigint;
+  originSequence: bigint;
+  revoked: boolean;
+}
 
 /**
  * LedgerService — Serviço de leitura e interação com o Smart Contract MAIVWRegistry
@@ -9,6 +29,7 @@ import { REGISTRY_ABI, type EnvConfig } from "../config.js";
 export class LedgerService {
   private client: PublicClient;
   private contractAddress: Address | null;
+  private mirrorRegistryV2Address: Address | null;
   private config: EnvConfig;
   private chain: any;
 
@@ -40,9 +61,13 @@ export class LedgerService {
     this.contractAddress = config.REGISTRY_CONTRACT_ADDRESS 
       ? (config.REGISTRY_CONTRACT_ADDRESS as Address)
       : null;
+    this.mirrorRegistryV2Address = config.MIRROR_REGISTRY_V2_ADDRESS
+      ? (config.MIRROR_REGISTRY_V2_ADDRESS as Address)
+      : null;
 
     console.log(`[LEDGER] Initialized with RPC: ${config.RPC_URL}`);
     console.log(`[LEDGER] Contract address: ${this.contractAddress || "NOT SET"}`);
+    console.log(`[LEDGER] Mirror Registry V2: ${this.mirrorRegistryV2Address || "NOT SET"}`);
   }
 
   /** Confirms an exact registration on this node's configured chain, without demo/parent fallbacks. */
@@ -239,6 +264,65 @@ export class LedgerService {
       console.error(`[LEDGER] Error getting public key for "${domain}":`, error);
       return null;
     }
+  }
+
+  /**
+   * Resolve chaves sem converter Ed25519/Solana para um address EVM fictício.
+   * Mirrors V2 têm precedência; domínios do Registry legado são normalizados como secp256k1/address.
+   */
+  async getTypedDomainIdentity(domain: string): Promise<TypedDomainIdentity | null> {
+    if (this.mirrorRegistryV2Address) {
+      const [profile, version] = await Promise.all([
+        this.client.readContract({
+          address: this.mirrorRegistryV2Address,
+          abi: MIRROR_REGISTRY_V2_ABI,
+          functionName: "getMirrorProfile",
+          args: [domain],
+        }),
+        this.client.readContract({
+          address: this.mirrorRegistryV2Address,
+          abi: MIRROR_REGISTRY_V2_ABI,
+          functionName: "getMirrorVersion",
+          args: [domain],
+        }),
+      ]) as [any, any];
+
+      if (version.exists) {
+        const status = Number(profile.status);
+        return {
+          source: "mirror-v2",
+          domain: profile.domain,
+          endpointUrl: profile.endpointUrl,
+          publicKey: { algorithm: Number(profile.publicKey.algorithm), keyData: profile.publicKey.keyData },
+          adminKey: { algorithm: Number(profile.adminKey.algorithm), keyData: profile.adminKey.keyData },
+          status,
+          isActive: status === 1 && !version.revoked,
+          originNetworkHash: version.originNetworkHash,
+          originRegistry: version.originRegistry,
+          globalDomainEpoch: BigInt(version.globalDomainEpoch),
+          originSequence: BigInt(version.originSequence),
+          revoked: Boolean(version.revoked),
+        };
+      }
+    }
+
+    const profile = await this.getCompanyProfile(domain);
+    if (!profile) return null;
+    const publicKey = padHex(profile.publicKey, { size: 32 });
+    const adminAddress = profile.adminKey ?? profile.publicKey;
+    const legacyStatus = Number((profile as any).status ?? (profile.isActive ? 1 : 0));
+    return {
+      source: "registry-v2",
+      domain: profile.domain,
+      endpointUrl: profile.endpointUrl,
+      publicKey: { algorithm: 1, keyData: publicKey },
+      adminKey: { algorithm: 1, keyData: padHex(adminAddress, { size: 32 }) },
+      status: legacyStatus,
+      isActive: profile.isActive,
+      globalDomainEpoch: BigInt((profile as any).epoch ?? 0),
+      originSequence: 0n,
+      revoked: false,
+    };
   }
 
   /**

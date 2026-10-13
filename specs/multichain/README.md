@@ -38,3 +38,5 @@ The JSON files under `fixtures/` are normative test vectors. Implementations mus
 - Rust: `solana/crates/maivw-attestation/src/lib.rs`
 
 `fixtures/full-lifecycle-v1.json` is the normative transition suite. It covers origin registration and update, provider warning/slash, recovery, reclaim, Solana-origin mirroring into EVM, synchronization and tombstone revocation. Numeric economic values are expressed as decimal strings in the smallest unit of the origin asset; `attestedStake` is informational at a mirror and `spendableLocalStake` must remain zero.
+
+The EVM projection contract, ordering rules, typed-key behavior and legacy migration are specified in `EVM_MIRROR_REGISTRY_V2.md`.

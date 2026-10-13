@@ -2,6 +2,7 @@
 pragma solidity 0.8.28;
 
 import {DomainStatus, ProviderTier, CompanyProfile} from "./MAIVWRegistry.sol";
+import {MirrorProfileV2, MirrorVersionV2} from "./MAIVWMirrorRegistryV2.sol";
 
 interface IMAIVWRegistry {
     function getCompanyProfile(string calldata _domain) external view returns (CompanyProfile memory);
@@ -13,6 +14,11 @@ interface IMAIVWRegistry {
     function providerTiers(bytes32 _hash) external view returns (ProviderTier);
     function getAllowedDailyVolume(string calldata _domain) external view returns (uint256);
     function QUARANTINE_PERIOD() external view returns (uint256);
+}
+
+interface IMAIVWMirrorRegistryV2Lens {
+    function getMirrorProfile(string calldata domain) external view returns (MirrorProfileV2 memory);
+    function getMirrorVersion(string calldata domain) external view returns (MirrorVersionV2 memory);
 }
 
 /// @title MAIVWRegistryLens
@@ -27,6 +33,11 @@ contract MAIVWRegistryLens {
         uint256 originChainId;
         bool inQuarantine;
         uint256 effectiveDailyLimit;
+    }
+
+    struct EnrichedMirrorV2 {
+        MirrorProfileV2 profile;
+        MirrorVersionV2 version;
     }
 
     /// @notice Retorna perfis de forma paginada para evitar estouro de gas em eth_call
@@ -82,6 +93,19 @@ contract MAIVWRegistryLens {
 
         for (uint256 i = 0; i < len; ++i) {
             results[i] = _getEnrichedProfile(reg, domains[i], quarantinePeriod);
+        }
+    }
+
+    /// @notice Lê em lote mirrors V2, incluindo chaves tipadas, origem, versão e tombstone.
+    function getEnrichedMirrorsV2(
+        address mirrorRegistry,
+        string[] calldata domains
+    ) external view returns (EnrichedMirrorV2[] memory results) {
+        IMAIVWMirrorRegistryV2Lens reg = IMAIVWMirrorRegistryV2Lens(mirrorRegistry);
+        results = new EnrichedMirrorV2[](domains.length);
+        for (uint256 i = 0; i < domains.length; ++i) {
+            results[i].profile = reg.getMirrorProfile(domains[i]);
+            results[i].version = reg.getMirrorVersion(domains[i]);
         }
     }
 
