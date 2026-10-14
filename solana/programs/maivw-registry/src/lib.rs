@@ -13,6 +13,7 @@ pub mod domain_updates;
 pub mod economics;
 pub mod error;
 pub mod provider;
+pub mod reclaim;
 pub mod recovery;
 pub mod registration;
 pub mod slashing;
@@ -41,6 +42,7 @@ use economics::{
 };
 use error::MaivwError;
 use provider::{top_up_transition, warning_transition, IssueWarningArgs, TopUpStakeArgs};
+use reclaim::{close_pending_processes, reclaim_payload_hash, ReclaimDomainArgs};
 use recovery::{
     authorize_recovery_cancellation, authorize_recovery_execution, next_recovery_epoch,
     recovery_execute_after, recovery_payload_hash, validate_recovery_keys, RecoveryCaseArgs,
@@ -259,6 +261,215 @@ pub mod maivw_registry {
             .validate(ctx.accounts.stake_vault_token.amount)
     }
 
+    pub fn reclaim_domain(
+        ctx: Context<ReclaimDomain>,
+        args: ReclaimDomainArgs,
+        envelope: Vec<u8>,
+    ) -> Result<()> {
+        let config = &ctx.accounts.config;
+        let domain = &ctx.accounts.domain_record;
+        domain.validate(config.network_hash, ID.to_bytes())?;
+        require!(
+            matches!(domain.kind, RecordKind::Origin),
+            MaivwError::MirrorReadOnly
+        );
+        require!(
+            !matches!(domain.status, DomainStatus::Active),
+            MaivwError::InvalidReclaimState
+        );
+        require!(
+            domain.domain == args.domain
+                && domain.domain_hash == args.domain_hash
+                && domain.global_domain_epoch == args.current_global_domain_epoch,
+            MaivwError::InvalidReclaimState
+        );
+        require!(
+            matches!(domain.admin_key.algorithm, KeyAlgorithm::Ed25519SolanaPubkey),
+            MaivwError::InvalidOriginReference
+        );
+        validate_endpoint(&args.endpoint)?;
+        validate_mail_key(args.operational_key)?;
+        require!(args.admin_key != [0; 32], MaivwError::InvalidNewDomainAdmin);
+
+        let (payment, new_stake, daily_limit) = if matches!(args.tier, ProviderTier::None) {
+            let split = split_standard_fee(config.standard_fee)?;
+            (config.standard_fee, split.stake, 0)
+        } else {
+            let tier = config.tiers[args.tier.config_index()?];
+            (tier.required_stake, tier.required_stake, tier.daily_limit)
+        };
+        let payload_hash = reclaim_payload_hash(
+            &args,
+            ctx.accounts.registrant.key(),
+            ctx.accounts.mint.key(),
+            domain.origin_sequence,
+            payment,
+        );
+        let claim = attestation::verify_reclaim_claim(
+            config,
+            &ctx.accounts.instructions.to_account_info(),
+            &envelope,
+            args.domain_hash,
+            args.current_global_domain_epoch,
+            domain.origin_sequence,
+            payload_hash,
+            args.claim_nonce,
+        )?;
+
+        ctx.accounts
+            .stake_vault
+            .validate(ctx.accounts.stake_vault_token.amount)?;
+        require!(
+            ctx.accounts.stake_vault.current_stake == domain.current_stake,
+            MaivwError::InvalidStakeVault
+        );
+        let previous_admin = Pubkey::new_from_array(domain.admin_key.value);
+        let residual_stake = domain.current_stake;
+        let expected_vault_amount = ctx
+            .accounts
+            .stake_vault_token
+            .amount
+            .checked_sub(residual_stake)
+            .and_then(|amount| amount.checked_add(new_stake))
+            .ok_or_else(|| error!(MaivwError::InvalidStakeVault))?;
+
+        if residual_stake > 0 {
+            let previous_balance = ctx.accounts.previous_admin_token.amount;
+            let bump = [ctx.accounts.stake_vault.bump];
+            let vault_seeds: &[&[u8]] = &[STAKE_VAULT_SEED, args.domain_hash.as_ref(), &bump];
+            transfer_tokens_signed(
+                ctx.accounts.token_program.key(),
+                ctx.accounts.mint.to_account_info(),
+                ctx.accounts.stake_vault_token.to_account_info(),
+                ctx.accounts.previous_admin_token.to_account_info(),
+                ctx.accounts.stake_vault.to_account_info(),
+                residual_stake,
+                config.asset_decimals,
+                &[vault_seeds],
+            )?;
+            ctx.accounts.previous_admin_token.reload()?;
+            require!(
+                ctx.accounts.previous_admin_token.amount
+                    == previous_balance
+                        .checked_add(residual_stake)
+                        .ok_or_else(|| error!(MaivwError::ArithmeticOverflow))?,
+                MaivwError::InvalidStakeVault
+            );
+        }
+
+        if matches!(args.tier, ProviderTier::None) {
+            let split = split_standard_fee(payment)?;
+            transfer_tokens(
+                ctx.accounts.token_program.key(),
+                ctx.accounts.mint.to_account_info(),
+                ctx.accounts.registrant_token.to_account_info(),
+                ctx.accounts.founder_vault.to_account_info(),
+                ctx.accounts.registrant.to_account_info(),
+                split.founder,
+                config.asset_decimals,
+            )?;
+            transfer_tokens(
+                ctx.accounts.token_program.key(),
+                ctx.accounts.mint.to_account_info(),
+                ctx.accounts.registrant_token.to_account_info(),
+                ctx.accounts.treasury_vault.to_account_info(),
+                ctx.accounts.registrant.to_account_info(),
+                split.treasury,
+                config.asset_decimals,
+            )?;
+        }
+        transfer_tokens(
+            ctx.accounts.token_program.key(),
+            ctx.accounts.mint.to_account_info(),
+            ctx.accounts.registrant_token.to_account_info(),
+            ctx.accounts.stake_vault_token.to_account_info(),
+            ctx.accounts.registrant.to_account_info(),
+            new_stake,
+            config.asset_decimals,
+        )?;
+
+        let now = Clock::get()?.unix_timestamp;
+        write_receipt(
+            &mut ctx.accounts.claim_receipt,
+            ctx.bumps.claim_receipt,
+            &claim,
+            ctx.accounts.registrant.key(),
+            now,
+        )?;
+        close_pending_processes(
+            args.domain_hash,
+            args.current_global_domain_epoch,
+            &ctx.accounts.pending_admin.to_account_info(),
+            &ctx.accounts.recovery_case.to_account_info(),
+            &ctx.accounts.slash_case.to_account_info(),
+            &ctx.accounts.registrant.to_account_info(),
+        )?;
+
+        let new_epoch = next_recovery_epoch(args.current_global_domain_epoch)?;
+        let domain = &mut ctx.accounts.domain_record;
+        domain.endpoint = args.endpoint.clone();
+        domain.operational_key = KeyDescriptor {
+            algorithm: KeyAlgorithm::Ed25519SolanaPubkey,
+            value: args.operational_key,
+        };
+        domain.admin_key = KeyDescriptor {
+            algorithm: KeyAlgorithm::Ed25519SolanaPubkey,
+            value: args.admin_key,
+        };
+        domain.tls_fingerprint = args.tls_fingerprint;
+        domain.status = DomainStatus::Active;
+        domain.global_domain_epoch = new_epoch;
+        domain.origin_sequence = 1;
+        domain.provider = if args.is_provider() {
+            ctx.accounts.registrant.key()
+        } else {
+            Pubkey::default()
+        };
+        domain.provider_tier = args.tier;
+        domain.strikes = 0;
+        domain.updated_at = now;
+        domain.attested_stake = new_stake;
+        domain.attested_daily_limit = daily_limit;
+        domain.original_registration_amount = payment;
+        domain.current_stake = new_stake;
+
+        let stake_vault_bump = ctx.accounts.stake_vault.bump;
+        write_stake_vault(
+            &mut ctx.accounts.stake_vault,
+            stake_vault_bump,
+            args.domain_hash,
+            ctx.accounts.mint.key(),
+            ctx.accounts.stake_vault_token.key(),
+            payment,
+            new_stake,
+        );
+        ctx.accounts.stake_vault_token.reload()?;
+        require!(
+            ctx.accounts.stake_vault_token.amount == expected_vault_amount,
+            MaivwError::InvalidStakeVault
+        );
+        ctx.accounts
+            .stake_vault
+            .validate(ctx.accounts.stake_vault_token.amount)?;
+        domain.validate(config.network_hash, ID.to_bytes())?;
+
+        emit!(DomainReclaimed {
+            domain_hash: args.domain_hash,
+            previous_global_domain_epoch: args.current_global_domain_epoch,
+            global_domain_epoch: new_epoch,
+            origin_sequence: domain.origin_sequence,
+            previous_admin,
+            new_admin: Pubkey::new_from_array(args.admin_key),
+            registrant: ctx.accounts.registrant.key(),
+            provider_tier: args.tier,
+            residual_stake_released: residual_stake,
+            payment,
+            current_stake: new_stake,
+            timestamp: now,
+        });
+        Ok(())
+    }
+
     pub fn top_up_stake(ctx: Context<TopUpStake>, args: TopUpStakeArgs) -> Result<()> {
         let config = &ctx.accounts.config;
         let domain = &mut ctx.accounts.domain_record;
@@ -410,10 +621,12 @@ pub mod maivw_registry {
             sub_identity.schema_version = SUB_IDENTITY_STRIKE_SCHEMA_VERSION;
             sub_identity.bump = ctx.bumps.sub_identity_strike;
             sub_identity.domain_hash = args.domain_hash;
+            sub_identity.global_domain_epoch = domain.global_domain_epoch;
             sub_identity.sub_identity_hash = args.sub_identity_hash;
         }
         require!(
             sub_identity.domain_hash == args.domain_hash
+                && sub_identity.global_domain_epoch == domain.global_domain_epoch
                 && sub_identity.sub_identity_hash == args.sub_identity_hash,
             MaivwError::InvalidSubIdentity
         );
@@ -1362,6 +1575,140 @@ pub struct RegisterProvider<'info> {
 }
 
 #[derive(Accounts)]
+#[instruction(args: ReclaimDomainArgs)]
+pub struct ReclaimDomain<'info> {
+    #[account(mut)]
+    pub registrant: Signer<'info>,
+    #[account(
+        seeds = [REGISTRY_CONFIG_SEED],
+        bump = config.bump,
+        constraint = config.active @ MaivwError::RegistryPaused
+    )]
+    pub config: Box<Account<'info, RegistryConfig>>,
+    #[account(
+        mut,
+        seeds = [DOMAIN_RECORD_SEED, args.domain_hash.as_ref()],
+        bump = domain_record.bump,
+        constraint = domain_record.domain_hash == args.domain_hash @ MaivwError::InvalidDomainHash,
+        constraint = domain_record.global_domain_epoch == args.current_global_domain_epoch
+            @ MaivwError::InvalidReclaimState
+    )]
+    pub domain_record: Box<Account<'info, DomainRecord>>,
+    #[account(
+        init,
+        payer = registrant,
+        space = OriginClaimReceipt::SPACE,
+        seeds = [ORIGIN_CLAIM_RECEIPT_SEED, args.domain_hash.as_ref(), args.claim_nonce.as_ref()],
+        bump
+    )]
+    pub claim_receipt: Box<Account<'info, OriginClaimReceipt>>,
+    #[account(
+        mut,
+        seeds = [STAKE_VAULT_SEED, args.domain_hash.as_ref()],
+        bump = stake_vault.bump,
+        constraint = stake_vault.domain_hash == args.domain_hash @ MaivwError::InvalidStakeVault,
+        constraint = stake_vault.mint == mint.key() @ MaivwError::InvalidAsset
+    )]
+    pub stake_vault: Box<Account<'info, StakeVault>>,
+    #[account(
+        mut,
+        constraint = registrant_token.mint == mint.key() @ MaivwError::InvalidAsset,
+        constraint = registrant_token.owner == registrant.key() @ MaivwError::InvalidAsset
+    )]
+    pub registrant_token: Box<Account<'info, TokenAccount>>,
+    #[account(
+        address = config.asset_mint @ MaivwError::InvalidAsset,
+        constraint = mint.decimals == config.asset_decimals @ MaivwError::InvalidAssetDecimals
+    )]
+    pub mint: Box<Account<'info, Mint>>,
+    /// CHECK: previous Ed25519 admin owns the ATA that receives residual stake.
+    #[account(
+        address = Pubkey::new_from_array(domain_record.admin_key.value)
+            @ MaivwError::UnauthorizedDomainAdmin
+    )]
+    pub previous_admin: UncheckedAccount<'info>,
+    #[account(
+        init_if_needed,
+        payer = registrant,
+        associated_token::mint = mint,
+        associated_token::authority = previous_admin,
+        associated_token::token_program = token_program
+    )]
+    pub previous_admin_token: Box<Account<'info, TokenAccount>>,
+    /// CHECK: PDA used only as the founder token-vault authority.
+    #[account(seeds = [FOUNDER_VAULT_AUTHORITY_SEED], bump)]
+    pub founder_vault_authority: UncheckedAccount<'info>,
+    #[account(
+        init_if_needed,
+        payer = registrant,
+        associated_token::mint = mint,
+        associated_token::authority = founder_vault_authority,
+        associated_token::token_program = token_program
+    )]
+    pub founder_vault: Box<Account<'info, TokenAccount>>,
+    /// CHECK: PDA used only as the treasury token-vault authority.
+    #[account(seeds = [TREASURY_VAULT_AUTHORITY_SEED], bump)]
+    pub treasury_vault_authority: UncheckedAccount<'info>,
+    #[account(
+        init_if_needed,
+        payer = registrant,
+        associated_token::mint = mint,
+        associated_token::authority = treasury_vault_authority,
+        associated_token::token_program = token_program
+    )]
+    pub treasury_vault: Box<Account<'info, TokenAccount>>,
+    #[account(
+        mut,
+        associated_token::mint = mint,
+        associated_token::authority = stake_vault,
+        associated_token::token_program = token_program,
+        constraint = stake_vault.token_account == stake_vault_token.key()
+            @ MaivwError::InvalidStakeVault
+    )]
+    pub stake_vault_token: Box<Account<'info, TokenAccount>>,
+    /// CHECK: canonical optional PDA; handler closes it only when it contains a pending proposal.
+    #[account(
+        mut,
+        seeds = [
+            PENDING_ADMIN_SEED,
+            args.domain_hash.as_ref(),
+            args.current_global_domain_epoch.to_le_bytes().as_ref()
+        ],
+        bump
+    )]
+    pub pending_admin: UncheckedAccount<'info>,
+    /// CHECK: canonical optional PDA; handler closes it only when recovery is pending.
+    #[account(
+        mut,
+        seeds = [
+            RECOVERY_CASE_SEED,
+            args.domain_hash.as_ref(),
+            args.current_global_domain_epoch.to_le_bytes().as_ref()
+        ],
+        bump
+    )]
+    pub recovery_case: UncheckedAccount<'info>,
+    /// CHECK: canonical optional PDA; handler closes it only when slash is pending.
+    #[account(
+        mut,
+        seeds = [
+            SLASH_CASE_SEED,
+            args.domain_hash.as_ref(),
+            args.current_global_domain_epoch.to_le_bytes().as_ref()
+        ],
+        bump
+    )]
+    pub slash_case: UncheckedAccount<'info>,
+    /// CHECK: constrained to Solana's instructions sysvar address.
+    #[account(address = solana_instructions_sysvar::ID @ MaivwError::InvalidInstructionsSysvar)]
+    pub instructions: UncheckedAccount<'info>,
+    #[account(address = config.token_program @ MaivwError::InvalidAsset)]
+    pub token_program: Program<'info, Token>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
 #[instruction(args: TopUpStakeArgs)]
 pub struct TopUpStake<'info> {
     #[account(mut)]
@@ -1437,6 +1784,7 @@ pub struct IssueWarning<'info> {
         seeds = [
             SUB_IDENTITY_STRIKE_SEED,
             args.domain_hash.as_ref(),
+            domain_record.global_domain_epoch.to_le_bytes().as_ref(),
             args.sub_identity_hash.as_ref()
         ],
         bump
@@ -2049,6 +2397,22 @@ pub struct RecoveryExecuted {
     pub old_operational_key: [u8; 32],
     pub new_operational_key: [u8; 32],
     pub executed_by: Pubkey,
+    pub timestamp: i64,
+}
+
+#[event]
+pub struct DomainReclaimed {
+    pub domain_hash: [u8; 32],
+    pub previous_global_domain_epoch: u64,
+    pub global_domain_epoch: u64,
+    pub origin_sequence: u64,
+    pub previous_admin: Pubkey,
+    pub new_admin: Pubkey,
+    pub registrant: Pubkey,
+    pub provider_tier: ProviderTier,
+    pub residual_stake_released: u64,
+    pub payment: u64,
+    pub current_stake: u64,
     pub timestamp: i64,
 }
 

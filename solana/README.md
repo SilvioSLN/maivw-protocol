@@ -26,7 +26,7 @@ A carteira é ignorada pelo Git e nunca deve receber ativos reais.
 | `DomainRecord` | `['domain', domain_hash]` | Estado de domínio `Origin` ou `Mirror` |
 | `OriginClaimReceipt` | `['origin-claim', domain_hash, nonce]` | Consumo append-only de uma autorização global |
 | `StakeVault` | `['stake-vault', domain_hash]` | Metadados e contabilidade da caução isolada |
-| `SubIdentityStrike` | `['sub-identity-strike', domain_hash, sub_identity_hash]` | Contador de warnings por subidentidade do provider |
+| `SubIdentityStrike` | `['sub-identity-strike', domain_hash, global_domain_epoch_le, sub_identity_hash]` | Contador de warnings por subidentidade e titular/epoch |
 | `SlashCase` | `['slash-case', domain_hash, global_domain_epoch_le]` | Proposta, timelock, veto e resultado auditável do slash |
 | `ReporterPool` | `['reporter-pool', domain_hash, global_domain_epoch_le]` | Raiz Merkle e contabilidade pull-payment das recompensas |
 | `ReporterClaim` | `['reporter-claim', reporter_pool, reporter]` | Recibo único que impede saque duplicado por reporter |
@@ -119,6 +119,22 @@ troca admin e chave operacional, incrementa o epoch e inicia a nova versão em
 
 O layout assinado está em
 [`SOLANA_RECOVERY_PAYLOAD_V1.md`](../specs/multichain/SOLANA_RECOVERY_PAYLOAD_V1.md).
+
+## Reclaim
+
+`reclaim_domain` só aceita uma origem suspensa ou revogada e exige um novo
+`OriginClaim` com prova DNS, ação `ReclaimOrigin`, nonce inédito e payload
+vinculado ao titular, perfil, epoch/sequence correntes, pagamento e mint. A
+caução contabilizada residual volta ao ATA do admin anterior e o novo titular
+paga integralmente a nova taxa ou stake.
+
+A instrução fecha explicitamente propostas `PendingAdmin`, `RecoveryCase` e
+`SlashCase` ainda pendentes no epoch anterior, redefine strikes/provider/TLS,
+incrementa o epoch e inicia `originSequence = 1`. Estados terminais permanecem
+auditáveis e não podem operar no novo epoch.
+
+O formato normativo está em
+[`SOLANA_RECLAIM_PAYLOAD_V1.md`](../specs/multichain/SOLANA_RECLAIM_PAYLOAD_V1.md).
 
 ## Slashing escalável
 

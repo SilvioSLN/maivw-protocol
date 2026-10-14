@@ -29,6 +29,14 @@ contract MAIVWAttestationV1Test is Test {
         assertEq(MAIVWAttestationV1.encode(attestation).length, 292);
     }
 
+    function test_AcceptsReclaimOriginClaim() public pure {
+        MAIVWAttestationV1.Attestation memory attestation = _fixture();
+        attestation.kind = 1;
+        attestation.action = 6;
+
+        assertEq(MAIVWAttestationV1.encode(attestation).length, 292);
+    }
+
     function encode(MAIVWAttestationV1.Attestation memory attestation) external pure returns (bytes memory) {
         return MAIVWAttestationV1.encode(attestation);
     }

@@ -402,18 +402,28 @@ pub struct SubIdentityStrike {
     pub schema_version: u16,
     pub bump: u8,
     pub domain_hash: [u8; 32],
+    pub global_domain_epoch: u64,
     pub sub_identity_hash: [u8; 32],
     pub strikes: u32,
     pub last_warned_at: i64,
 }
 
 impl SubIdentityStrike {
-    pub const DATA_LEN: usize = 79;
+    pub const DATA_LEN: usize = 87;
     pub const SPACE: usize = 8 + Self::DATA_LEN;
 
-    pub fn pda(domain_hash: &[u8; 32], sub_identity_hash: &[u8; 32]) -> (Pubkey, u8) {
+    pub fn pda(
+        domain_hash: &[u8; 32],
+        global_domain_epoch: u64,
+        sub_identity_hash: &[u8; 32],
+    ) -> (Pubkey, u8) {
         Pubkey::find_program_address(
-            &[SUB_IDENTITY_STRIKE_SEED, domain_hash, sub_identity_hash],
+            &[
+                SUB_IDENTITY_STRIKE_SEED,
+                domain_hash,
+                global_domain_epoch.to_le_bytes().as_ref(),
+                sub_identity_hash,
+            ],
             &ID,
         )
     }
@@ -886,6 +896,7 @@ mod tests {
             schema_version: SUB_IDENTITY_STRIKE_SCHEMA_VERSION,
             bump: 1,
             domain_hash: [1; 32],
+            global_domain_epoch: 2,
             sub_identity_hash: [2; 32],
             strikes: 1,
             last_warned_at: 1,
@@ -1106,8 +1117,12 @@ mod tests {
         );
         assert_ne!(StakeVault::pda(&[1; 32]), StakeVault::pda(&[2; 32]));
         assert_ne!(
-            SubIdentityStrike::pda(&[1; 32], &[3; 32]),
-            SubIdentityStrike::pda(&[1; 32], &[4; 32])
+            SubIdentityStrike::pda(&[1; 32], 0, &[3; 32]),
+            SubIdentityStrike::pda(&[1; 32], 0, &[4; 32])
+        );
+        assert_ne!(
+            SubIdentityStrike::pda(&[1; 32], 0, &[3; 32]),
+            SubIdentityStrike::pda(&[1; 32], 1, &[3; 32])
         );
         assert_ne!(SlashCase::pda(&[1; 32], 0), SlashCase::pda(&[1; 32], 1));
         assert_ne!(

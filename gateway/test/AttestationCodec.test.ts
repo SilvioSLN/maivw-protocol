@@ -113,4 +113,14 @@ describe("AttestationCodec V1", () => {
 
     assert.equal(size(encodeAttestationV1(recovery)), ATTESTATION_V1_SIZE);
   });
+
+  it("supports a reclaim authorization as an origin claim", () => {
+    const reclaim = {
+      ...fixture(),
+      kind: AttestationKind.ORIGIN_CLAIM,
+      action: AttestationAction.RECLAIM_ORIGIN,
+    };
+
+    assert.equal(size(encodeAttestationV1(reclaim)), ATTESTATION_V1_SIZE);
+  });
 });

@@ -246,6 +246,37 @@
       "args": [{ "name": "args", "type": { "defined": { "name": "maivw_registry::recovery::RecoveryCaseArgs" } } }]
     },
     {
+      "name": "reclaim_domain",
+      "discriminator": [71, 106, 167, 71, 179, 39, 49, 107],
+      "accounts": [
+        { "name": "registrant", "writable": true, "signer": true },
+        { "name": "config" },
+        { "name": "domain_record", "writable": true },
+        { "name": "claim_receipt", "writable": true },
+        { "name": "stake_vault", "writable": true },
+        { "name": "registrant_token", "writable": true },
+        { "name": "mint" },
+        { "name": "previous_admin" },
+        { "name": "previous_admin_token", "writable": true },
+        { "name": "founder_vault_authority" },
+        { "name": "founder_vault", "writable": true },
+        { "name": "treasury_vault_authority" },
+        { "name": "treasury_vault", "writable": true },
+        { "name": "stake_vault_token", "writable": true },
+        { "name": "pending_admin", "writable": true },
+        { "name": "recovery_case", "writable": true },
+        { "name": "slash_case", "writable": true },
+        { "name": "instructions" },
+        { "name": "token_program" },
+        { "name": "associated_token_program" },
+        { "name": "system_program" }
+      ],
+      "args": [
+        { "name": "args", "type": { "defined": { "name": "maivw_registry::reclaim::ReclaimDomainArgs" } } },
+        { "name": "envelope", "type": "bytes" }
+      ]
+    },
+    {
       "name": "execute_recovery",
       "discriminator": [203, 133, 133, 228, 153, 121, 182, 237],
       "accounts": [
@@ -284,7 +315,8 @@
     { "name": "maivw_registry::DomainAdminUpdated", "discriminator": [7, 234, 184, 68, 103, 97, 128, 251] },
     { "name": "maivw_registry::RecoveryRequested", "discriminator": [127, 3, 38, 230, 145, 28, 53, 141] },
     { "name": "maivw_registry::RecoveryCancelled", "discriminator": [191, 25, 236, 86, 25, 77, 117, 96] },
-    { "name": "maivw_registry::RecoveryExecuted", "discriminator": [161, 218, 6, 191, 85, 217, 12, 144] }
+    { "name": "maivw_registry::RecoveryExecuted", "discriminator": [161, 218, 6, 191, 85, 217, 12, 144] },
+    { "name": "maivw_registry::DomainReclaimed", "discriminator": [85, 68, 87, 69, 86, 212, 238, 72] }
   ],
   "types": [
     {
@@ -318,6 +350,20 @@
         { "name": "domain_hash", "type": { "array": ["u8", 32] } },
         { "name": "global_domain_epoch", "type": "u64" },
         { "name": "nonce", "type": { "array": ["u8", 32] } }
+      ] }
+    },
+    {
+      "name": "maivw_registry::reclaim::ReclaimDomainArgs",
+      "type": { "kind": "struct", "fields": [
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "claim_nonce", "type": { "array": ["u8", 32] } },
+        { "name": "current_global_domain_epoch", "type": "u64" },
+        { "name": "domain", "type": "string" },
+        { "name": "endpoint", "type": "string" },
+        { "name": "operational_key", "type": { "array": ["u8", 32] } },
+        { "name": "admin_key", "type": { "array": ["u8", 32] } },
+        { "name": "tls_fingerprint", "type": { "array": ["u8", 32] } },
+        { "name": "tier", "type": { "defined": { "name": "maivw_registry::state::ProviderTier" } } }
       ] }
     },
     {
@@ -557,6 +603,7 @@
         { "name": "schema_version", "type": "u16" },
         { "name": "bump", "type": "u8" },
         { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "global_domain_epoch", "type": "u64" },
         { "name": "sub_identity_hash", "type": { "array": ["u8", 32] } },
         { "name": "strikes", "type": "u32" },
         { "name": "last_warned_at", "type": "i64" }
@@ -843,6 +890,23 @@
         { "name": "executed_by", "type": "pubkey" },
         { "name": "timestamp", "type": "i64" }
       ] }
+    },
+    {
+      "name": "maivw_registry::DomainReclaimed",
+      "type": { "kind": "struct", "fields": [
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "previous_global_domain_epoch", "type": "u64" },
+        { "name": "global_domain_epoch", "type": "u64" },
+        { "name": "origin_sequence", "type": "u64" },
+        { "name": "previous_admin", "type": "pubkey" },
+        { "name": "new_admin", "type": "pubkey" },
+        { "name": "registrant", "type": "pubkey" },
+        { "name": "provider_tier", "type": { "defined": { "name": "maivw_registry::state::ProviderTier" } } },
+        { "name": "residual_stake_released", "type": "u64" },
+        { "name": "payment", "type": "u64" },
+        { "name": "current_stake", "type": "u64" },
+        { "name": "timestamp", "type": "i64" }
+      ] }
     }
   ],
   "errors": [
@@ -898,6 +962,10 @@
     { "code": 6049, "name": "MissingRecoveryEvidence", "msg": "recovery attestation must carry non-zero evidence" },
     { "code": 6050, "name": "InvalidRecoveryCase", "msg": "recovery case is invalid or unavailable" },
     { "code": 6051, "name": "InvalidRecoveryReceipt", "msg": "recovery authorization receipt is invalid" },
-    { "code": 6052, "name": "RecoveryNotReady", "msg": "recovery timelock has not elapsed" }
+    { "code": 6052, "name": "RecoveryNotReady", "msg": "recovery timelock has not elapsed" },
+    { "code": 6053, "name": "InvalidReclaimState", "msg": "reclaim requires an inactive origin domain" },
+    { "code": 6054, "name": "InvalidReclaimClaim", "msg": "origin claim does not authorize this reclaim" },
+    { "code": 6055, "name": "InvalidReclaimPayload", "msg": "reclaim payload does not match the new owner and profile" },
+    { "code": 6056, "name": "InvalidPendingProcess", "msg": "pending process account is malformed or belongs to another epoch" }
   ]
 }

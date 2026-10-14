@@ -90,6 +90,30 @@ pub fn verify_recovery(
     Ok(attestation)
 }
 
+#[allow(clippy::too_many_arguments)]
+pub fn verify_reclaim_claim(
+    config: &RegistryConfig,
+    instructions_sysvar: &AccountInfo<'_>,
+    envelope: &[u8],
+    expected_domain_hash: [u8; 32],
+    expected_epoch: u64,
+    expected_sequence: u64,
+    expected_payload_hash: [u8; 32],
+    expected_nonce: [u8; 32],
+) -> Result<AttestationV1> {
+    let attestation = verify(config, instructions_sysvar, envelope)?;
+    validate_reclaim_claim(
+        &attestation,
+        config,
+        expected_domain_hash,
+        expected_epoch,
+        expected_sequence,
+        expected_payload_hash,
+        expected_nonce,
+    )?;
+    Ok(attestation)
+}
+
 fn validate_origin_claim(
     attestation: &AttestationV1,
     config: &RegistryConfig,
@@ -147,6 +171,38 @@ fn validate_recovery(
     require!(
         attestation.evidence_hash != [0; 32],
         MaivwError::MissingRecoveryEvidence
+    );
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn validate_reclaim_claim(
+    attestation: &AttestationV1,
+    config: &RegistryConfig,
+    expected_domain_hash: [u8; 32],
+    expected_epoch: u64,
+    expected_sequence: u64,
+    expected_payload_hash: [u8; 32],
+    expected_nonce: [u8; 32],
+) -> Result<()> {
+    require!(
+        matches!(attestation.kind, AttestationKind::OriginClaim)
+            && matches!(attestation.action, AttestationAction::ReclaimOrigin)
+            && attestation.domain_hash == expected_domain_hash
+            && attestation.origin_network_hash == config.network_hash
+            && attestation.origin_registry == ID.to_bytes()
+            && attestation.global_domain_epoch == expected_epoch
+            && attestation.origin_sequence == expected_sequence
+            && attestation.nonce == expected_nonce,
+        MaivwError::InvalidReclaimClaim
+    );
+    require!(
+        attestation.payload_hash == expected_payload_hash,
+        MaivwError::InvalidReclaimPayload
+    );
+    require!(
+        attestation.evidence_hash != [0; 32],
+        MaivwError::MissingOriginEvidence
     );
     Ok(())
 }
@@ -422,6 +478,40 @@ mod tests {
         recovery.evidence_hash = [0; 32];
         assert!(validate_recovery(
             &recovery,
+            &registry,
+            [3; 32],
+            7,
+            11,
+            [7; 32],
+            [6; 32],
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn reclaim_claim_binds_local_origin_current_version_and_payload() {
+        let registry = config();
+        let mut reclaim = envelope();
+        reclaim.kind = AttestationKind::OriginClaim;
+        reclaim.action = AttestationAction::ReclaimOrigin;
+        reclaim.origin_network_hash = registry.network_hash;
+        reclaim.origin_registry = ID.to_bytes();
+        reclaim.global_domain_epoch = 7;
+        reclaim.origin_sequence = 11;
+
+        assert!(validate_reclaim_claim(
+            &reclaim,
+            &registry,
+            [3; 32],
+            7,
+            11,
+            [7; 32],
+            [6; 32],
+        )
+        .is_ok());
+        reclaim.global_domain_epoch = 8;
+        assert!(validate_reclaim_claim(
+            &reclaim,
             &registry,
             [3; 32],
             7,

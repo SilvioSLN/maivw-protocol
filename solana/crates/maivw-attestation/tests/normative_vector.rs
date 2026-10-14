@@ -79,3 +79,12 @@ fn accepts_recovery_as_a_state_attestation() {
     let encoded = recovery.encode().expect("valid recovery authorization");
     assert_eq!(AttestationV1::decode(&encoded), Ok(recovery));
 }
+
+#[test]
+fn accepts_reclaim_as_an_origin_claim() {
+    let mut reclaim = fixture();
+    reclaim.kind = AttestationKind::OriginClaim;
+    reclaim.action = AttestationAction::ReclaimOrigin;
+    let encoded = reclaim.encode().expect("valid reclaim claim");
+    assert_eq!(AttestationV1::decode(&encoded), Ok(reclaim));
+}

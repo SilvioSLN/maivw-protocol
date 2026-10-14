@@ -29,6 +29,12 @@ replay após cancelamento; o admin pode cancelar durante pause e a execução é
 permissionless somente depois do timelock, enquanto o domínio permanecer ativo
 no mesmo epoch.
 
+O reclaim na origem Solana exige um novo `OriginClaim` com prova DNS e nonce
+inédito. Ele libera a caução contabilizada ao admin anterior, cobra integralmente
+o novo registro, fecha processos ainda pendentes e cria um novo epoch. Contadores
+por subidentidade também incluem o epoch no PDA, impedindo que strikes do titular
+anterior contaminem o novo perfil.
+
 Na rotação administrativa Solana, o admin atual pode substituir uma proposta
 pendente, mas não concluir a troca sozinho. O candidato deve assinar o aceite, e
 o programa confere novamente epoch, estado ativo e identidade do admin que fez

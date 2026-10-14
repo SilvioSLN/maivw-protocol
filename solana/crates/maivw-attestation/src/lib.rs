@@ -23,6 +23,7 @@ pub enum AttestationAction {
     SyncMirror = 3,
     RevokeMirror = 4,
     RecoverOrigin = 5,
+    ReclaimOrigin = 6,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -85,6 +86,7 @@ impl AttestationV1 {
             3 => AttestationAction::SyncMirror,
             4 => AttestationAction::RevokeMirror,
             5 => AttestationAction::RecoverOrigin,
+            6 => AttestationAction::ReclaimOrigin,
             value => return Err(AttestationError::UnknownAction(value)),
         };
         let reserved = read_u8(input, &mut offset);
@@ -157,7 +159,7 @@ impl AttestationV1 {
             (self.kind, self.action),
             (
                 AttestationKind::OriginClaim,
-                AttestationAction::RegisterOrigin
+                AttestationAction::RegisterOrigin | AttestationAction::ReclaimOrigin
             ) | (
                 AttestationKind::StateAttestation,
                 AttestationAction::RegisterMirror

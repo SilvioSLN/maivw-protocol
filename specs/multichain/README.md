@@ -11,7 +11,7 @@ All integers are unsigned big-endian. All hash and registry fields are exactly 3
 | 0 | 8 | ASCII magic `MAIVWATT` |
 | 8 | 1 | version (`1`) |
 | 9 | 1 | kind (`1` origin claim, `2` state attestation) |
-| 10 | 1 | action (`1` register origin, `2` register mirror, `3` sync, `4` revoke, `5` recover origin) |
+| 10 | 1 | action (`1` register origin, `2` register mirror, `3` sync, `4` revoke, `5` recover origin, `6` reclaim origin) |
 | 11 | 1 | reserved, must be zero |
 | 12 | 32 | domain hash |
 | 44 | 32 | origin network hash |

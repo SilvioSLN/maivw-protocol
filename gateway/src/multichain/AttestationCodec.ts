@@ -24,6 +24,7 @@ export enum AttestationAction {
   SYNC_MIRROR = 3,
   REVOKE_MIRROR = 4,
   RECOVER_ORIGIN = 5,
+  RECLAIM_ORIGIN = 6,
 }
 
 export interface AttestationV1 {
@@ -70,7 +71,9 @@ function u64(value: bigint): Hex {
 
 function assertKindAction(kind: AttestationKind, action: AttestationAction): void {
   const valid =
-    (kind === AttestationKind.ORIGIN_CLAIM && action === AttestationAction.REGISTER_ORIGIN) ||
+    (kind === AttestationKind.ORIGIN_CLAIM &&
+      (action === AttestationAction.REGISTER_ORIGIN ||
+        action === AttestationAction.RECLAIM_ORIGIN)) ||
     (kind === AttestationKind.STATE_ATTESTATION &&
       action >= AttestationAction.REGISTER_MIRROR &&
       action <= AttestationAction.RECOVER_ORIGIN);

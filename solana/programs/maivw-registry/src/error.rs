@@ -108,4 +108,12 @@ pub enum MaivwError {
     InvalidRecoveryReceipt,
     #[msg("recovery timelock has not elapsed")]
     RecoveryNotReady,
+    #[msg("reclaim requires an inactive origin domain")]
+    InvalidReclaimState,
+    #[msg("origin claim does not authorize this reclaim")]
+    InvalidReclaimClaim,
+    #[msg("reclaim payload does not match the new owner and profile")]
+    InvalidReclaimPayload,
+    #[msg("pending process account is malformed or belongs to another epoch")]
+    InvalidPendingProcess,
 }
