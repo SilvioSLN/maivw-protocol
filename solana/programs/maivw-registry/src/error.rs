@@ -64,4 +64,22 @@ pub enum MaivwError {
     StrikeOverflow,
     #[msg("sub-identity hash must not be zero")]
     InvalidSubIdentity,
+    #[msg("slash case is invalid")]
+    InvalidSlashCase,
+    #[msg("a slash case is already pending or was already executed")]
+    SlashCaseUnavailable,
+    #[msg("slash timelock has not elapsed")]
+    SlashNotReady,
+    #[msg("signer is not authorized to veto the slash")]
+    UnauthorizedVeto,
+    #[msg("reporter root and count are inconsistent or exceed protocol limits")]
+    InvalidReporterSet,
+    #[msg("reporter Merkle proof is invalid")]
+    InvalidMerkleProof,
+    #[msg("reporter pool accounting is invalid")]
+    InvalidReporterPool,
+    #[msg("reporter reward is zero or unavailable")]
+    NothingToClaim,
+    #[msg("reporter claim account is invalid")]
+    InvalidReporterClaim,
 }

@@ -3,7 +3,8 @@
 Workspace Anchor do Registry MAIVW capaz de operar como origem canônica ou como
 espelho de uma origem EVM/Solana. A implementação é incremental; o estado deste
 marco cobre o schema base, autenticação de atestações, inicialização do registry
-e registros de origem para domínios e provedores com pagamento SPL atômico.
+e registros de origem para domínios e provedores com pagamento SPL atômico,
+warnings e slashing escalável.
 
 ## Toolchain fixada
 
@@ -26,6 +27,9 @@ A carteira é ignorada pelo Git e nunca deve receber ativos reais.
 | `OriginClaimReceipt` | `['origin-claim', domain_hash, nonce]` | Consumo append-only de uma autorização global |
 | `StakeVault` | `['stake-vault', domain_hash]` | Metadados e contabilidade da caução isolada |
 | `SubIdentityStrike` | `['sub-identity-strike', domain_hash, sub_identity_hash]` | Contador de warnings por subidentidade do provider |
+| `SlashCase` | `['slash-case', domain_hash, global_domain_epoch_le]` | Proposta, timelock, veto e resultado auditável do slash |
+| `ReporterPool` | `['reporter-pool', domain_hash, global_domain_epoch_le]` | Raiz Merkle e contabilidade pull-payment das recompensas |
+| `ReporterClaim` | `['reporter-claim', reporter_pool, reporter]` | Recibo único que impede saque duplicado por reporter |
 
 `DomainRecord` reserva espaço para domínio DNS de 253 bytes e endpoint de 512
 bytes. Os testes serializam o pior caso, comparam o tamanho declarado e calculam
@@ -71,6 +75,24 @@ Tokens enviados diretamente ao ATA do stake vault sem passar pelo programa são
 tratados como excedente não contabilizado: satisfazem solvência, mas não elevam
 `currentStake`. Isso impede que depósitos não solicitados bloqueiem as operações
 e evita que terceiros alterem a caução canônica fora de `top_up_stake`.
+
+## Slashing escalável
+
+`propose_slash` exige o oracle configurado e cria uma proposta vinculada ao
+domínio, ao `globalDomainEpoch`, a um nonce e à raiz Merkle dos reporters. A
+execução só é possível depois de `slashDelaySeconds`; durante o timelock,
+guardian ou authority podem chamar `veto_slash`. Após o prazo,
+`execute_slash` é permissionless, revoga o domínio, move apenas o pool agregado
+para um vault próprio e queima o restante do stake contabilizado.
+
+O custo de `execute_slash` é constante: nenhuma lista de reporters atravessa a
+transação. Cada reporter prova sua folha e chama `claim_reporter_reward`; o PDA
+`ReporterClaim` torna o saque único. Claims legitimados continuam disponíveis
+mesmo se o Registry for pausado. Provas têm no máximo 16 hashes, cobrindo até
+65.536 reporters sem crescimento não limitado da instrução.
+
+O formato normativo da árvore está em
+[`SOLANA_REPORTER_MERKLE_V1.md`](../specs/multichain/SOLANA_REPORTER_MERKLE_V1.md).
 
 O layout normativo de `payloadHash` está em
 [`SOLANA_REGISTRATION_PAYLOAD_V1.md`](../specs/multichain/SOLANA_REGISTRATION_PAYLOAD_V1.md).

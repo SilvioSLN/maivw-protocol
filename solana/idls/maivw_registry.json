@@ -106,6 +106,63 @@
         { "name": "system_program" }
       ],
       "args": [{ "name": "args", "type": { "defined": { "name": "maivw_registry::provider::IssueWarningArgs" } } }]
+    },
+    {
+      "name": "propose_slash",
+      "discriminator": [198, 144, 128, 49, 72, 78, 74, 118],
+      "accounts": [
+        { "name": "oracle", "writable": true, "signer": true },
+        { "name": "config" },
+        { "name": "domain_record" },
+        { "name": "slash_case", "writable": true },
+        { "name": "system_program" }
+      ],
+      "args": [{ "name": "args", "type": { "defined": { "name": "maivw_registry::slashing::ProposeSlashArgs" } } }]
+    },
+    {
+      "name": "veto_slash",
+      "discriminator": [141, 142, 111, 128, 96, 21, 177, 117],
+      "accounts": [
+        { "name": "veto_authority", "signer": true },
+        { "name": "config" },
+        { "name": "slash_case", "writable": true }
+      ],
+      "args": [{ "name": "args", "type": { "defined": { "name": "maivw_registry::slashing::SlashCaseArgs" } } }]
+    },
+    {
+      "name": "execute_slash",
+      "discriminator": [15, 240, 38, 73, 175, 55, 88, 55],
+      "accounts": [
+        { "name": "executor", "writable": true, "signer": true },
+        { "name": "config" },
+        { "name": "domain_record", "writable": true },
+        { "name": "slash_case", "writable": true },
+        { "name": "stake_vault", "writable": true },
+        { "name": "reporter_pool", "writable": true },
+        { "name": "mint", "writable": true },
+        { "name": "stake_vault_token", "writable": true },
+        { "name": "reporter_pool_token", "writable": true },
+        { "name": "token_program" },
+        { "name": "associated_token_program" },
+        { "name": "system_program" }
+      ],
+      "args": [{ "name": "args", "type": { "defined": { "name": "maivw_registry::slashing::SlashCaseArgs" } } }]
+    },
+    {
+      "name": "claim_reporter_reward",
+      "discriminator": [186, 203, 160, 147, 170, 151, 107, 96],
+      "accounts": [
+        { "name": "reporter", "writable": true, "signer": true },
+        { "name": "reporter_pool", "writable": true },
+        { "name": "reporter_claim", "writable": true },
+        { "name": "mint" },
+        { "name": "reporter_pool_token", "writable": true },
+        { "name": "reporter_token", "writable": true },
+        { "name": "token_program" },
+        { "name": "associated_token_program" },
+        { "name": "system_program" }
+      ],
+      "args": [{ "name": "args", "type": { "defined": { "name": "maivw_registry::slashing::ClaimReporterRewardArgs" } } }]
     }
   ],
   "accounts": [
@@ -113,11 +170,18 @@
     { "name": "maivw_registry::state::OriginClaimReceipt", "discriminator": [228, 140, 49, 209, 88, 178, 253, 196] },
     { "name": "maivw_registry::state::RegistryConfig", "discriminator": [23, 118, 10, 246, 173, 231, 243, 156] },
     { "name": "maivw_registry::state::StakeVault", "discriminator": [192, 112, 65, 125, 129, 151, 173, 226] },
-    { "name": "maivw_registry::state::SubIdentityStrike", "discriminator": [47, 50, 208, 20, 210, 192, 245, 105] }
+    { "name": "maivw_registry::state::SubIdentityStrike", "discriminator": [47, 50, 208, 20, 210, 192, 245, 105] },
+    { "name": "maivw_registry::state::SlashCase", "discriminator": [208, 69, 223, 189, 133, 168, 35, 50] },
+    { "name": "maivw_registry::state::ReporterPool", "discriminator": [9, 244, 234, 67, 88, 54, 124, 111] },
+    { "name": "maivw_registry::state::ReporterClaim", "discriminator": [244, 75, 111, 100, 3, 14, 130, 40] }
   ],
   "events": [
     { "name": "maivw_registry::StakeToppedUp", "discriminator": [198, 194, 194, 30, 127, 26, 161, 239] },
-    { "name": "maivw_registry::WarningIssued", "discriminator": [213, 152, 42, 98, 199, 162, 84, 83] }
+    { "name": "maivw_registry::WarningIssued", "discriminator": [213, 152, 42, 98, 199, 162, 84, 83] },
+    { "name": "maivw_registry::SlashProposed", "discriminator": [158, 90, 179, 8, 227, 190, 15, 231] },
+    { "name": "maivw_registry::SlashVetoed", "discriminator": [7, 146, 105, 203, 141, 130, 94, 117] },
+    { "name": "maivw_registry::SlashExecuted", "discriminator": [170, 48, 78, 119, 242, 155, 108, 61] },
+    { "name": "maivw_registry::ReporterRewardClaimed", "discriminator": [172, 175, 99, 130, 105, 163, 83, 55] }
   ],
   "types": [
     {
@@ -132,6 +196,33 @@
       "type": { "kind": "struct", "fields": [
         { "name": "domain_hash", "type": { "array": ["u8", 32] } },
         { "name": "amount", "type": "u64" }
+      ] }
+    },
+    {
+      "name": "maivw_registry::slashing::ProposeSlashArgs",
+      "type": { "kind": "struct", "fields": [
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "global_domain_epoch", "type": "u64" },
+        { "name": "case_nonce", "type": { "array": ["u8", 32] } },
+        { "name": "reporter_root", "type": { "array": ["u8", 32] } },
+        { "name": "reporter_count", "type": "u32" }
+      ] }
+    },
+    {
+      "name": "maivw_registry::slashing::SlashCaseArgs",
+      "type": { "kind": "struct", "fields": [
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "global_domain_epoch", "type": "u64" },
+        { "name": "case_nonce", "type": { "array": ["u8", 32] } }
+      ] }
+    },
+    {
+      "name": "maivw_registry::slashing::ClaimReporterRewardArgs",
+      "type": { "kind": "struct", "fields": [
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "global_domain_epoch", "type": "u64" },
+        { "name": "case_nonce", "type": { "array": ["u8", 32] } },
+        { "name": "proof", "type": { "vec": { "array": ["u8", 32] } } }
       ] }
     },
     {
@@ -202,6 +293,11 @@
       "name": "maivw_registry::state::DomainStatus",
       "repr": { "kind": "rust" },
       "type": { "kind": "enum", "variants": [{ "name": "Active" }, { "name": "Suspended" }, { "name": "Revoked" }] }
+    },
+    {
+      "name": "maivw_registry::state::SlashCaseStatus",
+      "repr": { "kind": "rust" },
+      "type": { "kind": "enum", "variants": [{ "name": "Pending" }, { "name": "Vetoed" }, { "name": "Executed" }] }
     },
     {
       "name": "maivw_registry::state::KeyAlgorithm",
@@ -300,6 +396,60 @@
       ] }
     },
     {
+      "name": "maivw_registry::state::SlashCase",
+      "type": { "kind": "struct", "fields": [
+        { "name": "schema_version", "type": "u16" },
+        { "name": "bump", "type": "u8" },
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "global_domain_epoch", "type": "u64" },
+        { "name": "case_nonce", "type": { "array": ["u8", 32] } },
+        { "name": "reporter_root", "type": { "array": ["u8", 32] } },
+        { "name": "reporter_count", "type": "u32" },
+        { "name": "proposed_by", "type": "pubkey" },
+        { "name": "proposed_at", "type": "i64" },
+        { "name": "execute_after", "type": "i64" },
+        { "name": "status", "type": { "defined": { "name": "maivw_registry::state::SlashCaseStatus" } } },
+        { "name": "vetoed_by", "type": "pubkey" },
+        { "name": "vetoed_at", "type": "i64" },
+        { "name": "executed_at", "type": "i64" },
+        { "name": "stake_slashed", "type": "u64" },
+        { "name": "reporter_pool_amount", "type": "u64" },
+        { "name": "burned_amount", "type": "u64" },
+        { "name": "origin_sequence", "type": "u64" }
+      ] }
+    },
+    {
+      "name": "maivw_registry::state::ReporterPool",
+      "type": { "kind": "struct", "fields": [
+        { "name": "schema_version", "type": "u16" },
+        { "name": "bump", "type": "u8" },
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "global_domain_epoch", "type": "u64" },
+        { "name": "case_nonce", "type": { "array": ["u8", 32] } },
+        { "name": "mint", "type": "pubkey" },
+        { "name": "token_account", "type": "pubkey" },
+        { "name": "reporter_root", "type": { "array": ["u8", 32] } },
+        { "name": "reporter_count", "type": "u32" },
+        { "name": "per_reporter", "type": "u64" },
+        { "name": "total_allocated", "type": "u64" },
+        { "name": "claimed_amount", "type": "u64" },
+        { "name": "claimed_count", "type": "u32" },
+        { "name": "created_at", "type": "i64" }
+      ] }
+    },
+    {
+      "name": "maivw_registry::state::ReporterClaim",
+      "type": { "kind": "struct", "fields": [
+        { "name": "schema_version", "type": "u16" },
+        { "name": "bump", "type": "u8" },
+        { "name": "reporter_pool", "type": "pubkey" },
+        { "name": "reporter", "type": "pubkey" },
+        { "name": "leaf", "type": { "array": ["u8", 32] } },
+        { "name": "amount", "type": "u64" },
+        { "name": "claimed_at", "type": "i64" }
+      ] }
+    },
+    {
       "name": "maivw_registry::StakeToppedUp",
       "type": { "kind": "struct", "fields": [
         { "name": "domain_hash", "type": { "array": ["u8", 32] } },
@@ -323,6 +473,56 @@
         { "name": "current_stake", "type": "u64" },
         { "name": "suspended", "type": "bool" },
         { "name": "origin_sequence", "type": "u64" },
+        { "name": "timestamp", "type": "i64" }
+      ] }
+    },
+    {
+      "name": "maivw_registry::SlashProposed",
+      "type": { "kind": "struct", "fields": [
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "global_domain_epoch", "type": "u64" },
+        { "name": "case_nonce", "type": { "array": ["u8", 32] } },
+        { "name": "reporter_root", "type": { "array": ["u8", 32] } },
+        { "name": "reporter_count", "type": "u32" },
+        { "name": "oracle", "type": "pubkey" },
+        { "name": "proposed_at", "type": "i64" },
+        { "name": "execute_after", "type": "i64" }
+      ] }
+    },
+    {
+      "name": "maivw_registry::SlashVetoed",
+      "type": { "kind": "struct", "fields": [
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "global_domain_epoch", "type": "u64" },
+        { "name": "case_nonce", "type": { "array": ["u8", 32] } },
+        { "name": "vetoed_by", "type": "pubkey" },
+        { "name": "timestamp", "type": "i64" }
+      ] }
+    },
+    {
+      "name": "maivw_registry::SlashExecuted",
+      "type": { "kind": "struct", "fields": [
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "global_domain_epoch", "type": "u64" },
+        { "name": "case_nonce", "type": { "array": ["u8", 32] } },
+        { "name": "stake_slashed", "type": "u64" },
+        { "name": "reporter_pool_amount", "type": "u64" },
+        { "name": "burned_amount", "type": "u64" },
+        { "name": "reporter_root", "type": { "array": ["u8", 32] } },
+        { "name": "reporter_count", "type": "u32" },
+        { "name": "origin_sequence", "type": "u64" },
+        { "name": "timestamp", "type": "i64" }
+      ] }
+    },
+    {
+      "name": "maivw_registry::ReporterRewardClaimed",
+      "type": { "kind": "struct", "fields": [
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "global_domain_epoch", "type": "u64" },
+        { "name": "case_nonce", "type": { "array": ["u8", 32] } },
+        { "name": "reporter", "type": "pubkey" },
+        { "name": "amount", "type": "u64" },
+        { "name": "claimed_count", "type": "u32" },
         { "name": "timestamp", "type": "i64" }
       ] }
     }
@@ -358,6 +558,15 @@
     { "code": 6027, "name": "NotProvider", "msg": "operation requires a provider origin record" },
     { "code": 6028, "name": "InvalidDomainStatus", "msg": "domain status does not allow this operation" },
     { "code": 6029, "name": "StrikeOverflow", "msg": "strike counter overflowed" },
-    { "code": 6030, "name": "InvalidSubIdentity", "msg": "sub-identity hash must not be zero" }
+    { "code": 6030, "name": "InvalidSubIdentity", "msg": "sub-identity hash must not be zero" },
+    { "code": 6031, "name": "InvalidSlashCase", "msg": "slash case is invalid" },
+    { "code": 6032, "name": "SlashCaseUnavailable", "msg": "a slash case is already pending or was already executed" },
+    { "code": 6033, "name": "SlashNotReady", "msg": "slash timelock has not elapsed" },
+    { "code": 6034, "name": "UnauthorizedVeto", "msg": "signer is not authorized to veto the slash" },
+    { "code": 6035, "name": "InvalidReporterSet", "msg": "reporter root and count are inconsistent or exceed protocol limits" },
+    { "code": 6036, "name": "InvalidMerkleProof", "msg": "reporter Merkle proof is invalid" },
+    { "code": 6037, "name": "InvalidReporterPool", "msg": "reporter pool accounting is invalid" },
+    { "code": 6038, "name": "NothingToClaim", "msg": "reporter reward is zero or unavailable" },
+    { "code": 6039, "name": "InvalidReporterClaim", "msg": "reporter claim account is invalid" }
   ]
 }

@@ -3,6 +3,9 @@ pub const DOMAIN_RECORD_SEED: &[u8] = b"domain";
 pub const ORIGIN_CLAIM_RECEIPT_SEED: &[u8] = b"origin-claim";
 pub const STAKE_VAULT_SEED: &[u8] = b"stake-vault";
 pub const SUB_IDENTITY_STRIKE_SEED: &[u8] = b"sub-identity-strike";
+pub const SLASH_CASE_SEED: &[u8] = b"slash-case";
+pub const REPORTER_POOL_SEED: &[u8] = b"reporter-pool";
+pub const REPORTER_CLAIM_SEED: &[u8] = b"reporter-claim";
 pub const FOUNDER_VAULT_AUTHORITY_SEED: &[u8] = b"founder-vault";
 pub const TREASURY_VAULT_AUTHORITY_SEED: &[u8] = b"treasury-vault";
 
@@ -15,10 +18,17 @@ pub const DOMAIN_SCHEMA_VERSION: u16 = 1;
 pub const RECEIPT_SCHEMA_VERSION: u16 = 1;
 pub const STAKE_VAULT_SCHEMA_VERSION: u16 = 1;
 pub const SUB_IDENTITY_STRIKE_SCHEMA_VERSION: u16 = 1;
+pub const SLASH_CASE_SCHEMA_VERSION: u16 = 1;
+pub const REPORTER_POOL_SCHEMA_VERSION: u16 = 1;
+pub const REPORTER_CLAIM_SCHEMA_VERSION: u16 = 1;
 
 pub const BPS_DENOMINATOR: u64 = 10_000;
 pub const FOUNDER_FEE_BPS: u64 = 1_000;
 pub const TREASURY_FEE_BPS: u64 = 2_500;
+pub const REPORTER_BOUNTY_BPS: u64 = 1_000;
+pub const MAX_REPORTERS_PER_POOL: u32 = 65_536;
+pub const MAX_REPORTER_PROOF_LEN: usize = 16;
+pub const REPORTER_LEAF_MAGIC: [u8; 17] = *b"MAIVW_REPORTER_V1";
 pub const REGISTRATION_PAYLOAD_MAGIC: [u8; 8] = *b"MAIVWREG";
 pub const REGISTRATION_PAYLOAD_VERSION: u8 = 1;
 

@@ -1,15 +1,16 @@
 use anchor_lang::prelude::*;
 
 use crate::{
-    ID,
     constants::{
         DOMAIN_RECORD_SEED, DOMAIN_SCHEMA_VERSION, MAX_DOMAIN_LEN, MAX_ENDPOINT_LEN,
         MIN_STRIKES_TO_DRAIN, ORIGIN_CLAIM_RECEIPT_SEED, PROVIDER_TIER_COUNT,
         RECEIPT_SCHEMA_VERSION, REGISTRY_CONFIG_SEED, REGISTRY_SCHEMA_VERSION,
-        STAKE_VAULT_SCHEMA_VERSION, STAKE_VAULT_SEED, SUB_IDENTITY_STRIKE_SCHEMA_VERSION,
-        SUB_IDENTITY_STRIKE_SEED,
+        REPORTER_CLAIM_SCHEMA_VERSION, REPORTER_CLAIM_SEED, REPORTER_POOL_SCHEMA_VERSION,
+        REPORTER_POOL_SEED, SLASH_CASE_SCHEMA_VERSION, SLASH_CASE_SEED, STAKE_VAULT_SCHEMA_VERSION,
+        STAKE_VAULT_SEED, SUB_IDENTITY_STRIKE_SCHEMA_VERSION, SUB_IDENTITY_STRIKE_SEED,
     },
     error::MaivwError,
+    ID,
 };
 
 #[repr(u8)]
@@ -41,6 +42,14 @@ pub enum DomainStatus {
     Active,
     Suspended,
     Revoked,
+}
+
+#[repr(u8)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SlashCaseStatus {
+    Pending,
+    Vetoed,
+    Executed,
 }
 
 #[repr(u8)]
@@ -404,6 +413,165 @@ impl SubIdentityStrike {
     }
 }
 
+#[account]
+#[derive(Debug)]
+pub struct SlashCase {
+    pub schema_version: u16,
+    pub bump: u8,
+    pub domain_hash: [u8; 32],
+    pub global_domain_epoch: u64,
+    pub case_nonce: [u8; 32],
+    pub reporter_root: [u8; 32],
+    pub reporter_count: u32,
+    pub proposed_by: Pubkey,
+    pub proposed_at: i64,
+    pub execute_after: i64,
+    pub status: SlashCaseStatus,
+    pub vetoed_by: Pubkey,
+    pub vetoed_at: i64,
+    pub executed_at: i64,
+    pub stake_slashed: u64,
+    pub reporter_pool_amount: u64,
+    pub burned_amount: u64,
+    pub origin_sequence: u64,
+}
+
+impl SlashCase {
+    pub const DATA_LEN: usize = 240;
+    pub const SPACE: usize = 8 + Self::DATA_LEN;
+
+    pub fn pda(domain_hash: &[u8; 32], global_domain_epoch: u64) -> (Pubkey, u8) {
+        Pubkey::find_program_address(
+            &[
+                SLASH_CASE_SEED,
+                domain_hash,
+                global_domain_epoch.to_le_bytes().as_ref(),
+            ],
+            &ID,
+        )
+    }
+
+    pub fn validate_identity(
+        &self,
+        domain_hash: [u8; 32],
+        global_domain_epoch: u64,
+        case_nonce: [u8; 32],
+    ) -> Result<()> {
+        require!(
+            self.schema_version == SLASH_CASE_SCHEMA_VERSION
+                && self.domain_hash == domain_hash
+                && self.global_domain_epoch == global_domain_epoch
+                && self.case_nonce == case_nonce
+                && self.case_nonce != [0; 32]
+                && self.proposed_by != Pubkey::default()
+                && self.execute_after >= self.proposed_at,
+            MaivwError::InvalidSlashCase
+        );
+        Ok(())
+    }
+}
+
+#[account]
+#[derive(Debug)]
+pub struct ReporterPool {
+    pub schema_version: u16,
+    pub bump: u8,
+    pub domain_hash: [u8; 32],
+    pub global_domain_epoch: u64,
+    pub case_nonce: [u8; 32],
+    pub mint: Pubkey,
+    pub token_account: Pubkey,
+    pub reporter_root: [u8; 32],
+    pub reporter_count: u32,
+    pub per_reporter: u64,
+    pub total_allocated: u64,
+    pub claimed_amount: u64,
+    pub claimed_count: u32,
+    pub created_at: i64,
+}
+
+impl ReporterPool {
+    pub const DATA_LEN: usize = 211;
+    pub const SPACE: usize = 8 + Self::DATA_LEN;
+
+    pub fn pda(domain_hash: &[u8; 32], global_domain_epoch: u64) -> (Pubkey, u8) {
+        Pubkey::find_program_address(
+            &[
+                REPORTER_POOL_SEED,
+                domain_hash,
+                global_domain_epoch.to_le_bytes().as_ref(),
+            ],
+            &ID,
+        )
+    }
+
+    pub fn validate(&self, token_amount: u64) -> Result<()> {
+        let unclaimed = self
+            .total_allocated
+            .checked_sub(self.claimed_amount)
+            .ok_or_else(|| error!(MaivwError::InvalidReporterPool))?;
+        require!(
+            self.schema_version == REPORTER_POOL_SCHEMA_VERSION
+                && self.domain_hash != [0; 32]
+                && self.case_nonce != [0; 32]
+                && self.mint != Pubkey::default()
+                && self.token_account != Pubkey::default()
+                && self.claimed_count <= self.reporter_count
+                && self
+                    .per_reporter
+                    .checked_mul(u64::from(self.reporter_count))
+                    == Some(self.total_allocated)
+                && token_amount >= unclaimed
+                && ((self.reporter_count == 0
+                    && self.reporter_root == [0; 32]
+                    && self.total_allocated == 0)
+                    || (self.reporter_count > 0 && self.reporter_root != [0; 32])),
+            MaivwError::InvalidReporterPool
+        );
+        Ok(())
+    }
+}
+
+#[account]
+#[derive(Debug)]
+pub struct ReporterClaim {
+    pub schema_version: u16,
+    pub bump: u8,
+    pub reporter_pool: Pubkey,
+    pub reporter: Pubkey,
+    pub leaf: [u8; 32],
+    pub amount: u64,
+    pub claimed_at: i64,
+}
+
+impl ReporterClaim {
+    pub const DATA_LEN: usize = 115;
+    pub const SPACE: usize = 8 + Self::DATA_LEN;
+
+    pub fn pda(reporter_pool: &Pubkey, reporter: &Pubkey) -> (Pubkey, u8) {
+        Pubkey::find_program_address(
+            &[
+                REPORTER_CLAIM_SEED,
+                reporter_pool.as_ref(),
+                reporter.as_ref(),
+            ],
+            &ID,
+        )
+    }
+
+    pub fn validate(&self) -> Result<()> {
+        require!(
+            self.schema_version == REPORTER_CLAIM_SCHEMA_VERSION
+                && self.reporter_pool != Pubkey::default()
+                && self.reporter != Pubkey::default()
+                && self.leaf != [0; 32]
+                && self.amount > 0,
+            MaivwError::InvalidReporterClaim
+        );
+        Ok(())
+    }
+}
+
 fn is_canonical_domain(domain: &str) -> bool {
     !domain.is_empty()
         && domain.len() <= MAX_DOMAIN_LEN
@@ -569,11 +737,74 @@ mod tests {
         assert_eq!(strike_bytes.len(), SubIdentityStrike::SPACE);
         assert!(strike.validate().is_ok());
 
+        let slash_case = SlashCase {
+            schema_version: SLASH_CASE_SCHEMA_VERSION,
+            bump: 1,
+            domain_hash: [1; 32],
+            global_domain_epoch: 2,
+            case_nonce: [3; 32],
+            reporter_root: [4; 32],
+            reporter_count: 5,
+            proposed_by: Pubkey::new_unique(),
+            proposed_at: 6,
+            execute_after: 7,
+            status: SlashCaseStatus::Pending,
+            vetoed_by: Pubkey::default(),
+            vetoed_at: 0,
+            executed_at: 0,
+            stake_slashed: 0,
+            reporter_pool_amount: 0,
+            burned_amount: 0,
+            origin_sequence: 0,
+        };
+        let mut slash_case_bytes = Vec::new();
+        slash_case.try_serialize(&mut slash_case_bytes).unwrap();
+        assert_eq!(slash_case_bytes.len(), SlashCase::SPACE);
+        assert!(slash_case.validate_identity([1; 32], 2, [3; 32]).is_ok());
+
+        let pool = ReporterPool {
+            schema_version: REPORTER_POOL_SCHEMA_VERSION,
+            bump: 1,
+            domain_hash: [1; 32],
+            global_domain_epoch: 2,
+            case_nonce: [3; 32],
+            mint: Pubkey::new_unique(),
+            token_account: Pubkey::new_unique(),
+            reporter_root: [4; 32],
+            reporter_count: 5,
+            per_reporter: 10,
+            total_allocated: 50,
+            claimed_amount: 20,
+            claimed_count: 2,
+            created_at: 8,
+        };
+        let mut pool_bytes = Vec::new();
+        pool.try_serialize(&mut pool_bytes).unwrap();
+        assert_eq!(pool_bytes.len(), ReporterPool::SPACE);
+        assert!(pool.validate(30).is_ok());
+
+        let claim = ReporterClaim {
+            schema_version: REPORTER_CLAIM_SCHEMA_VERSION,
+            bump: 1,
+            reporter_pool: Pubkey::new_unique(),
+            reporter: Pubkey::new_unique(),
+            leaf: [5; 32],
+            amount: 10,
+            claimed_at: 9,
+        };
+        let mut claim_bytes = Vec::new();
+        claim.try_serialize(&mut claim_bytes).unwrap();
+        assert_eq!(claim_bytes.len(), ReporterClaim::SPACE);
+        assert!(claim.validate().is_ok());
+
         assert!(Rent::default().minimum_balance(DomainRecord::SPACE) > 0);
         assert!(Rent::default().minimum_balance(RegistryConfig::SPACE) > 0);
         assert!(Rent::default().minimum_balance(OriginClaimReceipt::SPACE) > 0);
         assert!(Rent::default().minimum_balance(StakeVault::SPACE) > 0);
         assert!(Rent::default().minimum_balance(SubIdentityStrike::SPACE) > 0);
+        assert!(Rent::default().minimum_balance(SlashCase::SPACE) > 0);
+        assert!(Rent::default().minimum_balance(ReporterPool::SPACE) > 0);
+        assert!(Rent::default().minimum_balance(ReporterClaim::SPACE) > 0);
     }
 
     #[test]
@@ -606,41 +837,31 @@ mod tests {
     fn origin_and_mirror_invariants_are_distinct() {
         let local_network = [2; 32];
         let local_registry = ID.to_bytes();
-        assert!(
-            record(RecordKind::Origin, local_network, local_registry)
-                .validate(local_network, local_registry)
-                .is_ok()
-        );
-        assert!(
-            record(RecordKind::Mirror, local_network, local_registry)
-                .validate(local_network, local_registry)
-                .is_err()
-        );
-        assert!(
-            record(RecordKind::Mirror, [9; 32], [8; 32])
-                .validate(local_network, local_registry)
-                .is_ok()
-        );
+        assert!(record(RecordKind::Origin, local_network, local_registry)
+            .validate(local_network, local_registry)
+            .is_ok());
+        assert!(record(RecordKind::Mirror, local_network, local_registry)
+            .validate(local_network, local_registry)
+            .is_err());
+        assert!(record(RecordKind::Mirror, [9; 32], [8; 32])
+            .validate(local_network, local_registry)
+            .is_ok());
 
         let mut suspended_provider = record(RecordKind::Origin, local_network, local_registry);
         suspended_provider.status = DomainStatus::Suspended;
         suspended_provider.current_stake = 0;
         suspended_provider.attested_stake = 0;
-        assert!(
-            suspended_provider
-                .validate(local_network, local_registry)
-                .is_ok()
-        );
+        assert!(suspended_provider
+            .validate(local_network, local_registry)
+            .is_ok());
 
         let mut topped_up_provider = record(RecordKind::Origin, local_network, local_registry);
         topped_up_provider.current_stake = u64::MAX;
         topped_up_provider.attested_stake = u64::MAX;
         topped_up_provider.original_registration_amount = 1;
-        assert!(
-            topped_up_provider
-                .validate(local_network, local_registry)
-                .is_ok()
-        );
+        assert!(topped_up_provider
+            .validate(local_network, local_registry)
+            .is_ok());
 
         let mut evm_mirror = record(RecordKind::Mirror, [9; 32], [8; 32]);
         evm_mirror.origin.family = NetworkFamily::Evm;
@@ -661,6 +882,16 @@ mod tests {
         assert_ne!(
             SubIdentityStrike::pda(&[1; 32], &[3; 32]),
             SubIdentityStrike::pda(&[1; 32], &[4; 32])
+        );
+        assert_ne!(SlashCase::pda(&[1; 32], 0), SlashCase::pda(&[1; 32], 1));
+        assert_ne!(
+            ReporterPool::pda(&[1; 32], 0),
+            ReporterPool::pda(&[2; 32], 0)
+        );
+        let pool = ReporterPool::pda(&[1; 32], 0).0;
+        assert_ne!(
+            ReporterClaim::pda(&pool, &Pubkey::new_unique()),
+            ReporterClaim::pda(&pool, &Pubkey::new_unique())
         );
     }
 }

@@ -63,11 +63,16 @@ distributed = perReporter × reporterCount
 burned = currentStake - distributed
 ```
 
-- Reporters devem estar ordenados, ser únicos e respeitar o limite do programa.
+- O oracle publica uma raiz Merkle de reporters únicos; o guardian pode vetar a
+  proposta durante o timelock.
+- A execução recebe apenas raiz e quantidade, com custo constante. Cada reporter
+  apresenta depois uma prova de no máximo 16 hashes e possui um recibo PDA único.
 - Sem reporter válido, toda a caução é queimada.
 - O resto de divisão também é queimado; não fica preso em vault.
-- A queima usa a instrução `BurnChecked` do SPL Token Program a partir do stake vault. Enviar tokens a uma carteira sem chave não conta como burn.
-- Bounties são creditados em contas de retirada (`ReporterCredit`) e sacados pelo beneficiário, seguindo o modelo pull-payment.
+- A queima usa a instrução `BurnChecked` do SPL Token Program clássico, assinada pelo
+  PDA do stake vault. Enviar tokens a uma carteira sem chave não conta como burn.
+- Bounties são depositados em um `ReporterPool` segregado e sacados pelo
+  beneficiário via `claim_reporter_reward`, seguindo o modelo pull-payment.
 
 Essa regra preserva a semântica econômica EVM: no domínio comum, até 10% do pagamento original vai aos reporters e o restante dos 65% de stake é queimado; no provider, o mesmo teto de 10% do valor original se aplica e o restante da caução é queimado.
 
@@ -78,7 +83,7 @@ O programa mantém autoridades PDA e token accounts separadas para:
 - founder fees;
 - treasury fees e penalidades;
 - stake por domínio;
-- créditos de reporters.
+- pools de reporters por domínio e epoch.
 
 O saldo atribuído a uma finalidade não pode ser sacado por outra. Toda instrução econômica valida mint, token program, owner, authority PDA e associated token account esperada. Mirrors não possuem stake local e nunca participam de slash local.
 
