@@ -177,6 +177,18 @@ continuam auditáveis; o registro permanece `Mirror`, portanto não pode executa
 operações locais nem `reclaim_domain`. Uma reativação posterior exige
 `sync_mirror` da mesma origem com uma versão ainda maior.
 
+## Governança e pausa
+
+`pause_registry` pode ser assinada pelo guardian ou pela authority; somente a
+authority pode executar `unpause_registry`. Transições repetidas falham e cada
+mudança emite signer e timestamp. O gate `RegistryConfig.active` bloqueia novas
+obrigações e mutações canônicas enquanto o Registry está pausado.
+
+Direitos já consolidados continuam exercíveis: `claim_reporter_reward` não
+depende do config ativo, e `veto_slash` e `cancel_recovery` permanecem
+disponíveis como proteções durante incidentes. A política completa está em
+[`SOLANA_GOVERNANCE_V1.md`](../specs/multichain/SOLANA_GOVERNANCE_V1.md).
+
 ## Slashing escalável
 
 `propose_slash` exige o oracle configurado e cria uma proposta vinculada ao

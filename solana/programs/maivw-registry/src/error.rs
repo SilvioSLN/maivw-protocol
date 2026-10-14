@@ -140,4 +140,12 @@ pub enum MaivwError {
     MirrorVersionRegression,
     #[msg("mirror version must be strictly newer than the registered version")]
     MirrorVersionConflict,
+    #[msg("signer is not authorized to pause the registry")]
+    UnauthorizedPause,
+    #[msg("only the registry authority can unpause")]
+    UnauthorizedUnpause,
+    #[msg("registry is already paused")]
+    RegistryAlreadyPaused,
+    #[msg("registry is already active")]
+    RegistryAlreadyActive,
 }

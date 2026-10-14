@@ -12,6 +12,7 @@ pub mod constants;
 pub mod domain_updates;
 pub mod economics;
 pub mod error;
+pub mod governance;
 pub mod intent_batch;
 pub mod mirror;
 pub mod provider;
@@ -45,6 +46,7 @@ use economics::{
     transfer_tokens_signed,
 };
 use error::MaivwError;
+use governance::{authorize_pause, authorize_unpause};
 use intent_batch::{authorize_intent_batch, validate_intent_batch, RegisterIntentBatchArgs};
 use mirror::{
     mirror_state_payload_hash, revoke_mirror_payload_hash, sync_mirror_payload_hash,
@@ -113,6 +115,41 @@ pub mod maivw_registry {
             &ctx.accounts.instructions.to_account_info(),
             &envelope,
         )?;
+        Ok(())
+    }
+
+    pub fn pause_registry(ctx: Context<ManageRegistryPause>) -> Result<()> {
+        let config = &mut ctx.accounts.config;
+        config.validate()?;
+        authorize_pause(
+            config.authority,
+            config.guardian,
+            ctx.accounts.governance.key(),
+            config.active,
+        )?;
+        config.active = false;
+        let now = Clock::get()?.unix_timestamp;
+        emit!(RegistryPaused {
+            paused_by: ctx.accounts.governance.key(),
+            timestamp: now,
+        });
+        Ok(())
+    }
+
+    pub fn unpause_registry(ctx: Context<ManageRegistryPause>) -> Result<()> {
+        let config = &mut ctx.accounts.config;
+        config.validate()?;
+        authorize_unpause(
+            config.authority,
+            ctx.accounts.governance.key(),
+            config.active,
+        )?;
+        config.active = true;
+        let now = Clock::get()?.unix_timestamp;
+        emit!(RegistryUnpaused {
+            unpaused_by: ctx.accounts.governance.key(),
+            timestamp: now,
+        });
         Ok(())
     }
 
@@ -1762,6 +1799,17 @@ pub struct VerifyAttestation<'info> {
 }
 
 #[derive(Accounts)]
+pub struct ManageRegistryPause<'info> {
+    pub governance: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [REGISTRY_CONFIG_SEED],
+        bump = config.bump
+    )]
+    pub config: Box<Account<'info, RegistryConfig>>,
+}
+
+#[derive(Accounts)]
 #[instruction(args: RegisterDomainArgs)]
 pub struct RegisterDomain<'info> {
     #[account(mut)]
@@ -2727,6 +2775,18 @@ pub struct StakeToppedUp {
     pub current_stake: u64,
     pub reactivated: bool,
     pub origin_sequence: u64,
+    pub timestamp: i64,
+}
+
+#[event]
+pub struct RegistryPaused {
+    pub paused_by: Pubkey,
+    pub timestamp: i64,
+}
+
+#[event]
+pub struct RegistryUnpaused {
+    pub unpaused_by: Pubkey,
     pub timestamp: i64,
 }
 

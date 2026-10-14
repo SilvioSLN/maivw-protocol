@@ -26,6 +26,24 @@
       "args": [{ "name": "envelope", "type": "bytes" }]
     },
     {
+      "name": "pause_registry",
+      "discriminator": [106, 147, 106, 131, 69, 218, 76, 249],
+      "accounts": [
+        { "name": "governance", "signer": true },
+        { "name": "config", "writable": true }
+      ],
+      "args": []
+    },
+    {
+      "name": "unpause_registry",
+      "discriminator": [106, 183, 71, 126, 188, 208, 197, 26],
+      "accounts": [
+        { "name": "governance", "signer": true },
+        { "name": "config", "writable": true }
+      ],
+      "args": []
+    },
+    {
       "name": "register_domain",
       "discriminator": [236, 7, 208, 151, 173, 149, 73, 104],
       "accounts": [
@@ -364,6 +382,8 @@
     { "name": "maivw_registry::state::MirrorAttestationReceipt", "discriminator": [146, 182, 191, 131, 194, 200, 186, 213] }
   ],
   "events": [
+    { "name": "maivw_registry::RegistryPaused", "discriminator": [187, 60, 205, 238, 36, 219, 148, 187] },
+    { "name": "maivw_registry::RegistryUnpaused", "discriminator": [217, 244, 140, 55, 27, 37, 56, 112] },
     { "name": "maivw_registry::StakeToppedUp", "discriminator": [198, 194, 194, 30, 127, 26, 161, 239] },
     { "name": "maivw_registry::WarningIssued", "discriminator": [213, 152, 42, 98, 199, 162, 84, 83] },
     { "name": "maivw_registry::SlashProposed", "discriminator": [158, 90, 179, 8, 227, 190, 15, 231] },
@@ -385,6 +405,20 @@
     { "name": "maivw_registry::MirrorRevoked", "discriminator": [209, 24, 122, 168, 22, 152, 49, 139] }
   ],
   "types": [
+    {
+      "name": "maivw_registry::RegistryPaused",
+      "type": { "kind": "struct", "fields": [
+        { "name": "paused_by", "type": "pubkey" },
+        { "name": "timestamp", "type": "i64" }
+      ] }
+    },
+    {
+      "name": "maivw_registry::RegistryUnpaused",
+      "type": { "kind": "struct", "fields": [
+        { "name": "unpaused_by", "type": "pubkey" },
+        { "name": "timestamp", "type": "i64" }
+      ] }
+    },
     {
       "name": "maivw_registry::admin_rotation::ProposeDomainAdminArgs",
       "type": { "kind": "struct", "fields": [
@@ -1222,6 +1256,10 @@
     { "code": 6065, "name": "InvalidMirrorReceipt", "msg": "mirror attestation receipt is invalid" },
     { "code": 6066, "name": "MirrorOriginMismatch", "msg": "mirror attestation origin does not match the registered origin" },
     { "code": 6067, "name": "MirrorVersionRegression", "msg": "mirror version regresses the registered epoch or sequence" },
-    { "code": 6068, "name": "MirrorVersionConflict", "msg": "mirror version must be strictly newer than the registered version" }
+    { "code": 6068, "name": "MirrorVersionConflict", "msg": "mirror version must be strictly newer than the registered version" },
+    { "code": 6069, "name": "UnauthorizedPause", "msg": "signer is not authorized to pause the registry" },
+    { "code": 6070, "name": "UnauthorizedUnpause", "msg": "only the registry authority can unpause" },
+    { "code": 6071, "name": "RegistryAlreadyPaused", "msg": "registry is already paused" },
+    { "code": 6072, "name": "RegistryAlreadyActive", "msg": "registry is already active" }
   ]
 }
