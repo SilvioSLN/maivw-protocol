@@ -116,4 +116,12 @@ pub enum MaivwError {
     InvalidReclaimPayload,
     #[msg("pending process account is malformed or belongs to another epoch")]
     InvalidPendingProcess,
+    #[msg("intent batch account or version is invalid")]
+    InvalidIntentBatch,
+    #[msg("message class must contain between 1 and 32 bytes")]
+    InvalidMessageClass,
+    #[msg("intent batch Merkle root must not be zero")]
+    InvalidMerkleRoot,
+    #[msg("signer cannot publish intent batches for this domain")]
+    UnauthorizedIntentBatch,
 }

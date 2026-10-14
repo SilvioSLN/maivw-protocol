@@ -9,6 +9,7 @@ pub const REPORTER_CLAIM_SEED: &[u8] = b"reporter-claim";
 pub const PENDING_ADMIN_SEED: &[u8] = b"pending-admin";
 pub const RECOVERY_CASE_SEED: &[u8] = b"recovery-case";
 pub const RECOVERY_RECEIPT_SEED: &[u8] = b"recovery-receipt";
+pub const INTENT_BATCH_SEED: &[u8] = b"intent-batch";
 pub const FOUNDER_VAULT_AUTHORITY_SEED: &[u8] = b"founder-vault";
 pub const TREASURY_VAULT_AUTHORITY_SEED: &[u8] = b"treasury-vault";
 
@@ -27,6 +28,7 @@ pub const REPORTER_CLAIM_SCHEMA_VERSION: u16 = 1;
 pub const PENDING_ADMIN_SCHEMA_VERSION: u16 = 1;
 pub const RECOVERY_CASE_SCHEMA_VERSION: u16 = 1;
 pub const RECOVERY_RECEIPT_SCHEMA_VERSION: u16 = 1;
+pub const INTENT_BATCH_SCHEMA_VERSION: u16 = 1;
 
 pub const BPS_DENOMINATOR: u64 = 10_000;
 pub const FOUNDER_FEE_BPS: u64 = 1_000;
@@ -34,6 +36,7 @@ pub const TREASURY_FEE_BPS: u64 = 2_500;
 pub const REPORTER_BOUNTY_BPS: u64 = 1_000;
 pub const MAX_REPORTERS_PER_POOL: u32 = 65_536;
 pub const MAX_REPORTER_PROOF_LEN: usize = 16;
+pub const MAX_MESSAGE_CLASS_LEN: usize = 32;
 pub const REPORTER_LEAF_MAGIC: [u8; 17] = *b"MAIVW_REPORTER_V1";
 pub const REGISTRATION_PAYLOAD_MAGIC: [u8; 8] = *b"MAIVWREG";
 pub const REGISTRATION_PAYLOAD_VERSION: u8 = 1;

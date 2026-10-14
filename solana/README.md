@@ -33,6 +33,7 @@ A carteira é ignorada pelo Git e nunca deve receber ativos reais.
 | `PendingAdmin` | `['pending-admin', domain_hash, global_domain_epoch_le]` | Proposta two-step de rotação da chave administrativa |
 | `RecoveryCase` | `['recovery-case', domain_hash, global_domain_epoch_le]` | Pedido, timelock, cancelamento e execução de recovery |
 | `RecoveryReceipt` | `['recovery-receipt', domain_hash, nonce]` | Consumo append-only da autorização do oracle |
+| `IntentBatch` | `['intent-batch', domain_hash, global_domain_epoch_le, batch_nonce]` | Raiz Merkle única por nonce explícito e epoch |
 
 `DomainRecord` reserva espaço para domínio DNS de 253 bytes e endpoint de 512
 bytes. Os testes serializam o pior caso, comparam o tamanho declarado e calculam
@@ -135,6 +136,17 @@ auditáveis e não podem operar no novo epoch.
 
 O formato normativo está em
 [`SOLANA_RECLAIM_PAYLOAD_V1.md`](../specs/multichain/SOLANA_RECLAIM_PAYLOAD_V1.md).
+
+## Intent batches
+
+`register_intent_batch` aceita a chave operacional, o admin ou o oracle de um
+domínio `Origin` ativo. O publicador escolhe um nonce `bytes32` não nulo; o PDA
+inclui domínio, epoch e nonce e é criado com `init`, tornando duplicidade uma
+falha estrutural. A classe contém de 1 a 32 bytes e a raiz Merkle não pode ser
+nula. Cada batch incrementa `originSequence` e persiste publicador e timestamp.
+
+O layout e as regras estão em
+[`SOLANA_INTENT_BATCH_V1.md`](../specs/multichain/SOLANA_INTENT_BATCH_V1.md).
 
 ## Slashing escalável
 

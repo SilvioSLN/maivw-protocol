@@ -2,14 +2,15 @@ use anchor_lang::prelude::*;
 
 use crate::{
     constants::{
-        DOMAIN_RECORD_SEED, DOMAIN_SCHEMA_VERSION, MAX_DOMAIN_LEN, MAX_ENDPOINT_LEN,
+        DOMAIN_RECORD_SEED, DOMAIN_SCHEMA_VERSION, INTENT_BATCH_SCHEMA_VERSION,
+        INTENT_BATCH_SEED, MAX_DOMAIN_LEN, MAX_ENDPOINT_LEN, MAX_MESSAGE_CLASS_LEN,
         MIN_STRIKES_TO_DRAIN, ORIGIN_CLAIM_RECEIPT_SEED, PENDING_ADMIN_SCHEMA_VERSION,
-        PENDING_ADMIN_SEED, PROVIDER_TIER_COUNT, RECEIPT_SCHEMA_VERSION, REGISTRY_CONFIG_SEED,
-        RECOVERY_CASE_SCHEMA_VERSION, RECOVERY_CASE_SEED, RECOVERY_RECEIPT_SCHEMA_VERSION,
-        RECOVERY_RECEIPT_SEED, REGISTRY_SCHEMA_VERSION, REPORTER_CLAIM_SCHEMA_VERSION,
+        PENDING_ADMIN_SEED, PROVIDER_TIER_COUNT, RECEIPT_SCHEMA_VERSION, RECOVERY_CASE_SCHEMA_VERSION,
+        RECOVERY_CASE_SEED, RECOVERY_RECEIPT_SCHEMA_VERSION, RECOVERY_RECEIPT_SEED,
+        REGISTRY_CONFIG_SEED, REGISTRY_SCHEMA_VERSION, REPORTER_CLAIM_SCHEMA_VERSION,
         REPORTER_CLAIM_SEED, REPORTER_POOL_SCHEMA_VERSION, REPORTER_POOL_SEED,
-        SLASH_CASE_SCHEMA_VERSION, SLASH_CASE_SEED, STAKE_VAULT_SCHEMA_VERSION,
-        STAKE_VAULT_SEED, SUB_IDENTITY_STRIKE_SCHEMA_VERSION, SUB_IDENTITY_STRIKE_SEED,
+        SLASH_CASE_SCHEMA_VERSION, SLASH_CASE_SEED, STAKE_VAULT_SCHEMA_VERSION, STAKE_VAULT_SEED,
+        SUB_IDENTITY_STRIKE_SCHEMA_VERSION, SUB_IDENTITY_STRIKE_SEED,
     },
     error::MaivwError,
     ID,
@@ -740,6 +741,60 @@ impl RecoveryReceipt {
     }
 }
 
+#[account]
+#[derive(Debug)]
+pub struct IntentBatch {
+    pub schema_version: u16,
+    pub bump: u8,
+    pub domain_hash: [u8; 32],
+    pub global_domain_epoch: u64,
+    pub batch_nonce: [u8; 32],
+    pub message_class: String,
+    pub message_class_hash: [u8; 32],
+    pub merkle_root: [u8; 32],
+    pub registered_by: Pubkey,
+    pub registered_at: i64,
+    pub origin_sequence: u64,
+}
+
+impl IntentBatch {
+    pub const DATA_LEN: usize = 223;
+    pub const SPACE: usize = 8 + Self::DATA_LEN;
+
+    pub fn pda(
+        domain_hash: &[u8; 32],
+        global_domain_epoch: u64,
+        batch_nonce: &[u8; 32],
+    ) -> (Pubkey, u8) {
+        Pubkey::find_program_address(
+            &[
+                INTENT_BATCH_SEED,
+                domain_hash,
+                global_domain_epoch.to_le_bytes().as_ref(),
+                batch_nonce,
+            ],
+            &ID,
+        )
+    }
+
+    pub fn validate(&self) -> Result<()> {
+        require!(
+            self.schema_version == INTENT_BATCH_SCHEMA_VERSION
+                && self.domain_hash != [0; 32]
+                && self.batch_nonce != [0; 32]
+                && !self.message_class.is_empty()
+                && self.message_class.len() <= MAX_MESSAGE_CLASS_LEN
+                && self.message_class_hash
+                    == maivw_attestation::keccak256(self.message_class.as_bytes())
+                && self.merkle_root != [0; 32]
+                && self.registered_by != Pubkey::default()
+                && self.origin_sequence > 0,
+            MaivwError::InvalidIntentBatch
+        );
+        Ok(())
+    }
+}
+
 fn is_canonical_domain(domain: &str) -> bool {
     !domain.is_empty()
         && domain.len() <= MAX_DOMAIN_LEN
@@ -1031,6 +1086,28 @@ mod tests {
         assert_eq!(recovery_receipt_bytes.len(), RecoveryReceipt::SPACE);
         assert!(recovery_receipt.validate().is_ok());
 
+        let intent_batch = IntentBatch {
+            schema_version: INTENT_BATCH_SCHEMA_VERSION,
+            bump: 1,
+            domain_hash: [1; 32],
+            global_domain_epoch: 2,
+            batch_nonce: [3; 32],
+            message_class: "M".repeat(MAX_MESSAGE_CLASS_LEN),
+            message_class_hash: maivw_attestation::keccak256(
+                "M".repeat(MAX_MESSAGE_CLASS_LEN).as_bytes(),
+            ),
+            merkle_root: [4; 32],
+            registered_by: Pubkey::new_unique(),
+            registered_at: 5,
+            origin_sequence: 6,
+        };
+        let mut intent_batch_bytes = Vec::new();
+        intent_batch
+            .try_serialize(&mut intent_batch_bytes)
+            .unwrap();
+        assert_eq!(intent_batch_bytes.len(), IntentBatch::SPACE);
+        assert!(intent_batch.validate().is_ok());
+
         assert!(Rent::default().minimum_balance(DomainRecord::SPACE) > 0);
         assert!(Rent::default().minimum_balance(RegistryConfig::SPACE) > 0);
         assert!(Rent::default().minimum_balance(OriginClaimReceipt::SPACE) > 0);
@@ -1042,6 +1119,7 @@ mod tests {
         assert!(Rent::default().minimum_balance(PendingAdmin::SPACE) > 0);
         assert!(Rent::default().minimum_balance(RecoveryCase::SPACE) > 0);
         assert!(Rent::default().minimum_balance(RecoveryReceipt::SPACE) > 0);
+        assert!(Rent::default().minimum_balance(IntentBatch::SPACE) > 0);
     }
 
     #[test]
@@ -1145,6 +1223,14 @@ mod tests {
         assert_ne!(
             RecoveryReceipt::pda(&[1; 32], &[2; 32]),
             RecoveryReceipt::pda(&[1; 32], &[3; 32])
+        );
+        assert_ne!(
+            IntentBatch::pda(&[1; 32], 0, &[2; 32]),
+            IntentBatch::pda(&[1; 32], 0, &[3; 32])
+        );
+        assert_ne!(
+            IntentBatch::pda(&[1; 32], 0, &[2; 32]),
+            IntentBatch::pda(&[1; 32], 1, &[2; 32])
         );
     }
 }

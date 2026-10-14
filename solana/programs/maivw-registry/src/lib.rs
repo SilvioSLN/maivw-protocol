@@ -12,6 +12,7 @@ pub mod constants;
 pub mod domain_updates;
 pub mod economics;
 pub mod error;
+pub mod intent_batch;
 pub mod provider;
 pub mod reclaim;
 pub mod recovery;
@@ -24,13 +25,14 @@ use admin_rotation::{
 };
 use constants::{
     DOMAIN_RECORD_SEED, DOMAIN_SCHEMA_VERSION, FOUNDER_VAULT_AUTHORITY_SEED,
-    ORIGIN_CLAIM_RECEIPT_SEED, PENDING_ADMIN_SCHEMA_VERSION, PENDING_ADMIN_SEED,
-    RECEIPT_SCHEMA_VERSION, RECOVERY_CASE_SCHEMA_VERSION, RECOVERY_CASE_SEED,
-    RECOVERY_RECEIPT_SCHEMA_VERSION, RECOVERY_RECEIPT_SEED, REGISTRY_CONFIG_SEED,
-    REGISTRY_SCHEMA_VERSION, REPORTER_CLAIM_SCHEMA_VERSION, REPORTER_CLAIM_SEED,
-    REPORTER_POOL_SCHEMA_VERSION, REPORTER_POOL_SEED, SLASH_CASE_SCHEMA_VERSION,
-    SLASH_CASE_SEED, STAKE_VAULT_SCHEMA_VERSION, STAKE_VAULT_SEED,
-    SUB_IDENTITY_STRIKE_SCHEMA_VERSION, SUB_IDENTITY_STRIKE_SEED, TREASURY_VAULT_AUTHORITY_SEED,
+    INTENT_BATCH_SCHEMA_VERSION, INTENT_BATCH_SEED, ORIGIN_CLAIM_RECEIPT_SEED,
+    PENDING_ADMIN_SCHEMA_VERSION, PENDING_ADMIN_SEED, RECEIPT_SCHEMA_VERSION,
+    RECOVERY_CASE_SCHEMA_VERSION, RECOVERY_CASE_SEED, RECOVERY_RECEIPT_SCHEMA_VERSION,
+    RECOVERY_RECEIPT_SEED, REGISTRY_CONFIG_SEED, REGISTRY_SCHEMA_VERSION,
+    REPORTER_CLAIM_SCHEMA_VERSION, REPORTER_CLAIM_SEED, REPORTER_POOL_SCHEMA_VERSION,
+    REPORTER_POOL_SEED, SLASH_CASE_SCHEMA_VERSION, SLASH_CASE_SEED, STAKE_VAULT_SCHEMA_VERSION,
+    STAKE_VAULT_SEED, SUB_IDENTITY_STRIKE_SCHEMA_VERSION, SUB_IDENTITY_STRIKE_SEED,
+    TREASURY_VAULT_AUTHORITY_SEED,
 };
 use domain_updates::{
     authorize_domain_admin, next_origin_sequence, validate_endpoint, validate_mail_key,
@@ -41,6 +43,7 @@ use economics::{
     transfer_tokens_signed,
 };
 use error::MaivwError;
+use intent_batch::{authorize_intent_batch, validate_intent_batch, RegisterIntentBatchArgs};
 use provider::{top_up_transition, warning_transition, IssueWarningArgs, TopUpStakeArgs};
 use reclaim::{close_pending_processes, reclaim_payload_hash, ReclaimDomainArgs};
 use recovery::{
@@ -57,10 +60,10 @@ use slashing::{
     ProposeSlashArgs, SlashCaseArgs,
 };
 use state::{
-    DomainRecord, DomainStatus, KeyAlgorithm, KeyDescriptor, NetworkFamily, NetworkReference,
-    OriginClaimReceipt, PendingAdmin, PendingAdminStatus, ProviderTier, RecordKind, RecoveryCase,
-    RecoveryReceipt, RecoveryStatus, RegistryConfig, ReporterClaim, ReporterPool, SlashCase,
-    SlashCaseStatus, StakeVault, SubIdentityStrike, TransactionReference,
+    DomainRecord, DomainStatus, IntentBatch, KeyAlgorithm, KeyDescriptor, NetworkFamily,
+    NetworkReference, OriginClaimReceipt, PendingAdmin, PendingAdminStatus, ProviderTier,
+    RecordKind, RecoveryCase, RecoveryReceipt, RecoveryStatus, RegistryConfig, ReporterClaim,
+    ReporterPool, SlashCase, SlashCaseStatus, StakeVault, SubIdentityStrike, TransactionReference,
 };
 
 declare_id!("8MybG5qUxPpe3vVQB47VtMVUEknBuBk9yuQydr8XxRy9");
@@ -465,6 +468,61 @@ pub mod maivw_registry {
             residual_stake_released: residual_stake,
             payment,
             current_stake: new_stake,
+            timestamp: now,
+        });
+        Ok(())
+    }
+
+    pub fn register_intent_batch(
+        ctx: Context<RegisterIntentBatch>,
+        args: RegisterIntentBatchArgs,
+    ) -> Result<()> {
+        let config = &ctx.accounts.config;
+        let domain = &mut ctx.accounts.domain_record;
+        domain.validate(config.network_hash, ID.to_bytes())?;
+        validate_intent_batch(
+            &args,
+            domain.kind,
+            domain.status,
+            domain.global_domain_epoch,
+        )?;
+        authorize_intent_batch(
+            domain.operational_key,
+            domain.admin_key,
+            config.oracle_key,
+            ctx.accounts.publisher.key(),
+        )?;
+
+        let now = Clock::get()?.unix_timestamp;
+        domain.origin_sequence = next_origin_sequence(domain.origin_sequence)?;
+        domain.updated_at = now;
+        domain.validate(config.network_hash, ID.to_bytes())?;
+
+        let batch = &mut ctx.accounts.intent_batch;
+        ***batch = IntentBatch {
+            schema_version: INTENT_BATCH_SCHEMA_VERSION,
+            bump: ctx.bumps.intent_batch,
+            domain_hash: args.domain_hash,
+            global_domain_epoch: args.global_domain_epoch,
+            batch_nonce: args.batch_nonce,
+            message_class_hash: maivw_attestation::keccak256(args.message_class.as_bytes()),
+            message_class: args.message_class.clone(),
+            merkle_root: args.merkle_root,
+            registered_by: ctx.accounts.publisher.key(),
+            registered_at: now,
+            origin_sequence: domain.origin_sequence,
+        };
+        batch.validate()?;
+
+        emit!(IntentBatchRegistered {
+            domain_hash: args.domain_hash,
+            global_domain_epoch: args.global_domain_epoch,
+            origin_sequence: domain.origin_sequence,
+            batch_nonce: args.batch_nonce,
+            message_class: args.message_class,
+            message_class_hash: batch.message_class_hash,
+            merkle_root: args.merkle_root,
+            registered_by: ctx.accounts.publisher.key(),
             timestamp: now,
         });
         Ok(())
@@ -1709,6 +1767,42 @@ pub struct ReclaimDomain<'info> {
 }
 
 #[derive(Accounts)]
+#[instruction(args: RegisterIntentBatchArgs)]
+pub struct RegisterIntentBatch<'info> {
+    #[account(mut)]
+    pub publisher: Signer<'info>,
+    #[account(
+        seeds = [REGISTRY_CONFIG_SEED],
+        bump = config.bump,
+        constraint = config.active @ MaivwError::RegistryPaused
+    )]
+    pub config: Box<Account<'info, RegistryConfig>>,
+    #[account(
+        mut,
+        seeds = [DOMAIN_RECORD_SEED, args.domain_hash.as_ref()],
+        bump = domain_record.bump,
+        constraint = domain_record.domain_hash == args.domain_hash @ MaivwError::InvalidDomainHash,
+        constraint = domain_record.global_domain_epoch == args.global_domain_epoch
+            @ MaivwError::InvalidIntentBatch
+    )]
+    pub domain_record: Box<Account<'info, DomainRecord>>,
+    #[account(
+        init,
+        payer = publisher,
+        space = IntentBatch::SPACE,
+        seeds = [
+            INTENT_BATCH_SEED,
+            args.domain_hash.as_ref(),
+            args.global_domain_epoch.to_le_bytes().as_ref(),
+            args.batch_nonce.as_ref()
+        ],
+        bump
+    )]
+    pub intent_batch: Box<Account<'info, IntentBatch>>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
 #[instruction(args: TopUpStakeArgs)]
 pub struct TopUpStake<'info> {
     #[account(mut)]
@@ -2413,6 +2507,19 @@ pub struct DomainReclaimed {
     pub residual_stake_released: u64,
     pub payment: u64,
     pub current_stake: u64,
+    pub timestamp: i64,
+}
+
+#[event]
+pub struct IntentBatchRegistered {
+    pub domain_hash: [u8; 32],
+    pub global_domain_epoch: u64,
+    pub origin_sequence: u64,
+    pub batch_nonce: [u8; 32],
+    pub message_class: String,
+    pub message_class_hash: [u8; 32],
+    pub merkle_root: [u8; 32],
+    pub registered_by: Pubkey,
     pub timestamp: i64,
 }
 

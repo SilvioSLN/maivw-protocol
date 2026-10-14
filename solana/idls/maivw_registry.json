@@ -286,6 +286,18 @@
         { "name": "recovery_case", "writable": true }
       ],
       "args": [{ "name": "args", "type": { "defined": { "name": "maivw_registry::recovery::RecoveryCaseArgs" } } }]
+    },
+    {
+      "name": "register_intent_batch",
+      "discriminator": [144, 39, 229, 96, 208, 216, 250, 72],
+      "accounts": [
+        { "name": "publisher", "writable": true, "signer": true },
+        { "name": "config" },
+        { "name": "domain_record", "writable": true },
+        { "name": "intent_batch", "writable": true },
+        { "name": "system_program" }
+      ],
+      "args": [{ "name": "args", "type": { "defined": { "name": "maivw_registry::intent_batch::RegisterIntentBatchArgs" } } }]
     }
   ],
   "accounts": [
@@ -299,7 +311,8 @@
     { "name": "maivw_registry::state::ReporterClaim", "discriminator": [244, 75, 111, 100, 3, 14, 130, 40] },
     { "name": "maivw_registry::state::PendingAdmin", "discriminator": [220, 45, 135, 16, 196, 153, 181, 56] },
     { "name": "maivw_registry::state::RecoveryCase", "discriminator": [107, 167, 197, 89, 201, 180, 222, 10] },
-    { "name": "maivw_registry::state::RecoveryReceipt", "discriminator": [168, 128, 135, 250, 136, 3, 133, 138] }
+    { "name": "maivw_registry::state::RecoveryReceipt", "discriminator": [168, 128, 135, 250, 136, 3, 133, 138] },
+    { "name": "maivw_registry::state::IntentBatch", "discriminator": [29, 115, 73, 50, 10, 212, 28, 198] }
   ],
   "events": [
     { "name": "maivw_registry::StakeToppedUp", "discriminator": [198, 194, 194, 30, 127, 26, 161, 239] },
@@ -316,7 +329,8 @@
     { "name": "maivw_registry::RecoveryRequested", "discriminator": [127, 3, 38, 230, 145, 28, 53, 141] },
     { "name": "maivw_registry::RecoveryCancelled", "discriminator": [191, 25, 236, 86, 25, 77, 117, 96] },
     { "name": "maivw_registry::RecoveryExecuted", "discriminator": [161, 218, 6, 191, 85, 217, 12, 144] },
-    { "name": "maivw_registry::DomainReclaimed", "discriminator": [85, 68, 87, 69, 86, 212, 238, 72] }
+    { "name": "maivw_registry::DomainReclaimed", "discriminator": [85, 68, 87, 69, 86, 212, 238, 72] },
+    { "name": "maivw_registry::IntentBatchRegistered", "discriminator": [229, 31, 187, 253, 188, 133, 17, 19] }
   ],
   "types": [
     {
@@ -364,6 +378,16 @@
         { "name": "admin_key", "type": { "array": ["u8", 32] } },
         { "name": "tls_fingerprint", "type": { "array": ["u8", 32] } },
         { "name": "tier", "type": { "defined": { "name": "maivw_registry::state::ProviderTier" } } }
+      ] }
+    },
+    {
+      "name": "maivw_registry::intent_batch::RegisterIntentBatchArgs",
+      "type": { "kind": "struct", "fields": [
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "global_domain_epoch", "type": "u64" },
+        { "name": "batch_nonce", "type": { "array": ["u8", 32] } },
+        { "name": "message_class", "type": "string" },
+        { "name": "merkle_root", "type": { "array": ["u8", 32] } }
       ] }
     },
     {
@@ -717,6 +741,22 @@
       ] }
     },
     {
+      "name": "maivw_registry::state::IntentBatch",
+      "type": { "kind": "struct", "fields": [
+        { "name": "schema_version", "type": "u16" },
+        { "name": "bump", "type": "u8" },
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "global_domain_epoch", "type": "u64" },
+        { "name": "batch_nonce", "type": { "array": ["u8", 32] } },
+        { "name": "message_class", "type": "string" },
+        { "name": "message_class_hash", "type": { "array": ["u8", 32] } },
+        { "name": "merkle_root", "type": { "array": ["u8", 32] } },
+        { "name": "registered_by", "type": "pubkey" },
+        { "name": "registered_at", "type": "i64" },
+        { "name": "origin_sequence", "type": "u64" }
+      ] }
+    },
+    {
       "name": "maivw_registry::StakeToppedUp",
       "type": { "kind": "struct", "fields": [
         { "name": "domain_hash", "type": { "array": ["u8", 32] } },
@@ -907,6 +947,20 @@
         { "name": "current_stake", "type": "u64" },
         { "name": "timestamp", "type": "i64" }
       ] }
+    },
+    {
+      "name": "maivw_registry::IntentBatchRegistered",
+      "type": { "kind": "struct", "fields": [
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "global_domain_epoch", "type": "u64" },
+        { "name": "origin_sequence", "type": "u64" },
+        { "name": "batch_nonce", "type": { "array": ["u8", 32] } },
+        { "name": "message_class", "type": "string" },
+        { "name": "message_class_hash", "type": { "array": ["u8", 32] } },
+        { "name": "merkle_root", "type": { "array": ["u8", 32] } },
+        { "name": "registered_by", "type": "pubkey" },
+        { "name": "timestamp", "type": "i64" }
+      ] }
     }
   ],
   "errors": [
@@ -966,6 +1020,10 @@
     { "code": 6053, "name": "InvalidReclaimState", "msg": "reclaim requires an inactive origin domain" },
     { "code": 6054, "name": "InvalidReclaimClaim", "msg": "origin claim does not authorize this reclaim" },
     { "code": 6055, "name": "InvalidReclaimPayload", "msg": "reclaim payload does not match the new owner and profile" },
-    { "code": 6056, "name": "InvalidPendingProcess", "msg": "pending process account is malformed or belongs to another epoch" }
+    { "code": 6056, "name": "InvalidPendingProcess", "msg": "pending process account is malformed or belongs to another epoch" },
+    { "code": 6057, "name": "InvalidIntentBatch", "msg": "intent batch account or version is invalid" },
+    { "code": 6058, "name": "InvalidMessageClass", "msg": "message class must contain between 1 and 32 bytes" },
+    { "code": 6059, "name": "InvalidMerkleRoot", "msg": "intent batch Merkle root must not be zero" },
+    { "code": 6060, "name": "UnauthorizedIntentBatch", "msg": "signer cannot publish intent batches for this domain" }
   ]
 }

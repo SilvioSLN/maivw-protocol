@@ -19,6 +19,10 @@ O MAIVW separa credenciais de alta frequência de autoridades capazes de alterar
 
 A hot key não pode rotacionar a si própria, mudar endpoint/TLS nem iniciar troca de admin. Assim, a exposição do serviço de envio não se transforma em tomada permanente do domínio.
 
+Na origem Solana, intent batches aceitam a hot key, o admin ou o oracle como
+relayer. O PDA inclui epoch e nonce explícito, impedindo duplicidade e evitando
+que um batch do titular anterior seja confundido com o estado atual.
+
 ## Epoch e processos pendentes
 
 Proposta de admin, recovery e slash são vinculados ao epoch corrente. Recovery e reclaim incrementam epoch e invalidam propostas anteriores. Slashing torna o domínio não ativo, impedindo aceite tardio de admin; reclaim também limpa explicitamente todo estado pendente.
