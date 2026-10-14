@@ -59,7 +59,7 @@ with another transaction reference is treated as contradictory evidence.
 ## Scope boundary
 
 DNS challenges, temporary reservation, `OriginClaimV1` issuance and expiration
-belong to SM-047. Observer cursor/finality logic belongs to SM-050/SM-051. The
+are defined in `ORIGIN_RESERVATION_V1.md`. Observer cursor/finality logic belongs to SM-050/SM-051. The
 Prisma migration that combines all multichain persistence models belongs to
 SM-069; until then the schema is validated and can be applied by the existing
 deployment schema workflow.

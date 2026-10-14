@@ -50,3 +50,5 @@ The canonical Solana observer event, action coverage and IDL contract are specif
 The Solana owner, signer, PDA, SPL, sysvar and account-alias constraints are specified in `SOLANA_ACCOUNT_CONSTRAINTS_V1.md`.
 
 The transactional single-origin constraint, monotonic reconciliation and tamper-evident audit/outbox chain are specified in `ORIGIN_CATALOG_V1.md`.
+
+The DNS-bound origin selection, expiring atomic reservation and idempotent `OriginClaimV1` issuance are specified in `ORIGIN_RESERVATION_V1.md`.

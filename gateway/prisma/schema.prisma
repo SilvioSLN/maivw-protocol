@@ -27,6 +27,38 @@ enum OriginOutboxStatus {
   FAILED
 }
 
+enum OriginDnsChallengeStatus {
+  PENDING
+  VERIFIED
+  EXPIRED
+}
+
+enum OriginRegistrantAlgorithm {
+  SECP256K1_EVM
+  ED25519_SOLANA
+}
+
+enum OriginReservationStatus {
+  RESERVED
+  CLAIM_ISSUED
+  CONSUMED
+  EXPIRED
+  CANCELLED
+}
+
+enum OriginClaimStatus {
+  ISSUED
+  SUBMITTED
+  CONSUMED
+  EXPIRED
+}
+
+enum OriginReservationAuditAction {
+  RESERVATION_CREATED
+  CLAIM_ISSUED
+  RESERVATION_EXPIRED
+}
+
 /// Fonte transacional para a rede de origem imutável de cada domainHash.
 /// A unicidade global é deliberadamente independente da tabela Domain de produto.
 model OriginRecord {
@@ -94,6 +126,141 @@ model OriginOutboxEvent {
   createdAt    DateTime           @default(now())
 
   auditEvent OriginAuditEvent @relation(fields: [auditEventId], references: [id], onDelete: Restrict)
+
+  @@index([status, availableAt])
+  @@index([partitionKey, createdAt])
+}
+
+/// Desafio de posse que não bloqueia o domínio. Segredos são persistidos somente como hash.
+model OriginDnsChallenge {
+  id                  String                   @id @default(uuid())
+  domainHash          String                   @db.Char(66)
+  domain              String
+  requesterId         Int
+  originNetworkFamily OriginNetworkFamily
+  originNetworkId     String
+  originNetworkHash   String                   @db.Char(66)
+  originRegistryId    String                   @db.Char(66)
+  registrantAlgorithm OriginRegistrantAlgorithm
+  registrantKey       String                   @db.Char(66)
+  tokenHash           String                   @db.Char(66)
+  contextHash         String                   @db.Char(66)
+  dnsValueHash        String                   @db.Char(66)
+  status              OriginDnsChallengeStatus @default(PENDING)
+  expiresAt           DateTime
+  verifiedAt          DateTime?
+  createdAt           DateTime                 @default(now())
+
+  reservation OriginReservation?
+
+  @@index([domainHash, status, expiresAt])
+  @@index([requesterId, createdAt])
+}
+
+/// Bloqueio temporário e atômico da escolha de origem.
+/// blockingDomainHash permanece igual ao domainHash enquanto a reserva bloqueia;
+/// ao expirar/cancelar vira null, explorando a semântica UNIQUE de null no PostgreSQL.
+model OriginReservation {
+  id                  String                    @id @default(uuid())
+  domainHash          String                    @db.Char(66)
+  blockingDomainHash  String?                   @unique @db.Char(66)
+  domain              String
+  dnsChallengeId      String                    @unique
+  requesterId         Int
+  originNetworkFamily OriginNetworkFamily
+  originNetworkId     String
+  originNetworkHash   String                    @db.Char(66)
+  originRegistryId    String                    @db.Char(66)
+  registrantAlgorithm OriginRegistrantAlgorithm
+  registrantKey       String                    @db.Char(66)
+  dnsEvidenceHash     String                    @db.Char(66)
+  nonce               String                    @unique @db.Char(66)
+  status              OriginReservationStatus   @default(RESERVED)
+  idempotencyKeyHash  String                    @db.Char(66)
+  requestHash         String                    @db.Char(66)
+  expiresAt           DateTime
+  claimDeadline       DateTime?
+  holdUntil           DateTime
+  lastAuditHash       String                    @db.Char(66)
+  createdAt           DateTime                  @default(now())
+  updatedAt           DateTime                  @updatedAt
+
+  dnsChallenge OriginDnsChallenge              @relation(fields: [dnsChallengeId], references: [id], onDelete: Restrict)
+  claim        OriginClaimIssuance?
+  auditEvents  OriginReservationAuditEvent[]
+
+  @@unique([requesterId, idempotencyKeyHash])
+  @@index([domainHash, status, holdUntil])
+}
+
+/// OriginClaimV1 assinado. Um reservationId e um nonce só podem produzir uma emissão.
+model OriginClaimIssuance {
+  id                 String            @id @default(uuid())
+  reservationId      String            @unique
+  domainHash         String            @db.Char(66)
+  codecVersion       Int               @default(1)
+  encoded            String            @db.VarChar(586)
+  digest             String            @unique @db.Char(66)
+  signedBytesHash    String            @db.Char(66)
+  signature          String
+  signerKeyId        String
+  signerKeyVersion   String
+  nonce              String            @unique @db.Char(66)
+  deadline           DateTime
+  payloadHash        String            @db.Char(66)
+  evidenceHash       String            @db.Char(66)
+  idempotencyKeyHash String            @unique @db.Char(66)
+  requestHash        String            @db.Char(66)
+  status             OriginClaimStatus @default(ISSUED)
+  submittedAt        DateTime?
+  consumedAt         DateTime?
+  onChainTxFamily    OriginNetworkFamily?
+  onChainTxId        String?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  reservation OriginReservation @relation(fields: [reservationId], references: [id], onDelete: Restrict)
+
+  @@index([domainHash, status, deadline])
+}
+
+/// Histórico imutável das transições que bloqueiam a escolha de origem.
+model OriginReservationAuditEvent {
+  id                String                       @id @default(uuid())
+  ordinal           BigInt                       @unique @default(autoincrement())
+  reservationId     String
+  domainHash        String                       @db.Char(66)
+  action            OriginReservationAuditAction
+  previousState     Json?
+  nextState         Json
+  actorType         String
+  actorIdHash       String?                      @db.Char(66)
+  requestId         String
+  previousEventHash String?                      @db.Char(66)
+  eventHash         String                       @unique @db.Char(66)
+  createdAt         DateTime                     @default(now())
+
+  reservation OriginReservation               @relation(fields: [reservationId], references: [id], onDelete: Restrict)
+  outboxEvent OriginReservationOutboxEvent?
+
+  @@unique([reservationId, requestId])
+  @@index([domainHash, ordinal])
+}
+
+model OriginReservationOutboxEvent {
+  id           String             @id @default(uuid())
+  auditEventId String             @unique
+  topic        String
+  partitionKey String
+  payload      Json
+  status       OriginOutboxStatus @default(PENDING)
+  attempts     Int                @default(0)
+  availableAt  DateTime           @default(now())
+  lastError    String?
+  publishedAt  DateTime?
+  createdAt    DateTime           @default(now())
+
+  auditEvent OriginReservationAuditEvent @relation(fields: [auditEventId], references: [id], onDelete: Restrict)
 
   @@index([status, availableAt])
   @@index([partitionKey, createdAt])
