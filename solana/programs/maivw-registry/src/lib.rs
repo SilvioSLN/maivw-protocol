@@ -12,6 +12,7 @@ pub mod constants;
 pub mod domain_updates;
 pub mod economics;
 pub mod error;
+pub mod events;
 pub mod governance;
 pub mod intent_batch;
 pub mod mirror;
@@ -47,6 +48,7 @@ use economics::{
     transfer_tokens_signed,
 };
 use error::MaivwError;
+use events::{emit_domain_state_changed, DomainEventAction, RegistryInitialized};
 use governance::{authorize_pause, authorize_unpause};
 use intent_batch::{authorize_intent_batch, validate_intent_batch, RegisterIntentBatchArgs};
 use mirror::{
@@ -111,7 +113,18 @@ pub mod maivw_registry {
         config.recovery_delay_seconds = args.recovery_delay_seconds;
         config.tiers = args.tiers;
         config.created_at = Clock::get()?.unix_timestamp;
-        config.validate()
+        config.validate()?;
+        emit!(RegistryInitialized {
+            network_hash: config.network_hash,
+            registry: ID,
+            authority: config.authority,
+            guardian: config.guardian,
+            oracle_key: config.oracle_key,
+            asset_mint: config.asset_mint,
+            schema_version: config.schema_version,
+            timestamp: config.created_at,
+        });
+        Ok(())
     }
 
     pub fn verify_attestation(ctx: Context<VerifyAttestation>, envelope: Vec<u8>) -> Result<()> {
@@ -227,6 +240,12 @@ pub mod maivw_registry {
             authority: ctx.accounts.authority.key(),
             migration_slot,
         });
+        emit_domain_state_changed(
+            &migrated,
+            DomainEventAction::Migrated,
+            ctx.accounts.authority.key(),
+            Clock::get()?.unix_timestamp,
+        );
         Ok(())
     }
 
@@ -315,7 +334,14 @@ pub mod maivw_registry {
         ctx.accounts.stake_vault_token.reload()?;
         ctx.accounts
             .stake_vault
-            .validate(ctx.accounts.stake_vault_token.amount)
+            .validate(ctx.accounts.stake_vault_token.amount)?;
+        emit_domain_state_changed(
+            &ctx.accounts.domain_record,
+            DomainEventAction::Registered,
+            ctx.accounts.registrant.key(),
+            now,
+        );
+        Ok(())
     }
 
     pub fn register_provider(
@@ -383,7 +409,14 @@ pub mod maivw_registry {
         ctx.accounts.stake_vault_token.reload()?;
         ctx.accounts
             .stake_vault
-            .validate(ctx.accounts.stake_vault_token.amount)
+            .validate(ctx.accounts.stake_vault_token.amount)?;
+        emit_domain_state_changed(
+            &ctx.accounts.domain_record,
+            DomainEventAction::Registered,
+            ctx.accounts.registrant.key(),
+            now,
+        );
+        Ok(())
     }
 
     pub fn register_mirror(
@@ -471,6 +504,12 @@ pub mod maivw_registry {
             relayer: ctx.accounts.relayer.key(),
             timestamp: now,
         });
+        emit_domain_state_changed(
+            &ctx.accounts.domain_record,
+            DomainEventAction::Registered,
+            ctx.accounts.relayer.key(),
+            now,
+        );
         Ok(())
     }
 
@@ -565,6 +604,12 @@ pub mod maivw_registry {
             relayer: ctx.accounts.relayer.key(),
             timestamp: now,
         });
+        emit_domain_state_changed(
+            &ctx.accounts.domain_record,
+            DomainEventAction::MirrorSynchronized,
+            ctx.accounts.relayer.key(),
+            now,
+        );
         Ok(())
     }
 
@@ -654,6 +699,12 @@ pub mod maivw_registry {
             relayer: ctx.accounts.relayer.key(),
             timestamp: now,
         });
+        emit_domain_state_changed(
+            &ctx.accounts.domain_record,
+            DomainEventAction::MirrorRevoked,
+            ctx.accounts.relayer.key(),
+            now,
+        );
         Ok(())
     }
 
@@ -863,6 +914,12 @@ pub mod maivw_registry {
             current_stake: new_stake,
             timestamp: now,
         });
+        emit_domain_state_changed(
+            &ctx.accounts.domain_record,
+            DomainEventAction::Reclaimed,
+            ctx.accounts.registrant.key(),
+            now,
+        );
         Ok(())
     }
 
@@ -918,6 +975,12 @@ pub mod maivw_registry {
             registered_by: ctx.accounts.publisher.key(),
             timestamp: now,
         });
+        emit_domain_state_changed(
+            domain,
+            DomainEventAction::IntentBatchRegistered,
+            ctx.accounts.publisher.key(),
+            now,
+        );
         Ok(())
     }
 
@@ -990,6 +1053,12 @@ pub mod maivw_registry {
             origin_sequence: domain.origin_sequence,
             timestamp: now,
         });
+        emit_domain_state_changed(
+            domain,
+            DomainEventAction::StakeToppedUp,
+            ctx.accounts.funder.key(),
+            now,
+        );
         Ok(())
     }
 
@@ -1106,6 +1175,12 @@ pub mod maivw_registry {
             origin_sequence: domain.origin_sequence,
             timestamp: now,
         });
+        emit_domain_state_changed(
+            domain,
+            DomainEventAction::WarningIssued,
+            ctx.accounts.oracle.key(),
+            now,
+        );
         Ok(())
     }
 
@@ -1352,6 +1427,12 @@ pub mod maivw_registry {
             origin_sequence: domain.origin_sequence,
             timestamp: now,
         });
+        emit_domain_state_changed(
+            domain,
+            DomainEventAction::SlashExecuted,
+            ctx.accounts.executor.key(),
+            now,
+        );
         Ok(())
     }
 
@@ -1480,6 +1561,12 @@ pub mod maivw_registry {
             new_mail_key: args.new_mail_key,
             timestamp: now,
         });
+        emit_domain_state_changed(
+            domain,
+            DomainEventAction::MailKeyUpdated,
+            ctx.accounts.domain_admin.key(),
+            now,
+        );
         Ok(())
     }
 
@@ -1511,6 +1598,12 @@ pub mod maivw_registry {
             new_endpoint: args.new_endpoint,
             timestamp: now,
         });
+        emit_domain_state_changed(
+            domain,
+            DomainEventAction::EndpointUpdated,
+            ctx.accounts.domain_admin.key(),
+            now,
+        );
         Ok(())
     }
 
@@ -1544,6 +1637,12 @@ pub mod maivw_registry {
             new_tls_fingerprint: args.new_tls_fingerprint,
             timestamp: now,
         });
+        emit_domain_state_changed(
+            domain,
+            DomainEventAction::TlsFingerprintUpdated,
+            ctx.accounts.domain_admin.key(),
+            now,
+        );
         Ok(())
     }
 
@@ -1642,6 +1741,12 @@ pub mod maivw_registry {
             new_admin: ctx.accounts.new_admin.key(),
             timestamp: now,
         });
+        emit_domain_state_changed(
+            domain,
+            DomainEventAction::AdminUpdated,
+            ctx.accounts.new_admin.key(),
+            now,
+        );
         Ok(())
     }
 
@@ -1840,6 +1945,12 @@ pub mod maivw_registry {
             executed_by: ctx.accounts.executor.key(),
             timestamp: now,
         });
+        emit_domain_state_changed(
+            domain,
+            DomainEventAction::RecoveryExecuted,
+            ctx.accounts.executor.key(),
+            now,
+        );
         Ok(())
     }
 }

@@ -393,6 +393,8 @@
     { "name": "maivw_registry::state::MirrorAttestationReceipt", "discriminator": [146, 182, 191, 131, 194, 200, 186, 213] }
   ],
   "events": [
+    { "name": "maivw_registry::events::RegistryInitialized", "discriminator": [144, 138, 62, 105, 58, 38, 100, 177] },
+    { "name": "maivw_registry::events::DomainStateChanged", "discriminator": [251, 63, 5, 20, 116, 211, 59, 224] },
     { "name": "maivw_registry::RegistryPaused", "discriminator": [187, 60, 205, 238, 36, 219, 148, 187] },
     { "name": "maivw_registry::RegistryUnpaused", "discriminator": [217, 244, 140, 55, 27, 37, 56, 112] },
     { "name": "maivw_registry::DomainRecordMigrated", "discriminator": [48, 175, 85, 197, 107, 24, 85, 158] },
@@ -417,6 +419,57 @@
     { "name": "maivw_registry::MirrorRevoked", "discriminator": [209, 24, 122, 168, 22, 152, 49, 139] }
   ],
   "types": [
+    {
+      "name": "maivw_registry::events::DomainEventAction",
+      "repr": { "kind": "rust" },
+      "type": { "kind": "enum", "variants": [
+        { "name": "Registered" },
+        { "name": "MirrorSynchronized" },
+        { "name": "MirrorRevoked" },
+        { "name": "Reclaimed" },
+        { "name": "IntentBatchRegistered" },
+        { "name": "StakeToppedUp" },
+        { "name": "WarningIssued" },
+        { "name": "SlashExecuted" },
+        { "name": "MailKeyUpdated" },
+        { "name": "EndpointUpdated" },
+        { "name": "TlsFingerprintUpdated" },
+        { "name": "AdminUpdated" },
+        { "name": "RecoveryExecuted" },
+        { "name": "Migrated" }
+      ] }
+    },
+    {
+      "name": "maivw_registry::events::RegistryInitialized",
+      "type": { "kind": "struct", "fields": [
+        { "name": "network_hash", "type": { "array": ["u8", 32] } },
+        { "name": "registry", "type": "pubkey" },
+        { "name": "authority", "type": "pubkey" },
+        { "name": "guardian", "type": "pubkey" },
+        { "name": "oracle_key", "type": { "array": ["u8", 32] } },
+        { "name": "asset_mint", "type": "pubkey" },
+        { "name": "schema_version", "type": "u16" },
+        { "name": "timestamp", "type": "i64" }
+      ] }
+    },
+    {
+      "name": "maivw_registry::events::DomainStateChanged",
+      "type": { "kind": "struct", "fields": [
+        { "name": "action", "type": { "defined": { "name": "maivw_registry::events::DomainEventAction" } } },
+        { "name": "record_kind", "type": { "defined": { "name": "maivw_registry::state::RecordKind" } } },
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "origin_family", "type": { "defined": { "name": "maivw_registry::state::NetworkFamily" } } },
+        { "name": "origin_network_hash", "type": { "array": ["u8", 32] } },
+        { "name": "origin_registry", "type": { "array": ["u8", 32] } },
+        { "name": "global_domain_epoch", "type": "u64" },
+        { "name": "origin_sequence", "type": "u64" },
+        { "name": "status", "type": { "defined": { "name": "maivw_registry::state::DomainStatus" } } },
+        { "name": "origin_transaction", "type": { "array": ["u8", 32] } },
+        { "name": "schema_version", "type": "u16" },
+        { "name": "actor", "type": "pubkey" },
+        { "name": "timestamp", "type": "i64" }
+      ] }
+    },
     {
       "name": "maivw_registry::RegistryPaused",
       "type": { "kind": "struct", "fields": [

@@ -205,6 +205,19 @@ ou resposta a incidentes.
 A política normativa está em
 [`SOLANA_ACCOUNT_MIGRATIONS_V1.md`](../specs/multichain/SOLANA_ACCOUNT_MIGRATIONS_V1.md).
 
+## Eventos e IDL
+
+Toda criação ou alteração de `DomainRecord` emite `DomainStateChanged` depois da
+validação final. O evento informa a ação, `Origin` ou `Mirror`, referência
+imutável da origem, epoch, sequence, status, transação de origem, schema, ator e
+timestamp. Eventos específicos continuam trazendo os detalhes operacionais.
+
+`RegistryInitialized` identifica rede, program id, authority, guardian, oracle,
+mint e versão desde o primeiro log. O IDL versiona instruções, contas, erros,
+enums e todos os eventos usados pelos observers. A especificação de consumo e a
+matriz completa de cobertura estão em
+[`SOLANA_EVENTS_V1.md`](../specs/multichain/SOLANA_EVENTS_V1.md).
+
 ## Slashing escalável
 
 `propose_slash` exige o oracle configurado e cria uma proposta vinculada ao
