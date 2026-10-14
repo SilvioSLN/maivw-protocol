@@ -6,6 +6,7 @@ pub const SUB_IDENTITY_STRIKE_SEED: &[u8] = b"sub-identity-strike";
 pub const SLASH_CASE_SEED: &[u8] = b"slash-case";
 pub const REPORTER_POOL_SEED: &[u8] = b"reporter-pool";
 pub const REPORTER_CLAIM_SEED: &[u8] = b"reporter-claim";
+pub const PENDING_ADMIN_SEED: &[u8] = b"pending-admin";
 pub const FOUNDER_VAULT_AUTHORITY_SEED: &[u8] = b"founder-vault";
 pub const TREASURY_VAULT_AUTHORITY_SEED: &[u8] = b"treasury-vault";
 
@@ -21,6 +22,7 @@ pub const SUB_IDENTITY_STRIKE_SCHEMA_VERSION: u16 = 1;
 pub const SLASH_CASE_SCHEMA_VERSION: u16 = 1;
 pub const REPORTER_POOL_SCHEMA_VERSION: u16 = 1;
 pub const REPORTER_CLAIM_SCHEMA_VERSION: u16 = 1;
+pub const PENDING_ADMIN_SCHEMA_VERSION: u16 = 1;
 
 pub const BPS_DENOMINATOR: u64 = 10_000;
 pub const FOUNDER_FEE_BPS: u64 = 1_000;

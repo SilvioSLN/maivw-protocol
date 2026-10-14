@@ -23,6 +23,11 @@ A hot key não pode rotacionar a si própria, mudar endpoint/TLS nem iniciar tro
 
 Proposta de admin, recovery e slash são vinculados ao epoch corrente. Recovery e reclaim incrementam epoch e invalidam propostas anteriores. Slashing torna o domínio não ativo, impedindo aceite tardio de admin; reclaim também limpa explicitamente todo estado pendente.
 
+Na rotação administrativa Solana, o admin atual pode substituir uma proposta
+pendente, mas não concluir a troca sozinho. O candidato deve assinar o aceite, e
+o programa confere novamente epoch, estado ativo e identidade do admin que fez
+a proposta. A sequence canônica muda somente no aceite.
+
 ## Mirrors
 
 Chaves presentes em um mirror identificam o estado da origem, mas não concedem poder de escrita local. Atualização de chave, endpoint, TLS, admin, recovery e intent batch em mirror revertem. Somente uma atestação válida da mesma origem pode sincronizar ou revogar o mirror.

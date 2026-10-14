@@ -90,4 +90,10 @@ pub enum MaivwError {
     InvalidOperationalKey,
     #[msg("endpoint is empty or exceeds the protocol limit")]
     InvalidEndpoint,
+    #[msg("new domain admin must be non-zero and different from the current admin")]
+    InvalidNewDomainAdmin,
+    #[msg("pending domain admin proposal is invalid")]
+    InvalidPendingAdmin,
+    #[msg("signer is not the pending domain admin candidate")]
+    UnauthorizedPendingAdmin,
 }

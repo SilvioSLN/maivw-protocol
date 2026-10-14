@@ -6,6 +6,7 @@ use anchor_spl::{
     token::{Mint, Token, TokenAccount},
 };
 
+pub mod admin_rotation;
 pub mod attestation;
 pub mod constants;
 pub mod domain_updates;
@@ -16,13 +17,17 @@ pub mod registration;
 pub mod slashing;
 pub mod state;
 
+use admin_rotation::{
+    authorize_pending_acceptance, validate_new_admin, AcceptDomainAdminArgs, ProposeDomainAdminArgs,
+};
 use constants::{
     DOMAIN_RECORD_SEED, DOMAIN_SCHEMA_VERSION, FOUNDER_VAULT_AUTHORITY_SEED,
-    ORIGIN_CLAIM_RECEIPT_SEED, RECEIPT_SCHEMA_VERSION, REGISTRY_CONFIG_SEED,
-    REGISTRY_SCHEMA_VERSION, REPORTER_CLAIM_SCHEMA_VERSION, REPORTER_CLAIM_SEED,
-    REPORTER_POOL_SCHEMA_VERSION, REPORTER_POOL_SEED, SLASH_CASE_SCHEMA_VERSION, SLASH_CASE_SEED,
-    STAKE_VAULT_SCHEMA_VERSION, STAKE_VAULT_SEED, SUB_IDENTITY_STRIKE_SCHEMA_VERSION,
-    SUB_IDENTITY_STRIKE_SEED, TREASURY_VAULT_AUTHORITY_SEED,
+    ORIGIN_CLAIM_RECEIPT_SEED, PENDING_ADMIN_SCHEMA_VERSION, PENDING_ADMIN_SEED,
+    RECEIPT_SCHEMA_VERSION, REGISTRY_CONFIG_SEED, REGISTRY_SCHEMA_VERSION,
+    REPORTER_CLAIM_SCHEMA_VERSION, REPORTER_CLAIM_SEED, REPORTER_POOL_SCHEMA_VERSION,
+    REPORTER_POOL_SEED, SLASH_CASE_SCHEMA_VERSION, SLASH_CASE_SEED, STAKE_VAULT_SCHEMA_VERSION,
+    STAKE_VAULT_SEED, SUB_IDENTITY_STRIKE_SCHEMA_VERSION, SUB_IDENTITY_STRIKE_SEED,
+    TREASURY_VAULT_AUTHORITY_SEED,
 };
 use domain_updates::{
     authorize_domain_admin, next_origin_sequence, validate_endpoint, validate_mail_key,
@@ -44,8 +49,9 @@ use slashing::{
 };
 use state::{
     DomainRecord, DomainStatus, KeyAlgorithm, KeyDescriptor, NetworkFamily, NetworkReference,
-    OriginClaimReceipt, ProviderTier, RecordKind, RegistryConfig, ReporterClaim, ReporterPool,
-    SlashCase, SlashCaseStatus, StakeVault, SubIdentityStrike, TransactionReference,
+    OriginClaimReceipt, PendingAdmin, PendingAdminStatus, ProviderTier, RecordKind, RegistryConfig,
+    ReporterClaim, ReporterPool, SlashCase, SlashCaseStatus, StakeVault, SubIdentityStrike,
+    TransactionReference,
 };
 
 declare_id!("8MybG5qUxPpe3vVQB47VtMVUEknBuBk9yuQydr8XxRy9");
@@ -869,6 +875,104 @@ pub mod maivw_registry {
         });
         Ok(())
     }
+
+    pub fn propose_domain_admin(
+        ctx: Context<ProposeDomainAdmin>,
+        args: ProposeDomainAdminArgs,
+    ) -> Result<()> {
+        let config = &ctx.accounts.config;
+        let domain = &ctx.accounts.domain_record;
+        domain.validate(config.network_hash, ID.to_bytes())?;
+        authorize_domain_admin(
+            domain.kind,
+            domain.status,
+            domain.admin_key,
+            ctx.accounts.current_admin.key(),
+        )?;
+        require!(
+            domain.global_domain_epoch == args.global_domain_epoch,
+            MaivwError::InvalidPendingAdmin
+        );
+        validate_new_admin(domain.admin_key, args.new_admin)?;
+
+        let pending = &mut ctx.accounts.pending_admin;
+        if pending.schema_version != 0 {
+            pending.validate_identity(args.domain_hash, args.global_domain_epoch)?;
+        }
+        let now = Clock::get()?.unix_timestamp;
+        ***pending = PendingAdmin {
+            schema_version: PENDING_ADMIN_SCHEMA_VERSION,
+            bump: ctx.bumps.pending_admin,
+            domain_hash: args.domain_hash,
+            global_domain_epoch: args.global_domain_epoch,
+            proposed_by: ctx.accounts.current_admin.key(),
+            new_admin: args.new_admin,
+            proposed_at: now,
+            proposed_sequence: domain.origin_sequence,
+            status: PendingAdminStatus::Pending,
+            accepted_at: 0,
+            accepted_sequence: 0,
+        };
+        pending.validate_identity(args.domain_hash, args.global_domain_epoch)?;
+
+        emit!(DomainAdminProposed {
+            domain_hash: args.domain_hash,
+            global_domain_epoch: args.global_domain_epoch,
+            origin_sequence: domain.origin_sequence,
+            current_admin: ctx.accounts.current_admin.key(),
+            new_admin: args.new_admin,
+            timestamp: now,
+        });
+        Ok(())
+    }
+
+    pub fn accept_domain_admin(
+        ctx: Context<AcceptDomainAdmin>,
+        args: AcceptDomainAdminArgs,
+    ) -> Result<()> {
+        let config = &ctx.accounts.config;
+        let domain = &mut ctx.accounts.domain_record;
+        domain.validate(config.network_hash, ID.to_bytes())?;
+        require!(
+            matches!(domain.kind, RecordKind::Origin),
+            MaivwError::MirrorReadOnly
+        );
+        require!(
+            matches!(domain.status, DomainStatus::Active),
+            MaivwError::InvalidDomainStatus
+        );
+        require!(
+            domain.global_domain_epoch == args.global_domain_epoch,
+            MaivwError::InvalidPendingAdmin
+        );
+        let pending = &mut ctx.accounts.pending_admin;
+        pending.validate_identity(args.domain_hash, args.global_domain_epoch)?;
+        authorize_pending_acceptance(pending, domain.admin_key, ctx.accounts.new_admin.key())?;
+
+        let old_admin = Pubkey::new_from_array(domain.admin_key.value);
+        let now = Clock::get()?.unix_timestamp;
+        domain.admin_key = KeyDescriptor {
+            algorithm: KeyAlgorithm::Ed25519SolanaPubkey,
+            value: ctx.accounts.new_admin.key().to_bytes(),
+        };
+        domain.origin_sequence = next_origin_sequence(domain.origin_sequence)?;
+        domain.updated_at = now;
+        domain.validate(config.network_hash, ID.to_bytes())?;
+
+        pending.status = PendingAdminStatus::Accepted;
+        pending.accepted_at = now;
+        pending.accepted_sequence = domain.origin_sequence;
+
+        emit!(DomainAdminUpdated {
+            domain_hash: args.domain_hash,
+            global_domain_epoch: args.global_domain_epoch,
+            origin_sequence: domain.origin_sequence,
+            old_admin,
+            new_admin: ctx.accounts.new_admin.key(),
+            timestamp: now,
+        });
+        Ok(())
+    }
 }
 
 #[derive(Accounts)]
@@ -1408,6 +1512,71 @@ pub struct UpdateTlsFingerprint<'info> {
     pub domain_record: Box<Account<'info, DomainRecord>>,
 }
 
+#[derive(Accounts)]
+#[instruction(args: ProposeDomainAdminArgs)]
+pub struct ProposeDomainAdmin<'info> {
+    #[account(mut)]
+    pub current_admin: Signer<'info>,
+    #[account(
+        seeds = [REGISTRY_CONFIG_SEED],
+        bump = config.bump,
+        constraint = config.active @ MaivwError::RegistryPaused
+    )]
+    pub config: Box<Account<'info, RegistryConfig>>,
+    #[account(
+        seeds = [DOMAIN_RECORD_SEED, args.domain_hash.as_ref()],
+        bump = domain_record.bump,
+        constraint = domain_record.domain_hash == args.domain_hash @ MaivwError::InvalidDomainHash,
+        constraint = domain_record.global_domain_epoch == args.global_domain_epoch
+            @ MaivwError::InvalidPendingAdmin
+    )]
+    pub domain_record: Box<Account<'info, DomainRecord>>,
+    #[account(
+        init_if_needed,
+        payer = current_admin,
+        space = PendingAdmin::SPACE,
+        seeds = [
+            PENDING_ADMIN_SEED,
+            args.domain_hash.as_ref(),
+            args.global_domain_epoch.to_le_bytes().as_ref()
+        ],
+        bump
+    )]
+    pub pending_admin: Box<Account<'info, PendingAdmin>>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(args: AcceptDomainAdminArgs)]
+pub struct AcceptDomainAdmin<'info> {
+    pub new_admin: Signer<'info>,
+    #[account(
+        seeds = [REGISTRY_CONFIG_SEED],
+        bump = config.bump,
+        constraint = config.active @ MaivwError::RegistryPaused
+    )]
+    pub config: Box<Account<'info, RegistryConfig>>,
+    #[account(
+        mut,
+        seeds = [DOMAIN_RECORD_SEED, args.domain_hash.as_ref()],
+        bump = domain_record.bump,
+        constraint = domain_record.domain_hash == args.domain_hash @ MaivwError::InvalidDomainHash,
+        constraint = domain_record.global_domain_epoch == args.global_domain_epoch
+            @ MaivwError::InvalidPendingAdmin
+    )]
+    pub domain_record: Box<Account<'info, DomainRecord>>,
+    #[account(
+        mut,
+        seeds = [
+            PENDING_ADMIN_SEED,
+            args.domain_hash.as_ref(),
+            args.global_domain_epoch.to_le_bytes().as_ref()
+        ],
+        bump = pending_admin.bump
+    )]
+    pub pending_admin: Box<Account<'info, PendingAdmin>>,
+}
+
 #[event]
 pub struct StakeToppedUp {
     pub domain_hash: [u8; 32],
@@ -1509,6 +1678,26 @@ pub struct TlsFingerprintUpdated {
     pub domain_admin: Pubkey,
     pub old_tls_fingerprint: [u8; 32],
     pub new_tls_fingerprint: [u8; 32],
+    pub timestamp: i64,
+}
+
+#[event]
+pub struct DomainAdminProposed {
+    pub domain_hash: [u8; 32],
+    pub global_domain_epoch: u64,
+    pub origin_sequence: u64,
+    pub current_admin: Pubkey,
+    pub new_admin: Pubkey,
+    pub timestamp: i64,
+}
+
+#[event]
+pub struct DomainAdminUpdated {
+    pub domain_hash: [u8; 32],
+    pub global_domain_epoch: u64,
+    pub origin_sequence: u64,
+    pub old_admin: Pubkey,
+    pub new_admin: Pubkey,
     pub timestamp: i64,
 }
 

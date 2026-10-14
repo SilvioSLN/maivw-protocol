@@ -30,6 +30,7 @@ A carteira é ignorada pelo Git e nunca deve receber ativos reais.
 | `SlashCase` | `['slash-case', domain_hash, global_domain_epoch_le]` | Proposta, timelock, veto e resultado auditável do slash |
 | `ReporterPool` | `['reporter-pool', domain_hash, global_domain_epoch_le]` | Raiz Merkle e contabilidade pull-payment das recompensas |
 | `ReporterClaim` | `['reporter-claim', reporter_pool, reporter]` | Recibo único que impede saque duplicado por reporter |
+| `PendingAdmin` | `['pending-admin', domain_hash, global_domain_epoch_le]` | Proposta two-step de rotação da chave administrativa |
 
 `DomainRecord` reserva espaço para domínio DNS de 253 bytes e endpoint de 512
 bytes. Os testes serializam o pior caso, comparam o tamanho declarado e calculam
@@ -89,6 +90,16 @@ bytes. O fingerprint TLS ocupa 32 bytes; zero representa remoção explícita do
 fingerprint. Cada mutação atualiza `updatedAt`, incrementa exatamente uma vez o
 `originSequence` e emite evento com `globalDomainEpoch` e a nova sequence para
 ordenamento dos mirrors.
+
+`propose_domain_admin` exige a chave administrativa atual, rejeita candidato
+nulo ou igual ao admin vigente e grava a proposta no `PendingAdmin` do epoch
+corrente. Uma nova proposta do mesmo admin substitui a anterior. A troca só se
+torna canônica quando a pubkey candidata assina `accept_domain_admin`; nesse
+momento a sequence é incrementada e a proposta fica marcada como aceita.
+
+O aceite confere que `proposed_by` ainda corresponde ao admin atual. Como o PDA
+inclui `globalDomainEpoch` e o handler exige igualdade com o epoch do domínio,
+recovery ou reclaim invalidam propostas antigas sem permitir aceite tardio.
 
 ## Slashing escalável
 

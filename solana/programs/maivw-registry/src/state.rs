@@ -3,11 +3,12 @@ use anchor_lang::prelude::*;
 use crate::{
     constants::{
         DOMAIN_RECORD_SEED, DOMAIN_SCHEMA_VERSION, MAX_DOMAIN_LEN, MAX_ENDPOINT_LEN,
-        MIN_STRIKES_TO_DRAIN, ORIGIN_CLAIM_RECEIPT_SEED, PROVIDER_TIER_COUNT,
-        RECEIPT_SCHEMA_VERSION, REGISTRY_CONFIG_SEED, REGISTRY_SCHEMA_VERSION,
-        REPORTER_CLAIM_SCHEMA_VERSION, REPORTER_CLAIM_SEED, REPORTER_POOL_SCHEMA_VERSION,
-        REPORTER_POOL_SEED, SLASH_CASE_SCHEMA_VERSION, SLASH_CASE_SEED, STAKE_VAULT_SCHEMA_VERSION,
-        STAKE_VAULT_SEED, SUB_IDENTITY_STRIKE_SCHEMA_VERSION, SUB_IDENTITY_STRIKE_SEED,
+        MIN_STRIKES_TO_DRAIN, ORIGIN_CLAIM_RECEIPT_SEED, PENDING_ADMIN_SCHEMA_VERSION,
+        PENDING_ADMIN_SEED, PROVIDER_TIER_COUNT, RECEIPT_SCHEMA_VERSION, REGISTRY_CONFIG_SEED,
+        REGISTRY_SCHEMA_VERSION, REPORTER_CLAIM_SCHEMA_VERSION, REPORTER_CLAIM_SEED,
+        REPORTER_POOL_SCHEMA_VERSION, REPORTER_POOL_SEED, SLASH_CASE_SCHEMA_VERSION,
+        SLASH_CASE_SEED, STAKE_VAULT_SCHEMA_VERSION, STAKE_VAULT_SEED,
+        SUB_IDENTITY_STRIKE_SCHEMA_VERSION, SUB_IDENTITY_STRIKE_SEED,
     },
     error::MaivwError,
     ID,
@@ -50,6 +51,13 @@ pub enum SlashCaseStatus {
     Pending,
     Vetoed,
     Executed,
+}
+
+#[repr(u8)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PendingAdminStatus {
+    Pending,
+    Accepted,
 }
 
 #[repr(u8)]
@@ -572,6 +580,50 @@ impl ReporterClaim {
     }
 }
 
+#[account]
+#[derive(Debug)]
+pub struct PendingAdmin {
+    pub schema_version: u16,
+    pub bump: u8,
+    pub domain_hash: [u8; 32],
+    pub global_domain_epoch: u64,
+    pub proposed_by: Pubkey,
+    pub new_admin: Pubkey,
+    pub proposed_at: i64,
+    pub proposed_sequence: u64,
+    pub status: PendingAdminStatus,
+    pub accepted_at: i64,
+    pub accepted_sequence: u64,
+}
+
+impl PendingAdmin {
+    pub const DATA_LEN: usize = 140;
+    pub const SPACE: usize = 8 + Self::DATA_LEN;
+
+    pub fn pda(domain_hash: &[u8; 32], global_domain_epoch: u64) -> (Pubkey, u8) {
+        Pubkey::find_program_address(
+            &[
+                PENDING_ADMIN_SEED,
+                domain_hash,
+                global_domain_epoch.to_le_bytes().as_ref(),
+            ],
+            &ID,
+        )
+    }
+
+    pub fn validate_identity(&self, domain_hash: [u8; 32], global_domain_epoch: u64) -> Result<()> {
+        require!(
+            self.schema_version == PENDING_ADMIN_SCHEMA_VERSION
+                && self.domain_hash == domain_hash
+                && self.global_domain_epoch == global_domain_epoch
+                && self.proposed_by != Pubkey::default()
+                && self.new_admin != Pubkey::default(),
+            MaivwError::InvalidPendingAdmin
+        );
+        Ok(())
+    }
+}
+
 fn is_canonical_domain(domain: &str) -> bool {
     !domain.is_empty()
         && domain.len() <= MAX_DOMAIN_LEN
@@ -797,6 +849,26 @@ mod tests {
         assert_eq!(claim_bytes.len(), ReporterClaim::SPACE);
         assert!(claim.validate().is_ok());
 
+        let pending_admin = PendingAdmin {
+            schema_version: PENDING_ADMIN_SCHEMA_VERSION,
+            bump: 1,
+            domain_hash: [1; 32],
+            global_domain_epoch: 2,
+            proposed_by: Pubkey::new_unique(),
+            new_admin: Pubkey::new_unique(),
+            proposed_at: 3,
+            proposed_sequence: 4,
+            status: PendingAdminStatus::Pending,
+            accepted_at: 0,
+            accepted_sequence: 0,
+        };
+        let mut pending_admin_bytes = Vec::new();
+        pending_admin
+            .try_serialize(&mut pending_admin_bytes)
+            .unwrap();
+        assert_eq!(pending_admin_bytes.len(), PendingAdmin::SPACE);
+        assert!(pending_admin.validate_identity([1; 32], 2).is_ok());
+
         assert!(Rent::default().minimum_balance(DomainRecord::SPACE) > 0);
         assert!(Rent::default().minimum_balance(RegistryConfig::SPACE) > 0);
         assert!(Rent::default().minimum_balance(OriginClaimReceipt::SPACE) > 0);
@@ -805,6 +877,7 @@ mod tests {
         assert!(Rent::default().minimum_balance(SlashCase::SPACE) > 0);
         assert!(Rent::default().minimum_balance(ReporterPool::SPACE) > 0);
         assert!(Rent::default().minimum_balance(ReporterClaim::SPACE) > 0);
+        assert!(Rent::default().minimum_balance(PendingAdmin::SPACE) > 0);
     }
 
     #[test]
@@ -892,6 +965,10 @@ mod tests {
         assert_ne!(
             ReporterClaim::pda(&pool, &Pubkey::new_unique()),
             ReporterClaim::pda(&pool, &Pubkey::new_unique())
+        );
+        assert_ne!(
+            PendingAdmin::pda(&[1; 32], 0),
+            PendingAdmin::pda(&[1; 32], 1)
         );
     }
 }

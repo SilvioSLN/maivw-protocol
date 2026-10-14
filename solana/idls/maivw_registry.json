@@ -193,6 +193,29 @@
         { "name": "domain_record", "writable": true }
       ],
       "args": [{ "name": "args", "type": { "defined": { "name": "maivw_registry::domain_updates::UpdateTlsFingerprintArgs" } } }]
+    },
+    {
+      "name": "propose_domain_admin",
+      "discriminator": [17, 23, 165, 61, 95, 244, 14, 230],
+      "accounts": [
+        { "name": "current_admin", "writable": true, "signer": true },
+        { "name": "config" },
+        { "name": "domain_record" },
+        { "name": "pending_admin", "writable": true },
+        { "name": "system_program" }
+      ],
+      "args": [{ "name": "args", "type": { "defined": { "name": "maivw_registry::admin_rotation::ProposeDomainAdminArgs" } } }]
+    },
+    {
+      "name": "accept_domain_admin",
+      "discriminator": [41, 253, 26, 232, 219, 84, 37, 82],
+      "accounts": [
+        { "name": "new_admin", "signer": true },
+        { "name": "config" },
+        { "name": "domain_record", "writable": true },
+        { "name": "pending_admin", "writable": true }
+      ],
+      "args": [{ "name": "args", "type": { "defined": { "name": "maivw_registry::admin_rotation::AcceptDomainAdminArgs" } } }]
     }
   ],
   "accounts": [
@@ -203,7 +226,8 @@
     { "name": "maivw_registry::state::SubIdentityStrike", "discriminator": [47, 50, 208, 20, 210, 192, 245, 105] },
     { "name": "maivw_registry::state::SlashCase", "discriminator": [208, 69, 223, 189, 133, 168, 35, 50] },
     { "name": "maivw_registry::state::ReporterPool", "discriminator": [9, 244, 234, 67, 88, 54, 124, 111] },
-    { "name": "maivw_registry::state::ReporterClaim", "discriminator": [244, 75, 111, 100, 3, 14, 130, 40] }
+    { "name": "maivw_registry::state::ReporterClaim", "discriminator": [244, 75, 111, 100, 3, 14, 130, 40] },
+    { "name": "maivw_registry::state::PendingAdmin", "discriminator": [220, 45, 135, 16, 196, 153, 181, 56] }
   ],
   "events": [
     { "name": "maivw_registry::StakeToppedUp", "discriminator": [198, 194, 194, 30, 127, 26, 161, 239] },
@@ -214,9 +238,26 @@
     { "name": "maivw_registry::ReporterRewardClaimed", "discriminator": [172, 175, 99, 130, 105, 163, 83, 55] },
     { "name": "maivw_registry::MailKeyUpdated", "discriminator": [110, 167, 82, 150, 88, 247, 77, 227] },
     { "name": "maivw_registry::EndpointUpdated", "discriminator": [244, 122, 130, 126, 237, 133, 30, 55] },
-    { "name": "maivw_registry::TlsFingerprintUpdated", "discriminator": [78, 184, 100, 140, 108, 68, 100, 226] }
+    { "name": "maivw_registry::TlsFingerprintUpdated", "discriminator": [78, 184, 100, 140, 108, 68, 100, 226] },
+    { "name": "maivw_registry::DomainAdminProposed", "discriminator": [206, 218, 181, 80, 26, 54, 49, 180] },
+    { "name": "maivw_registry::DomainAdminUpdated", "discriminator": [7, 234, 184, 68, 103, 97, 128, 251] }
   ],
   "types": [
+    {
+      "name": "maivw_registry::admin_rotation::ProposeDomainAdminArgs",
+      "type": { "kind": "struct", "fields": [
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "global_domain_epoch", "type": "u64" },
+        { "name": "new_admin", "type": "pubkey" }
+      ] }
+    },
+    {
+      "name": "maivw_registry::admin_rotation::AcceptDomainAdminArgs",
+      "type": { "kind": "struct", "fields": [
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "global_domain_epoch", "type": "u64" }
+      ] }
+    },
     {
       "name": "maivw_registry::provider::IssueWarningArgs",
       "type": { "kind": "struct", "fields": [
@@ -352,6 +393,11 @@
       "name": "maivw_registry::state::SlashCaseStatus",
       "repr": { "kind": "rust" },
       "type": { "kind": "enum", "variants": [{ "name": "Pending" }, { "name": "Vetoed" }, { "name": "Executed" }] }
+    },
+    {
+      "name": "maivw_registry::state::PendingAdminStatus",
+      "repr": { "kind": "rust" },
+      "type": { "kind": "enum", "variants": [{ "name": "Pending" }, { "name": "Accepted" }] }
     },
     {
       "name": "maivw_registry::state::KeyAlgorithm",
@@ -504,6 +550,22 @@
       ] }
     },
     {
+      "name": "maivw_registry::state::PendingAdmin",
+      "type": { "kind": "struct", "fields": [
+        { "name": "schema_version", "type": "u16" },
+        { "name": "bump", "type": "u8" },
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "global_domain_epoch", "type": "u64" },
+        { "name": "proposed_by", "type": "pubkey" },
+        { "name": "new_admin", "type": "pubkey" },
+        { "name": "proposed_at", "type": "i64" },
+        { "name": "proposed_sequence", "type": "u64" },
+        { "name": "status", "type": { "defined": { "name": "maivw_registry::state::PendingAdminStatus" } } },
+        { "name": "accepted_at", "type": "i64" },
+        { "name": "accepted_sequence", "type": "u64" }
+      ] }
+    },
+    {
       "name": "maivw_registry::StakeToppedUp",
       "type": { "kind": "struct", "fields": [
         { "name": "domain_hash", "type": { "array": ["u8", 32] } },
@@ -615,6 +677,28 @@
         { "name": "new_tls_fingerprint", "type": { "array": ["u8", 32] } },
         { "name": "timestamp", "type": "i64" }
       ] }
+    },
+    {
+      "name": "maivw_registry::DomainAdminProposed",
+      "type": { "kind": "struct", "fields": [
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "global_domain_epoch", "type": "u64" },
+        { "name": "origin_sequence", "type": "u64" },
+        { "name": "current_admin", "type": "pubkey" },
+        { "name": "new_admin", "type": "pubkey" },
+        { "name": "timestamp", "type": "i64" }
+      ] }
+    },
+    {
+      "name": "maivw_registry::DomainAdminUpdated",
+      "type": { "kind": "struct", "fields": [
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "global_domain_epoch", "type": "u64" },
+        { "name": "origin_sequence", "type": "u64" },
+        { "name": "old_admin", "type": "pubkey" },
+        { "name": "new_admin", "type": "pubkey" },
+        { "name": "timestamp", "type": "i64" }
+      ] }
     }
   ],
   "errors": [
@@ -661,6 +745,9 @@
     { "code": 6040, "name": "UnauthorizedDomainAdmin", "msg": "signer does not match the domain admin key" },
     { "code": 6041, "name": "MirrorReadOnly", "msg": "mirror records are read-only on this deployment" },
     { "code": 6042, "name": "InvalidOperationalKey", "msg": "operational mail key must not be zero" },
-    { "code": 6043, "name": "InvalidEndpoint", "msg": "endpoint is empty or exceeds the protocol limit" }
+    { "code": 6043, "name": "InvalidEndpoint", "msg": "endpoint is empty or exceeds the protocol limit" },
+    { "code": 6044, "name": "InvalidNewDomainAdmin", "msg": "new domain admin must be non-zero and different from the current admin" },
+    { "code": 6045, "name": "InvalidPendingAdmin", "msg": "pending domain admin proposal is invalid" },
+    { "code": 6046, "name": "UnauthorizedPendingAdmin", "msg": "signer is not the pending domain admin candidate" }
   ]
 }
