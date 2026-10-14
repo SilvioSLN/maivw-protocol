@@ -7,6 +7,98 @@ generator client {
   provider = "prisma-client-js"
 }
 
+enum OriginNetworkFamily {
+  EVM
+  SOLANA
+}
+
+enum OriginRecordStatus {
+  ACTIVE
+}
+
+enum OriginAuditAction {
+  ORIGIN_ACTIVATED
+  ORIGIN_RECONCILED
+}
+
+enum OriginOutboxStatus {
+  PENDING
+  PUBLISHED
+  FAILED
+}
+
+/// Fonte transacional para a rede de origem imutável de cada domainHash.
+/// A unicidade global é deliberadamente independente da tabela Domain de produto.
+model OriginRecord {
+  id                  String              @id @default(uuid())
+  domainHash          String              @unique @db.Char(66)
+  domain              String
+  originNetworkFamily OriginNetworkFamily
+  originNetworkId     String
+  originNetworkHash   String              @db.Char(66)
+  originRegistryId    String              @db.Char(66)
+  originVersion       Int                 @default(1)
+  status              OriginRecordStatus  @default(ACTIVE)
+  originTxFamily      OriginNetworkFamily
+  originTxId          String
+  globalDomainEpoch   BigInt
+  originSequence      BigInt
+  activatedAt         DateTime
+  lastReconciledAt    DateTime?
+  lastAuditHash       String              @db.Char(66)
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  auditEvents OriginAuditEvent[]
+
+  @@index([originNetworkId, status])
+}
+
+/// Ledger append-only do catálogo. Não possui updatedAt e não deve ser mutado
+/// ou removido; cada hash inclui o hash do evento anterior do mesmo domínio.
+model OriginAuditEvent {
+  id                String            @id @default(uuid())
+  ordinal           BigInt            @unique @default(autoincrement())
+  originRecordId    String
+  domainHash        String            @db.Char(66)
+  action            OriginAuditAction
+  previousState     Json?
+  nextState         Json
+  actorType         String
+  actorIdHash       String?           @db.Char(66)
+  requestId         String
+  previousEventHash String?           @db.Char(66)
+  eventHash         String            @unique @db.Char(66)
+  createdAt         DateTime          @default(now())
+
+  originRecord OriginRecord       @relation(fields: [originRecordId], references: [id], onDelete: Restrict)
+  outboxEvent  OriginOutboxEvent?
+
+  @@unique([domainHash, requestId])
+  @@index([domainHash, createdAt])
+}
+
+/// Evento durável produzido atomicamente com cada entrada de auditoria.
+/// O worker pode atualizar somente o estado de publicação desta tabela.
+model OriginOutboxEvent {
+  id           String             @id @default(uuid())
+  auditEventId String             @unique
+  topic        String
+  partitionKey String
+  payload      Json
+  status       OriginOutboxStatus @default(PENDING)
+  attempts     Int                @default(0)
+  availableAt  DateTime           @default(now())
+  lastError    String?
+  publishedAt  DateTime?
+  createdAt    DateTime           @default(now())
+
+  auditEvent OriginAuditEvent @relation(fields: [auditEventId], references: [id], onDelete: Restrict)
+
+  @@index([status, availableAt])
+  @@index([partitionKey, createdAt])
+}
+
 /// Reputação granular por domínio e sub-identidade (Fase 7)
 model Reputation {
   id              Int       @id @default(autoincrement())
@@ -201,4 +293,3 @@ model DomainRouteRule {
 
   pool          EndpointPool @relation(fields: [poolId], references: [id], onDelete: Cascade)
 }
-
