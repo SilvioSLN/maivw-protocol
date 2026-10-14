@@ -4,7 +4,8 @@ Workspace Anchor do Registry MAIVW capaz de operar como origem canônica ou como
 espelho de uma origem EVM/Solana. A implementação é incremental; o estado deste
 marco cobre o schema base, autenticação de atestações, inicialização do registry
 e registros de origem para domínios e provedores com pagamento SPL atômico,
-warnings, slashing escalável e atualizações administrativas de domínio.
+warnings, slashing escalável, atualizações administrativas de domínio e criação
+de mirrors externos somente leitura.
 
 ## Toolchain fixada
 
@@ -34,6 +35,7 @@ A carteira é ignorada pelo Git e nunca deve receber ativos reais.
 | `RecoveryCase` | `['recovery-case', domain_hash, global_domain_epoch_le]` | Pedido, timelock, cancelamento e execução de recovery |
 | `RecoveryReceipt` | `['recovery-receipt', domain_hash, nonce]` | Consumo append-only da autorização do oracle |
 | `IntentBatch` | `['intent-batch', domain_hash, global_domain_epoch_le, batch_nonce]` | Raiz Merkle única por nonce explícito e epoch |
+| `MirrorAttestationReceipt` | `['mirror-attestation', domain_hash, nonce]` | Consumo append-only de uma atestação de mirror |
 
 `DomainRecord` reserva espaço para domínio DNS de 253 bytes e endpoint de 512
 bytes. Os testes serializam o pior caso, comparam o tamanho declarado e calculam
@@ -147,6 +149,21 @@ nula. Cada batch incrementa `originSequence` e persiste publicador e timestamp.
 
 O layout e as regras estão em
 [`SOLANA_INTENT_BATCH_V1.md`](../specs/multichain/SOLANA_INTENT_BATCH_V1.md).
+
+## Registro de mirror
+
+`register_mirror` aceita uma `StateAttestationV1/RegisterMirror` assinada pelo
+oracle e cria atomicamente o `DomainRecord` somente leitura e o recibo de nonce.
+A origem precisa ser um deployment externo; domínio, destino, epoch, sequence,
+payload e transação de origem ficam cobertos pelo envelope. Chaves EVM mantêm o
+endereço secp256k1 com padding canônico, enquanto chaves Solana permanecem
+Ed25519, sem aliases ou casts.
+
+O mirror não cria `StakeVault` nem transfere SPL. Stake e limite diário
+atestados são campos informativos; o stake local permanece zero. O relayer paga
+somente transaction fee e rent. O payload de 448 bytes é compatível com
+`MAIVWMirrorRegistryV2.hashMirrorStateV2` e está especificado em
+[`SOLANA_MIRROR_STATE_V2.md`](../specs/multichain/SOLANA_MIRROR_STATE_V2.md).
 
 ## Slashing escalável
 

@@ -124,4 +124,14 @@ pub enum MaivwError {
     InvalidMerkleRoot,
     #[msg("signer cannot publish intent batches for this domain")]
     UnauthorizedIntentBatch,
+    #[msg("mirror attestation does not authorize this registration")]
+    InvalidMirrorAttestation,
+    #[msg("mirror payload does not match the attested state")]
+    InvalidMirrorPayload,
+    #[msg("mirror state is invalid for initial registration")]
+    InvalidMirrorState,
+    #[msg("typed key is invalid for the declared origin family")]
+    InvalidTypedKey,
+    #[msg("mirror attestation receipt is invalid")]
+    InvalidMirrorReceipt,
 }

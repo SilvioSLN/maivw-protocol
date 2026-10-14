@@ -13,6 +13,7 @@ pub mod domain_updates;
 pub mod economics;
 pub mod error;
 pub mod intent_batch;
+pub mod mirror;
 pub mod provider;
 pub mod reclaim;
 pub mod recovery;
@@ -26,6 +27,7 @@ use admin_rotation::{
 use constants::{
     DOMAIN_RECORD_SEED, DOMAIN_SCHEMA_VERSION, FOUNDER_VAULT_AUTHORITY_SEED,
     INTENT_BATCH_SCHEMA_VERSION, INTENT_BATCH_SEED, ORIGIN_CLAIM_RECEIPT_SEED,
+    MIRROR_ATTESTATION_RECEIPT_SCHEMA_VERSION, MIRROR_ATTESTATION_RECEIPT_SEED,
     PENDING_ADMIN_SCHEMA_VERSION, PENDING_ADMIN_SEED, RECEIPT_SCHEMA_VERSION,
     RECOVERY_CASE_SCHEMA_VERSION, RECOVERY_CASE_SEED, RECOVERY_RECEIPT_SCHEMA_VERSION,
     RECOVERY_RECEIPT_SEED, REGISTRY_CONFIG_SEED, REGISTRY_SCHEMA_VERSION,
@@ -44,6 +46,7 @@ use economics::{
 };
 use error::MaivwError;
 use intent_batch::{authorize_intent_batch, validate_intent_batch, RegisterIntentBatchArgs};
+use mirror::{mirror_state_payload_hash, validate_register_mirror, RegisterMirrorArgs};
 use provider::{top_up_transition, warning_transition, IssueWarningArgs, TopUpStakeArgs};
 use reclaim::{close_pending_processes, reclaim_payload_hash, ReclaimDomainArgs};
 use recovery::{
@@ -60,10 +63,11 @@ use slashing::{
     ProposeSlashArgs, SlashCaseArgs,
 };
 use state::{
-    DomainRecord, DomainStatus, IntentBatch, KeyAlgorithm, KeyDescriptor, NetworkFamily,
-    NetworkReference, OriginClaimReceipt, PendingAdmin, PendingAdminStatus, ProviderTier,
-    RecordKind, RecoveryCase, RecoveryReceipt, RecoveryStatus, RegistryConfig, ReporterClaim,
-    ReporterPool, SlashCase, SlashCaseStatus, StakeVault, SubIdentityStrike, TransactionReference,
+    DomainRecord, DomainStatus, IntentBatch, KeyAlgorithm, KeyDescriptor,
+    MirrorAttestationReceipt, NetworkFamily, NetworkReference, OriginClaimReceipt, PendingAdmin,
+    PendingAdminStatus, ProviderTier, RecordKind, RecoveryCase, RecoveryReceipt, RecoveryStatus,
+    RegistryConfig, ReporterClaim, ReporterPool, SlashCase, SlashCaseStatus, StakeVault,
+    SubIdentityStrike, TransactionReference,
 };
 
 declare_id!("8MybG5qUxPpe3vVQB47VtMVUEknBuBk9yuQydr8XxRy9");
@@ -262,6 +266,92 @@ pub mod maivw_registry {
         ctx.accounts
             .stake_vault
             .validate(ctx.accounts.stake_vault_token.amount)
+    }
+
+    pub fn register_mirror(
+        ctx: Context<RegisterMirror>,
+        args: RegisterMirrorArgs,
+        envelope: Vec<u8>,
+    ) -> Result<()> {
+        validate_register_mirror(&args)?;
+        let config = &ctx.accounts.config;
+        let payload_hash = mirror_state_payload_hash(&args);
+        let attestation = attestation::verify_register_mirror(
+            config,
+            &ctx.accounts.instructions.to_account_info(),
+            &envelope,
+            args.domain_hash,
+            payload_hash,
+            args.attestation_nonce,
+        )?;
+        let registration_time = i64::try_from(args.registration_time)
+            .map_err(|_| error!(MaivwError::InvalidMirrorState))?;
+        let now = Clock::get()?.unix_timestamp;
+
+        **ctx.accounts.domain_record = DomainRecord {
+            schema_version: DOMAIN_SCHEMA_VERSION,
+            bump: ctx.bumps.domain_record,
+            kind: RecordKind::Mirror,
+            domain_hash: args.domain_hash,
+            domain: args.domain.clone(),
+            origin: NetworkReference {
+                family: args.origin_family,
+                network_hash: attestation.origin_network_hash,
+            },
+            origin_registry: attestation.origin_registry,
+            operational_key: args.operational_key,
+            admin_key: args.admin_key,
+            endpoint: args.endpoint.clone(),
+            tls_fingerprint: args.tls_fingerprint,
+            status: args.status,
+            global_domain_epoch: attestation.global_domain_epoch,
+            origin_sequence: attestation.origin_sequence,
+            provider: Pubkey::default(),
+            provider_tier: args.provider_tier,
+            strikes: args.strikes,
+            created_at: registration_time,
+            updated_at: now,
+            attested_stake: args.attested_stake,
+            attested_daily_limit: args.attested_daily_limit,
+            original_registration_amount: 0,
+            current_stake: 0,
+            origin_transaction: TransactionReference {
+                family: args.origin_family,
+                hash: attestation.evidence_hash,
+            },
+        };
+        ctx.accounts
+            .domain_record
+            .validate(config.network_hash, ID.to_bytes())?;
+
+        write_mirror_receipt(
+            &mut ctx.accounts.attestation_receipt,
+            ctx.bumps.attestation_receipt,
+            &attestation,
+            ctx.accounts.relayer.key(),
+            now,
+        )?;
+
+        emit!(MirrorRegistered {
+            domain_hash: args.domain_hash,
+            origin_family: args.origin_family,
+            origin_network_hash: attestation.origin_network_hash,
+            origin_registry: attestation.origin_registry,
+            global_domain_epoch: attestation.global_domain_epoch,
+            origin_sequence: attestation.origin_sequence,
+            operational_key: args.operational_key,
+            admin_key: args.admin_key,
+            status: args.status,
+            is_provider: args.is_provider,
+            provider_tier: args.provider_tier,
+            attested_stake: args.attested_stake,
+            attested_daily_limit: args.attested_daily_limit,
+            origin_transaction: attestation.evidence_hash,
+            attestation_nonce: args.attestation_nonce,
+            relayer: ctx.accounts.relayer.key(),
+            timestamp: now,
+        });
+        Ok(())
     }
 
     pub fn reclaim_domain(
@@ -1633,6 +1723,43 @@ pub struct RegisterProvider<'info> {
 }
 
 #[derive(Accounts)]
+#[instruction(args: RegisterMirrorArgs)]
+pub struct RegisterMirror<'info> {
+    #[account(mut)]
+    pub relayer: Signer<'info>,
+    #[account(
+        seeds = [REGISTRY_CONFIG_SEED],
+        bump = config.bump,
+        constraint = config.active @ MaivwError::RegistryPaused
+    )]
+    pub config: Box<Account<'info, RegistryConfig>>,
+    #[account(
+        init,
+        payer = relayer,
+        space = DomainRecord::SPACE,
+        seeds = [DOMAIN_RECORD_SEED, args.domain_hash.as_ref()],
+        bump
+    )]
+    pub domain_record: Box<Account<'info, DomainRecord>>,
+    #[account(
+        init,
+        payer = relayer,
+        space = MirrorAttestationReceipt::SPACE,
+        seeds = [
+            MIRROR_ATTESTATION_RECEIPT_SEED,
+            args.domain_hash.as_ref(),
+            args.attestation_nonce.as_ref()
+        ],
+        bump
+    )]
+    pub attestation_receipt: Box<Account<'info, MirrorAttestationReceipt>>,
+    /// CHECK: constrained to Solana's instructions sysvar address.
+    #[account(address = solana_instructions_sysvar::ID @ MaivwError::InvalidInstructionsSysvar)]
+    pub instructions: UncheckedAccount<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
 #[instruction(args: ReclaimDomainArgs)]
 pub struct ReclaimDomain<'info> {
     #[account(mut)]
@@ -2345,6 +2472,27 @@ pub struct StakeToppedUp {
 }
 
 #[event]
+pub struct MirrorRegistered {
+    pub domain_hash: [u8; 32],
+    pub origin_family: NetworkFamily,
+    pub origin_network_hash: [u8; 32],
+    pub origin_registry: [u8; 32],
+    pub global_domain_epoch: u64,
+    pub origin_sequence: u64,
+    pub operational_key: KeyDescriptor,
+    pub admin_key: KeyDescriptor,
+    pub status: DomainStatus,
+    pub is_provider: bool,
+    pub provider_tier: ProviderTier,
+    pub attested_stake: u64,
+    pub attested_daily_limit: u64,
+    pub origin_transaction: [u8; 32],
+    pub attestation_nonce: [u8; 32],
+    pub relayer: Pubkey,
+    pub timestamp: i64,
+}
+
+#[event]
 pub struct WarningIssued {
     pub domain_hash: [u8; 32],
     pub sub_identity_hash: [u8; 32],
@@ -2624,6 +2772,32 @@ fn write_receipt(
         .map_err(|_| error!(MaivwError::InvalidAttestation))?;
     receipt.consumed_by = registrant;
     receipt.consumed_at = now;
+    receipt.validate()
+}
+
+fn write_mirror_receipt(
+    receipt: &mut MirrorAttestationReceipt,
+    bump: u8,
+    attestation: &maivw_attestation::AttestationV1,
+    relayer: Pubkey,
+    now: i64,
+) -> Result<()> {
+    *receipt = MirrorAttestationReceipt {
+        schema_version: MIRROR_ATTESTATION_RECEIPT_SCHEMA_VERSION,
+        bump,
+        domain_hash: attestation.domain_hash,
+        origin_network_hash: attestation.origin_network_hash,
+        origin_registry: attestation.origin_registry,
+        global_domain_epoch: attestation.global_domain_epoch,
+        origin_sequence: attestation.origin_sequence,
+        nonce: attestation.nonce,
+        attestation_digest: attestation
+            .digest()
+            .map_err(|_| error!(MaivwError::InvalidAttestation))?,
+        action: attestation.action as u8,
+        consumed_by: relayer,
+        consumed_at: now,
+    };
     receipt.validate()
 }
 

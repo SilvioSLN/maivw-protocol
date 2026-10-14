@@ -11,6 +11,7 @@ use crate::{
         REPORTER_CLAIM_SEED, REPORTER_POOL_SCHEMA_VERSION, REPORTER_POOL_SEED,
         SLASH_CASE_SCHEMA_VERSION, SLASH_CASE_SEED, STAKE_VAULT_SCHEMA_VERSION, STAKE_VAULT_SEED,
         SUB_IDENTITY_STRIKE_SCHEMA_VERSION, SUB_IDENTITY_STRIKE_SEED,
+        MIRROR_ATTESTATION_RECEIPT_SCHEMA_VERSION, MIRROR_ATTESTATION_RECEIPT_SEED,
     },
     error::MaivwError,
     ID,
@@ -316,12 +317,97 @@ impl DomainRecord {
                     ),
                 }
             }
-            RecordKind::Mirror => require!(
-                self.origin.network_hash != local_network_hash
-                    || self.origin_registry != local_registry,
-                MaivwError::InvalidMirrorReference
-            ),
+            RecordKind::Mirror => {
+                require!(
+                    self.origin.network_hash != [0; 32]
+                        && self.origin_registry != [0; 32]
+                        && (self.origin.network_hash != local_network_hash
+                            || self.origin_registry != local_registry)
+                        && self.origin_transaction.family == self.origin.family
+                        && self.origin_transaction.hash != [0; 32],
+                    MaivwError::InvalidMirrorReference
+                );
+                require!(
+                    self.provider == Pubkey::default()
+                        && self.original_registration_amount == 0
+                        && self.current_stake == 0
+                        && ((matches!(self.provider_tier, ProviderTier::None)
+                            && self.attested_daily_limit == 0)
+                            || (!matches!(self.provider_tier, ProviderTier::None)
+                                && self.attested_daily_limit > 0)),
+                    MaivwError::InvalidDomainRecord
+                );
+                match self.origin.family {
+                    NetworkFamily::Evm => require!(
+                        matches!(
+                            self.operational_key.algorithm,
+                            KeyAlgorithm::Secp256k1EvmAddress
+                        ) && matches!(
+                            self.admin_key.algorithm,
+                            KeyAlgorithm::Secp256k1EvmAddress
+                        ) && self.operational_key.value[..12]
+                            .iter()
+                            .all(|byte| *byte == 0)
+                            && self.admin_key.value[..12].iter().all(|byte| *byte == 0),
+                        MaivwError::InvalidDomainRecord
+                    ),
+                    NetworkFamily::Solana => require!(
+                        matches!(
+                            self.operational_key.algorithm,
+                            KeyAlgorithm::Ed25519SolanaPubkey | KeyAlgorithm::Ed25519Raw
+                        ) && matches!(
+                            self.admin_key.algorithm,
+                            KeyAlgorithm::Ed25519SolanaPubkey | KeyAlgorithm::Ed25519Raw
+                        ),
+                        MaivwError::InvalidDomainRecord
+                    ),
+                }
+            }
         }
+        Ok(())
+    }
+}
+
+#[account]
+#[derive(Debug)]
+pub struct MirrorAttestationReceipt {
+    pub schema_version: u16,
+    pub bump: u8,
+    pub domain_hash: [u8; 32],
+    pub origin_network_hash: [u8; 32],
+    pub origin_registry: [u8; 32],
+    pub global_domain_epoch: u64,
+    pub origin_sequence: u64,
+    pub nonce: [u8; 32],
+    pub attestation_digest: [u8; 32],
+    pub action: u8,
+    pub consumed_by: Pubkey,
+    pub consumed_at: i64,
+}
+
+impl MirrorAttestationReceipt {
+    pub const DATA_LEN: usize = 220;
+    pub const SPACE: usize = 8 + Self::DATA_LEN;
+
+    pub fn pda(domain_hash: &[u8; 32], nonce: &[u8; 32]) -> (Pubkey, u8) {
+        Pubkey::find_program_address(
+            &[MIRROR_ATTESTATION_RECEIPT_SEED, domain_hash, nonce],
+            &ID,
+        )
+    }
+
+    pub fn validate(&self) -> Result<()> {
+        require!(
+            self.schema_version == MIRROR_ATTESTATION_RECEIPT_SCHEMA_VERSION
+                && self.domain_hash != [0; 32]
+                && self.origin_network_hash != [0; 32]
+                && self.origin_registry != [0; 32]
+                && self.nonce != [0; 32]
+                && self.attestation_digest != [0; 32]
+                && self.action != 0
+                && self.consumed_by != Pubkey::default(),
+            MaivwError::InvalidMirrorReceipt
+        );
         Ok(())
     }
 }
@@ -846,17 +932,29 @@ mod tests {
             status: DomainStatus::Active,
             global_domain_epoch: u64::MAX,
             origin_sequence: u64::MAX,
-            provider: Pubkey::new_unique(),
+            provider: if matches!(kind, RecordKind::Origin) {
+                Pubkey::new_unique()
+            } else {
+                Pubkey::default()
+            },
             provider_tier: ProviderTier::Institutional,
             strikes: u32::MAX,
             created_at: i64::MAX,
             updated_at: i64::MAX,
             attested_stake: u64::MAX,
             attested_daily_limit: u64::MAX,
-            original_registration_amount: u64::MAX,
-            current_stake: u64::MAX,
+            original_registration_amount: if matches!(kind, RecordKind::Origin) {
+                u64::MAX
+            } else {
+                0
+            },
+            current_stake: if matches!(kind, RecordKind::Origin) {
+                u64::MAX
+            } else {
+                0
+            },
             origin_transaction: TransactionReference {
-                family: NetworkFamily::Evm,
+                family: NetworkFamily::Solana,
                 hash: [7; 32],
             },
         }
@@ -930,6 +1028,30 @@ mod tests {
         receipt.try_serialize(&mut receipt_bytes).unwrap();
         assert_eq!(receipt_bytes.len(), OriginClaimReceipt::SPACE);
         assert!(receipt.validate().is_ok());
+
+        let mirror_receipt = MirrorAttestationReceipt {
+            schema_version: MIRROR_ATTESTATION_RECEIPT_SCHEMA_VERSION,
+            bump: 1,
+            domain_hash: [1; 32],
+            origin_network_hash: [2; 32],
+            origin_registry: [3; 32],
+            global_domain_epoch: 4,
+            origin_sequence: 5,
+            nonce: [6; 32],
+            attestation_digest: [7; 32],
+            action: 2,
+            consumed_by: Pubkey::new_unique(),
+            consumed_at: 8,
+        };
+        let mut mirror_receipt_bytes = Vec::new();
+        mirror_receipt
+            .try_serialize(&mut mirror_receipt_bytes)
+            .unwrap();
+        assert_eq!(
+            mirror_receipt_bytes.len(),
+            MirrorAttestationReceipt::SPACE
+        );
+        assert!(mirror_receipt.validate().is_ok());
 
         let vault = StakeVault {
             schema_version: STAKE_VAULT_SCHEMA_VERSION,
@@ -1120,6 +1242,7 @@ mod tests {
         assert!(Rent::default().minimum_balance(RecoveryCase::SPACE) > 0);
         assert!(Rent::default().minimum_balance(RecoveryReceipt::SPACE) > 0);
         assert!(Rent::default().minimum_balance(IntentBatch::SPACE) > 0);
+        assert!(Rent::default().minimum_balance(MirrorAttestationReceipt::SPACE) > 0);
     }
 
     #[test]
@@ -1180,9 +1303,15 @@ mod tests {
 
         let mut evm_mirror = record(RecordKind::Mirror, [9; 32], [8; 32]);
         evm_mirror.origin.family = NetworkFamily::Evm;
+        evm_mirror.origin_transaction.family = NetworkFamily::Evm;
         evm_mirror.operational_key.algorithm = KeyAlgorithm::Secp256k1EvmAddress;
         evm_mirror.admin_key.algorithm = KeyAlgorithm::Secp256k1EvmAddress;
+        evm_mirror.operational_key.value[..12].fill(0);
+        evm_mirror.admin_key.value[..12].fill(0);
         assert!(evm_mirror.validate(local_network, local_registry).is_ok());
+
+        evm_mirror.current_stake = 1;
+        assert!(evm_mirror.validate(local_network, local_registry).is_err());
     }
 
     #[test]
@@ -1231,6 +1360,10 @@ mod tests {
         assert_ne!(
             IntentBatch::pda(&[1; 32], 0, &[2; 32]),
             IntentBatch::pda(&[1; 32], 1, &[2; 32])
+        );
+        assert_ne!(
+            MirrorAttestationReceipt::pda(&[1; 32], &[2; 32]),
+            MirrorAttestationReceipt::pda(&[1; 32], &[3; 32])
         );
     }
 }

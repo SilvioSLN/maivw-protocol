@@ -10,6 +10,7 @@ pub const PENDING_ADMIN_SEED: &[u8] = b"pending-admin";
 pub const RECOVERY_CASE_SEED: &[u8] = b"recovery-case";
 pub const RECOVERY_RECEIPT_SEED: &[u8] = b"recovery-receipt";
 pub const INTENT_BATCH_SEED: &[u8] = b"intent-batch";
+pub const MIRROR_ATTESTATION_RECEIPT_SEED: &[u8] = b"mirror-attestation";
 pub const FOUNDER_VAULT_AUTHORITY_SEED: &[u8] = b"founder-vault";
 pub const TREASURY_VAULT_AUTHORITY_SEED: &[u8] = b"treasury-vault";
 
@@ -29,6 +30,7 @@ pub const PENDING_ADMIN_SCHEMA_VERSION: u16 = 1;
 pub const RECOVERY_CASE_SCHEMA_VERSION: u16 = 1;
 pub const RECOVERY_RECEIPT_SCHEMA_VERSION: u16 = 1;
 pub const INTENT_BATCH_SCHEMA_VERSION: u16 = 1;
+pub const MIRROR_ATTESTATION_RECEIPT_SCHEMA_VERSION: u16 = 1;
 
 pub const BPS_DENOMINATOR: u64 = 10_000;
 pub const FOUNDER_FEE_BPS: u64 = 1_000;

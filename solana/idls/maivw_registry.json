@@ -74,6 +74,22 @@
       ]
     },
     {
+      "name": "register_mirror",
+      "discriminator": [22, 136, 130, 144, 170, 118, 114, 220],
+      "accounts": [
+        { "name": "relayer", "writable": true, "signer": true },
+        { "name": "config" },
+        { "name": "domain_record", "writable": true },
+        { "name": "attestation_receipt", "writable": true },
+        { "name": "instructions" },
+        { "name": "system_program" }
+      ],
+      "args": [
+        { "name": "args", "type": { "defined": { "name": "maivw_registry::mirror::RegisterMirrorArgs" } } },
+        { "name": "envelope", "type": "bytes" }
+      ]
+    },
+    {
       "name": "top_up_stake",
       "discriminator": [152, 222, 110, 73, 38, 18, 139, 17],
       "accounts": [
@@ -312,7 +328,8 @@
     { "name": "maivw_registry::state::PendingAdmin", "discriminator": [220, 45, 135, 16, 196, 153, 181, 56] },
     { "name": "maivw_registry::state::RecoveryCase", "discriminator": [107, 167, 197, 89, 201, 180, 222, 10] },
     { "name": "maivw_registry::state::RecoveryReceipt", "discriminator": [168, 128, 135, 250, 136, 3, 133, 138] },
-    { "name": "maivw_registry::state::IntentBatch", "discriminator": [29, 115, 73, 50, 10, 212, 28, 198] }
+    { "name": "maivw_registry::state::IntentBatch", "discriminator": [29, 115, 73, 50, 10, 212, 28, 198] },
+    { "name": "maivw_registry::state::MirrorAttestationReceipt", "discriminator": [146, 182, 191, 131, 194, 200, 186, 213] }
   ],
   "events": [
     { "name": "maivw_registry::StakeToppedUp", "discriminator": [198, 194, 194, 30, 127, 26, 161, 239] },
@@ -330,7 +347,8 @@
     { "name": "maivw_registry::RecoveryCancelled", "discriminator": [191, 25, 236, 86, 25, 77, 117, 96] },
     { "name": "maivw_registry::RecoveryExecuted", "discriminator": [161, 218, 6, 191, 85, 217, 12, 144] },
     { "name": "maivw_registry::DomainReclaimed", "discriminator": [85, 68, 87, 69, 86, 212, 238, 72] },
-    { "name": "maivw_registry::IntentBatchRegistered", "discriminator": [229, 31, 187, 253, 188, 133, 17, 19] }
+    { "name": "maivw_registry::IntentBatchRegistered", "discriminator": [229, 31, 187, 253, 188, 133, 17, 19] },
+    { "name": "maivw_registry::MirrorRegistered", "discriminator": [15, 45, 191, 174, 234, 253, 143, 85] }
   ],
   "types": [
     {
@@ -388,6 +406,26 @@
         { "name": "batch_nonce", "type": { "array": ["u8", 32] } },
         { "name": "message_class", "type": "string" },
         { "name": "merkle_root", "type": { "array": ["u8", 32] } }
+      ] }
+    },
+    {
+      "name": "maivw_registry::mirror::RegisterMirrorArgs",
+      "type": { "kind": "struct", "fields": [
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "attestation_nonce", "type": { "array": ["u8", 32] } },
+        { "name": "domain", "type": "string" },
+        { "name": "origin_family", "type": { "defined": { "name": "maivw_registry::state::NetworkFamily" } } },
+        { "name": "operational_key", "type": { "defined": { "name": "maivw_registry::state::KeyDescriptor" } } },
+        { "name": "admin_key", "type": { "defined": { "name": "maivw_registry::state::KeyDescriptor" } } },
+        { "name": "endpoint", "type": "string" },
+        { "name": "tls_fingerprint", "type": { "array": ["u8", 32] } },
+        { "name": "status", "type": { "defined": { "name": "maivw_registry::state::DomainStatus" } } },
+        { "name": "is_provider", "type": "bool" },
+        { "name": "provider_tier", "type": { "defined": { "name": "maivw_registry::state::ProviderTier" } } },
+        { "name": "strikes", "type": "u32" },
+        { "name": "registration_time", "type": "u64" },
+        { "name": "attested_stake", "type": "u64" },
+        { "name": "attested_daily_limit", "type": "u64" }
       ] }
     },
     {
@@ -757,6 +795,23 @@
       ] }
     },
     {
+      "name": "maivw_registry::state::MirrorAttestationReceipt",
+      "type": { "kind": "struct", "fields": [
+        { "name": "schema_version", "type": "u16" },
+        { "name": "bump", "type": "u8" },
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "origin_network_hash", "type": { "array": ["u8", 32] } },
+        { "name": "origin_registry", "type": { "array": ["u8", 32] } },
+        { "name": "global_domain_epoch", "type": "u64" },
+        { "name": "origin_sequence", "type": "u64" },
+        { "name": "nonce", "type": { "array": ["u8", 32] } },
+        { "name": "attestation_digest", "type": { "array": ["u8", 32] } },
+        { "name": "action", "type": "u8" },
+        { "name": "consumed_by", "type": "pubkey" },
+        { "name": "consumed_at", "type": "i64" }
+      ] }
+    },
+    {
       "name": "maivw_registry::StakeToppedUp",
       "type": { "kind": "struct", "fields": [
         { "name": "domain_hash", "type": { "array": ["u8", 32] } },
@@ -961,6 +1016,28 @@
         { "name": "registered_by", "type": "pubkey" },
         { "name": "timestamp", "type": "i64" }
       ] }
+    },
+    {
+      "name": "maivw_registry::MirrorRegistered",
+      "type": { "kind": "struct", "fields": [
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "origin_family", "type": { "defined": { "name": "maivw_registry::state::NetworkFamily" } } },
+        { "name": "origin_network_hash", "type": { "array": ["u8", 32] } },
+        { "name": "origin_registry", "type": { "array": ["u8", 32] } },
+        { "name": "global_domain_epoch", "type": "u64" },
+        { "name": "origin_sequence", "type": "u64" },
+        { "name": "operational_key", "type": { "defined": { "name": "maivw_registry::state::KeyDescriptor" } } },
+        { "name": "admin_key", "type": { "defined": { "name": "maivw_registry::state::KeyDescriptor" } } },
+        { "name": "status", "type": { "defined": { "name": "maivw_registry::state::DomainStatus" } } },
+        { "name": "is_provider", "type": "bool" },
+        { "name": "provider_tier", "type": { "defined": { "name": "maivw_registry::state::ProviderTier" } } },
+        { "name": "attested_stake", "type": "u64" },
+        { "name": "attested_daily_limit", "type": "u64" },
+        { "name": "origin_transaction", "type": { "array": ["u8", 32] } },
+        { "name": "attestation_nonce", "type": { "array": ["u8", 32] } },
+        { "name": "relayer", "type": "pubkey" },
+        { "name": "timestamp", "type": "i64" }
+      ] }
     }
   ],
   "errors": [
@@ -1024,6 +1101,11 @@
     { "code": 6057, "name": "InvalidIntentBatch", "msg": "intent batch account or version is invalid" },
     { "code": 6058, "name": "InvalidMessageClass", "msg": "message class must contain between 1 and 32 bytes" },
     { "code": 6059, "name": "InvalidMerkleRoot", "msg": "intent batch Merkle root must not be zero" },
-    { "code": 6060, "name": "UnauthorizedIntentBatch", "msg": "signer cannot publish intent batches for this domain" }
+    { "code": 6060, "name": "UnauthorizedIntentBatch", "msg": "signer cannot publish intent batches for this domain" },
+    { "code": 6061, "name": "InvalidMirrorAttestation", "msg": "mirror attestation does not authorize this registration" },
+    { "code": 6062, "name": "InvalidMirrorPayload", "msg": "mirror payload does not match the attested state" },
+    { "code": 6063, "name": "InvalidMirrorState", "msg": "mirror state is invalid for initial registration" },
+    { "code": 6064, "name": "InvalidTypedKey", "msg": "typed key is invalid for the declared origin family" },
+    { "code": 6065, "name": "InvalidMirrorReceipt", "msg": "mirror attestation receipt is invalid" }
   ]
 }
