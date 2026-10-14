@@ -1280,6 +1280,10 @@ mod tests {
         let mut drains_too_fast = config();
         drains_too_fast.tiers[0].penalty_per_strike = 2;
         assert!(drains_too_fast.validate().is_err());
+
+        let mut wrong_token_program = config();
+        wrong_token_program.token_program = Pubkey::new_unique();
+        assert!(wrong_token_program.validate().is_err());
     }
 
     #[test]

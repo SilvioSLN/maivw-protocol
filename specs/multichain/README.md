@@ -46,3 +46,5 @@ Solana pause authority and the operations that remain available during an incide
 Solana account schema compatibility and the explicit `DomainRecord` V1 to V2 migration are specified in `SOLANA_ACCOUNT_MIGRATIONS_V1.md`.
 
 The canonical Solana observer event, action coverage and IDL contract are specified in `SOLANA_EVENTS_V1.md`.
+
+The Solana owner, signer, PDA, SPL, sysvar and account-alias constraints are specified in `SOLANA_ACCOUNT_CONSTRAINTS_V1.md`.

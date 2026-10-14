@@ -218,6 +218,23 @@ enums e todos os eventos usados pelos observers. A especificação de consumo e 
 matriz completa de cobertura estão em
 [`SOLANA_EVENTS_V1.md`](../specs/multichain/SOLANA_EVENTS_V1.md).
 
+## Constraints de segurança
+
+Toda conta de estado tipada valida owner e discriminator do programa; PDAs
+existentes validam seeds e bump persistido, e contas novas usam bump canônico.
+Signers são declarados por função, hashes/epochs internos são vinculados aos
+argumentos e cada handler que recebe `RegistryConfig` revalida seu schema e suas
+invariantes antes de usar o estado.
+
+Mint, decimals, token program, autoridade e ATA são conferidos antes de cada CPI
+SPL. Fluxos econômicos também rejeitam a mesma conta em papéis incompatíveis de
+origem/destino. Toda leitura de atestação fixa o endereço do instructions sysvar;
+os poucos `UncheckedAccount` restantes possuem address, seeds/owner ou validação
+manual documentada.
+
+A matriz completa está em
+[`SOLANA_ACCOUNT_CONSTRAINTS_V1.md`](../specs/multichain/SOLANA_ACCOUNT_CONSTRAINTS_V1.md).
+
 ## Slashing escalável
 
 `propose_slash` exige o oracle configurado e cria uma proposta vinculada ao

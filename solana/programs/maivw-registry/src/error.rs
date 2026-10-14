@@ -154,4 +154,6 @@ pub enum MaivwError {
     InvalidAccountMigration,
     #[msg("account schema has no supported migration path")]
     UnsupportedAccountMigration,
+    #[msg("the same account cannot be used for distinct security or economic roles")]
+    InvalidAccountAlias,
 }

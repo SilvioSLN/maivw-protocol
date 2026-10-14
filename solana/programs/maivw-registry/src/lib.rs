@@ -21,6 +21,7 @@ pub mod provider;
 pub mod reclaim;
 pub mod recovery;
 pub mod registration;
+pub mod security;
 pub mod slashing;
 pub mod state;
 
@@ -71,6 +72,7 @@ use registration::{
     domain_payload_hash, provider_payload_hash, InitializeRegistryArgs, RegisterDomainArgs,
     RegisterProviderArgs,
 };
+use security::require_distinct_accounts;
 use slashing::{
     reporter_leaf, validate_reporter_set, verify_reporter_proof, ClaimReporterRewardArgs,
     ProposeSlashArgs, SlashCaseArgs,
@@ -255,6 +257,13 @@ pub mod maivw_registry {
         envelope: Vec<u8>,
     ) -> Result<()> {
         let config = &ctx.accounts.config;
+        config.validate()?;
+        require_distinct_accounts(&[
+            ctx.accounts.registrant_token.key(),
+            ctx.accounts.founder_vault.key(),
+            ctx.accounts.treasury_vault.key(),
+            ctx.accounts.stake_vault_token.key(),
+        ])?;
         let split = split_standard_fee(config.standard_fee)?;
         let payload_hash = domain_payload_hash(
             &args,
@@ -350,6 +359,11 @@ pub mod maivw_registry {
         envelope: Vec<u8>,
     ) -> Result<()> {
         let config = &ctx.accounts.config;
+        config.validate()?;
+        require_distinct_accounts(&[
+            ctx.accounts.registrant_token.key(),
+            ctx.accounts.stake_vault_token.key(),
+        ])?;
         let tier = config.tiers[args.tier.config_index()?];
         let payload_hash = provider_payload_hash(
             &args,
@@ -426,6 +440,7 @@ pub mod maivw_registry {
     ) -> Result<()> {
         validate_register_mirror(&args)?;
         let config = &ctx.accounts.config;
+        config.validate()?;
         let payload_hash = mirror_state_payload_hash(&args);
         let attestation = attestation::verify_register_mirror(
             config,
@@ -520,6 +535,7 @@ pub mod maivw_registry {
     ) -> Result<()> {
         validate_sync_mirror(&args)?;
         let config = &ctx.accounts.config;
+        config.validate()?;
         let domain = &ctx.accounts.domain_record;
         domain.validate(config.network_hash, ID.to_bytes())?;
         require!(
@@ -620,6 +636,7 @@ pub mod maivw_registry {
     ) -> Result<()> {
         validate_revoke_mirror(&args)?;
         let config = &ctx.accounts.config;
+        config.validate()?;
         let domain = &ctx.accounts.domain_record;
         domain.validate(config.network_hash, ID.to_bytes())?;
         require!(
@@ -714,6 +731,19 @@ pub mod maivw_registry {
         envelope: Vec<u8>,
     ) -> Result<()> {
         let config = &ctx.accounts.config;
+        config.validate()?;
+        require_distinct_accounts(&[
+            ctx.accounts.registrant_token.key(),
+            ctx.accounts.founder_vault.key(),
+            ctx.accounts.treasury_vault.key(),
+            ctx.accounts.stake_vault_token.key(),
+        ])?;
+        require_distinct_accounts(&[
+            ctx.accounts.previous_admin_token.key(),
+            ctx.accounts.founder_vault.key(),
+            ctx.accounts.treasury_vault.key(),
+            ctx.accounts.stake_vault_token.key(),
+        ])?;
         let domain = &ctx.accounts.domain_record;
         domain.validate(config.network_hash, ID.to_bytes())?;
         require!(
@@ -928,6 +958,7 @@ pub mod maivw_registry {
         args: RegisterIntentBatchArgs,
     ) -> Result<()> {
         let config = &ctx.accounts.config;
+        config.validate()?;
         let domain = &mut ctx.accounts.domain_record;
         domain.validate(config.network_hash, ID.to_bytes())?;
         validate_intent_batch(
@@ -986,7 +1017,13 @@ pub mod maivw_registry {
 
     pub fn top_up_stake(ctx: Context<TopUpStake>, args: TopUpStakeArgs) -> Result<()> {
         let config = &ctx.accounts.config;
+        config.validate()?;
+        require_distinct_accounts(&[
+            ctx.accounts.funder_token.key(),
+            ctx.accounts.stake_vault_token.key(),
+        ])?;
         let domain = &mut ctx.accounts.domain_record;
+        domain.validate(config.network_hash, ID.to_bytes())?;
         require!(
             matches!(domain.kind, RecordKind::Origin)
                 && !matches!(domain.provider_tier, ProviderTier::None),
@@ -1064,7 +1101,13 @@ pub mod maivw_registry {
 
     pub fn issue_warning(ctx: Context<IssueWarning>, args: IssueWarningArgs) -> Result<()> {
         let config = &ctx.accounts.config;
+        config.validate()?;
+        require_distinct_accounts(&[
+            ctx.accounts.stake_vault_token.key(),
+            ctx.accounts.treasury_vault.key(),
+        ])?;
         let domain = &mut ctx.accounts.domain_record;
+        domain.validate(config.network_hash, ID.to_bytes())?;
         require!(
             matches!(domain.kind, RecordKind::Origin)
                 && !matches!(domain.provider_tier, ProviderTier::None),
@@ -1185,6 +1228,7 @@ pub mod maivw_registry {
     }
 
     pub fn propose_slash(ctx: Context<ProposeSlash>, args: ProposeSlashArgs) -> Result<()> {
+        ctx.accounts.config.validate()?;
         require!(args.case_nonce != [0; 32], MaivwError::ZeroNonce);
         validate_reporter_set(args.reporter_root, args.reporter_count)?;
         let domain = &ctx.accounts.domain_record;
@@ -1259,6 +1303,7 @@ pub mod maivw_registry {
     }
 
     pub fn veto_slash(ctx: Context<VetoSlash>, args: SlashCaseArgs) -> Result<()> {
+        ctx.accounts.config.validate()?;
         require!(
             ctx.accounts.veto_authority.key() == ctx.accounts.config.guardian
                 || ctx.accounts.veto_authority.key() == ctx.accounts.config.authority,
@@ -1291,7 +1336,13 @@ pub mod maivw_registry {
 
     pub fn execute_slash(ctx: Context<ExecuteSlash>, args: SlashCaseArgs) -> Result<()> {
         let config = &ctx.accounts.config;
+        config.validate()?;
+        require_distinct_accounts(&[
+            ctx.accounts.stake_vault_token.key(),
+            ctx.accounts.reporter_pool_token.key(),
+        ])?;
         let domain = &mut ctx.accounts.domain_record;
+        domain.validate(config.network_hash, ID.to_bytes())?;
         require!(
             matches!(domain.kind, RecordKind::Origin)
                 && matches!(
@@ -1440,6 +1491,10 @@ pub mod maivw_registry {
         ctx: Context<ClaimReporterReward>,
         args: ClaimReporterRewardArgs,
     ) -> Result<()> {
+        require_distinct_accounts(&[
+            ctx.accounts.reporter_pool_token.key(),
+            ctx.accounts.reporter_token.key(),
+        ])?;
         let pool = &mut ctx.accounts.reporter_pool;
         require!(
             pool.domain_hash == args.domain_hash
@@ -1532,6 +1587,7 @@ pub mod maivw_registry {
 
     pub fn update_mail_key(ctx: Context<UpdateMailKey>, args: UpdateMailKeyArgs) -> Result<()> {
         let config = &ctx.accounts.config;
+        config.validate()?;
         let domain = &mut ctx.accounts.domain_record;
         domain.validate(config.network_hash, ID.to_bytes())?;
         authorize_domain_admin(
@@ -1572,6 +1628,7 @@ pub mod maivw_registry {
 
     pub fn update_endpoint(ctx: Context<UpdateEndpoint>, args: UpdateEndpointArgs) -> Result<()> {
         let config = &ctx.accounts.config;
+        config.validate()?;
         let domain = &mut ctx.accounts.domain_record;
         domain.validate(config.network_hash, ID.to_bytes())?;
         authorize_domain_admin(
@@ -1612,6 +1669,7 @@ pub mod maivw_registry {
         args: UpdateTlsFingerprintArgs,
     ) -> Result<()> {
         let config = &ctx.accounts.config;
+        config.validate()?;
         let domain = &mut ctx.accounts.domain_record;
         domain.validate(config.network_hash, ID.to_bytes())?;
         authorize_domain_admin(
@@ -1651,6 +1709,7 @@ pub mod maivw_registry {
         args: ProposeDomainAdminArgs,
     ) -> Result<()> {
         let config = &ctx.accounts.config;
+        config.validate()?;
         let domain = &ctx.accounts.domain_record;
         domain.validate(config.network_hash, ID.to_bytes())?;
         authorize_domain_admin(
@@ -1701,6 +1760,7 @@ pub mod maivw_registry {
         args: AcceptDomainAdminArgs,
     ) -> Result<()> {
         let config = &ctx.accounts.config;
+        config.validate()?;
         let domain = &mut ctx.accounts.domain_record;
         domain.validate(config.network_hash, ID.to_bytes())?;
         require!(
@@ -1756,6 +1816,7 @@ pub mod maivw_registry {
         envelope: Vec<u8>,
     ) -> Result<()> {
         let config = &ctx.accounts.config;
+        config.validate()?;
         let domain = &ctx.accounts.domain_record;
         domain.validate(config.network_hash, ID.to_bytes())?;
         require!(
@@ -1853,6 +1914,7 @@ pub mod maivw_registry {
         args: RecoveryCaseArgs,
     ) -> Result<()> {
         let config = &ctx.accounts.config;
+        config.validate()?;
         let domain = &ctx.accounts.domain_record;
         domain.validate(config.network_hash, ID.to_bytes())?;
         require!(
@@ -1891,6 +1953,7 @@ pub mod maivw_registry {
         args: RecoveryCaseArgs,
     ) -> Result<()> {
         let config = &ctx.accounts.config;
+        config.validate()?;
         let domain = &mut ctx.accounts.domain_record;
         domain.validate(config.network_hash, ID.to_bytes())?;
         require!(
@@ -2461,7 +2524,8 @@ pub struct TopUpStake<'info> {
     #[account(
         mut,
         seeds = [DOMAIN_RECORD_SEED, args.domain_hash.as_ref()],
-        bump = domain_record.bump
+        bump = domain_record.bump,
+        constraint = domain_record.domain_hash == args.domain_hash @ MaivwError::InvalidDomainHash
     )]
     pub domain_record: Box<Account<'info, DomainRecord>>,
     #[account(
@@ -2513,7 +2577,8 @@ pub struct IssueWarning<'info> {
     #[account(
         mut,
         seeds = [DOMAIN_RECORD_SEED, args.domain_hash.as_ref()],
-        bump = domain_record.bump
+        bump = domain_record.bump,
+        constraint = domain_record.domain_hash == args.domain_hash @ MaivwError::InvalidDomainHash
     )]
     pub domain_record: Box<Account<'info, DomainRecord>>,
     #[account(
@@ -2584,7 +2649,10 @@ pub struct ProposeSlash<'info> {
     pub config: Box<Account<'info, RegistryConfig>>,
     #[account(
         seeds = [DOMAIN_RECORD_SEED, args.domain_hash.as_ref()],
-        bump = domain_record.bump
+        bump = domain_record.bump,
+        constraint = domain_record.domain_hash == args.domain_hash @ MaivwError::InvalidDomainHash,
+        constraint = domain_record.global_domain_epoch == args.global_domain_epoch
+            @ MaivwError::InvalidSlashCase
     )]
     pub domain_record: Box<Account<'info, DomainRecord>>,
     #[account(
@@ -2634,7 +2702,10 @@ pub struct ExecuteSlash<'info> {
     #[account(
         mut,
         seeds = [DOMAIN_RECORD_SEED, args.domain_hash.as_ref()],
-        bump = domain_record.bump
+        bump = domain_record.bump,
+        constraint = domain_record.domain_hash == args.domain_hash @ MaivwError::InvalidDomainHash,
+        constraint = domain_record.global_domain_epoch == args.global_domain_epoch
+            @ MaivwError::InvalidSlashCase
     )]
     pub domain_record: Box<Account<'info, DomainRecord>>,
     #[account(

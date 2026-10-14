@@ -1347,6 +1347,7 @@
     { "code": 6072, "name": "RegistryAlreadyActive", "msg": "registry is already active" },
     { "code": 6073, "name": "UnauthorizedAccountMigration", "msg": "only the registry authority can migrate program accounts" },
     { "code": 6074, "name": "InvalidAccountMigration", "msg": "account discriminator or serialized layout is invalid for migration" },
-    { "code": 6075, "name": "UnsupportedAccountMigration", "msg": "account schema has no supported migration path" }
+    { "code": 6075, "name": "UnsupportedAccountMigration", "msg": "account schema has no supported migration path" },
+    { "code": 6076, "name": "InvalidAccountAlias", "msg": "the same account cannot be used for distinct security or economic roles" }
   ]
 }
