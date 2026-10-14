@@ -71,3 +71,11 @@ fn rejects_non_canonical_wire_values() {
 
     assert!(AttestationV1::decode(&encoded[..encoded.len() - 1]).is_err());
 }
+
+#[test]
+fn accepts_recovery_as_a_state_attestation() {
+    let mut recovery = fixture();
+    recovery.action = AttestationAction::RecoverOrigin;
+    let encoded = recovery.encode().expect("valid recovery authorization");
+    assert_eq!(AttestationV1::decode(&encoded), Ok(recovery));
+}

@@ -96,4 +96,16 @@ pub enum MaivwError {
     InvalidPendingAdmin,
     #[msg("signer is not the pending domain admin candidate")]
     UnauthorizedPendingAdmin,
+    #[msg("recovery attestation does not authorize this request")]
+    InvalidRecoveryAttestation,
+    #[msg("recovery payload does not match the requested keys")]
+    InvalidRecoveryPayload,
+    #[msg("recovery attestation must carry non-zero evidence")]
+    MissingRecoveryEvidence,
+    #[msg("recovery case is invalid or unavailable")]
+    InvalidRecoveryCase,
+    #[msg("recovery authorization receipt is invalid")]
+    InvalidRecoveryReceipt,
+    #[msg("recovery timelock has not elapsed")]
+    RecoveryNotReady,
 }

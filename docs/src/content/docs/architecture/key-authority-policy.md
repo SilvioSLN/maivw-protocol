@@ -23,6 +23,12 @@ A hot key não pode rotacionar a si própria, mudar endpoint/TLS nem iniciar tro
 
 Proposta de admin, recovery e slash são vinculados ao epoch corrente. Recovery e reclaim incrementam epoch e invalidam propostas anteriores. Slashing torna o domínio não ativo, impedindo aceite tardio de admin; reclaim também limpa explicitamente todo estado pendente.
 
+Na origem Solana, recovery usa atestação Ed25519 do oracle vinculada também à
+sequence corrente e às novas chaves. Um recibo append-only por nonce bloqueia
+replay após cancelamento; o admin pode cancelar durante pause e a execução é
+permissionless somente depois do timelock, enquanto o domínio permanecer ativo
+no mesmo epoch.
+
 Na rotação administrativa Solana, o admin atual pode substituir uma proposta
 pendente, mas não concluir a troca sozinho. O candidato deve assinar o aceite, e
 o programa confere novamente epoch, estado ativo e identidade do admin que fez

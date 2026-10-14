@@ -16,6 +16,7 @@ library MAIVWAttestationV1 {
     uint8 internal constant ACTION_REGISTER_MIRROR = 2;
     uint8 internal constant ACTION_SYNC_MIRROR = 3;
     uint8 internal constant ACTION_REVOKE_MIRROR = 4;
+    uint8 internal constant ACTION_RECOVER_ORIGIN = 5;
 
     error InvalidAttestationKind(uint8 kind);
     error InvalidAttestationAction(uint8 kind, uint8 action);
@@ -71,7 +72,7 @@ library MAIVWAttestationV1 {
             return;
         }
         if (kind == KIND_STATE_ATTESTATION) {
-            if (action < ACTION_REGISTER_MIRROR || action > ACTION_REVOKE_MIRROR) {
+            if (action < ACTION_REGISTER_MIRROR || action > ACTION_RECOVER_ORIGIN) {
                 revert InvalidAttestationAction(kind, action);
             }
             return;

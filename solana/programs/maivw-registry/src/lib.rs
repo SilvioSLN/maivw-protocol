@@ -13,6 +13,7 @@ pub mod domain_updates;
 pub mod economics;
 pub mod error;
 pub mod provider;
+pub mod recovery;
 pub mod registration;
 pub mod slashing;
 pub mod state;
@@ -23,11 +24,12 @@ use admin_rotation::{
 use constants::{
     DOMAIN_RECORD_SEED, DOMAIN_SCHEMA_VERSION, FOUNDER_VAULT_AUTHORITY_SEED,
     ORIGIN_CLAIM_RECEIPT_SEED, PENDING_ADMIN_SCHEMA_VERSION, PENDING_ADMIN_SEED,
-    RECEIPT_SCHEMA_VERSION, REGISTRY_CONFIG_SEED, REGISTRY_SCHEMA_VERSION,
-    REPORTER_CLAIM_SCHEMA_VERSION, REPORTER_CLAIM_SEED, REPORTER_POOL_SCHEMA_VERSION,
-    REPORTER_POOL_SEED, SLASH_CASE_SCHEMA_VERSION, SLASH_CASE_SEED, STAKE_VAULT_SCHEMA_VERSION,
-    STAKE_VAULT_SEED, SUB_IDENTITY_STRIKE_SCHEMA_VERSION, SUB_IDENTITY_STRIKE_SEED,
-    TREASURY_VAULT_AUTHORITY_SEED,
+    RECEIPT_SCHEMA_VERSION, RECOVERY_CASE_SCHEMA_VERSION, RECOVERY_CASE_SEED,
+    RECOVERY_RECEIPT_SCHEMA_VERSION, RECOVERY_RECEIPT_SEED, REGISTRY_CONFIG_SEED,
+    REGISTRY_SCHEMA_VERSION, REPORTER_CLAIM_SCHEMA_VERSION, REPORTER_CLAIM_SEED,
+    REPORTER_POOL_SCHEMA_VERSION, REPORTER_POOL_SEED, SLASH_CASE_SCHEMA_VERSION,
+    SLASH_CASE_SEED, STAKE_VAULT_SCHEMA_VERSION, STAKE_VAULT_SEED,
+    SUB_IDENTITY_STRIKE_SCHEMA_VERSION, SUB_IDENTITY_STRIKE_SEED, TREASURY_VAULT_AUTHORITY_SEED,
 };
 use domain_updates::{
     authorize_domain_admin, next_origin_sequence, validate_endpoint, validate_mail_key,
@@ -39,6 +41,11 @@ use economics::{
 };
 use error::MaivwError;
 use provider::{top_up_transition, warning_transition, IssueWarningArgs, TopUpStakeArgs};
+use recovery::{
+    authorize_recovery_cancellation, authorize_recovery_execution, next_recovery_epoch,
+    recovery_execute_after, recovery_payload_hash, validate_recovery_keys, RecoveryCaseArgs,
+    RequestRecoveryArgs,
+};
 use registration::{
     domain_payload_hash, provider_payload_hash, InitializeRegistryArgs, RegisterDomainArgs,
     RegisterProviderArgs,
@@ -49,9 +56,9 @@ use slashing::{
 };
 use state::{
     DomainRecord, DomainStatus, KeyAlgorithm, KeyDescriptor, NetworkFamily, NetworkReference,
-    OriginClaimReceipt, PendingAdmin, PendingAdminStatus, ProviderTier, RecordKind, RegistryConfig,
-    ReporterClaim, ReporterPool, SlashCase, SlashCaseStatus, StakeVault, SubIdentityStrike,
-    TransactionReference,
+    OriginClaimReceipt, PendingAdmin, PendingAdminStatus, ProviderTier, RecordKind, RecoveryCase,
+    RecoveryReceipt, RecoveryStatus, RegistryConfig, ReporterClaim, ReporterPool, SlashCase,
+    SlashCaseStatus, StakeVault, SubIdentityStrike, TransactionReference,
 };
 
 declare_id!("8MybG5qUxPpe3vVQB47VtMVUEknBuBk9yuQydr8XxRy9");
@@ -973,6 +980,204 @@ pub mod maivw_registry {
         });
         Ok(())
     }
+
+    pub fn request_recovery(
+        ctx: Context<RequestRecovery>,
+        args: RequestRecoveryArgs,
+        envelope: Vec<u8>,
+    ) -> Result<()> {
+        let config = &ctx.accounts.config;
+        let domain = &ctx.accounts.domain_record;
+        domain.validate(config.network_hash, ID.to_bytes())?;
+        require!(
+            matches!(domain.kind, RecordKind::Origin),
+            MaivwError::MirrorReadOnly
+        );
+        require!(
+            matches!(domain.status, DomainStatus::Active),
+            MaivwError::InvalidDomainStatus
+        );
+        require!(
+            domain.global_domain_epoch == args.global_domain_epoch,
+            MaivwError::InvalidRecoveryCase
+        );
+        validate_recovery_keys(args.new_admin, args.new_operational_key)?;
+
+        let payload_hash = recovery_payload_hash(&args, domain.origin_sequence);
+        let authorization = attestation::verify_recovery(
+            config,
+            &ctx.accounts.instructions.to_account_info(),
+            &envelope,
+            args.domain_hash,
+            args.global_domain_epoch,
+            domain.origin_sequence,
+            payload_hash,
+            args.nonce,
+        )?;
+        let digest = authorization
+            .digest()
+            .map_err(|_| error!(MaivwError::InvalidAttestation))?;
+        let now = Clock::get()?.unix_timestamp;
+        let execute_after = recovery_execute_after(now, config.recovery_delay_seconds)?;
+
+        let recovery = &mut ctx.accounts.recovery_case;
+        if recovery.schema_version != 0 {
+            require!(
+                recovery.schema_version == RECOVERY_CASE_SCHEMA_VERSION
+                    && recovery.domain_hash == args.domain_hash
+                    && recovery.global_domain_epoch == args.global_domain_epoch
+                    && !matches!(recovery.status, RecoveryStatus::Executed),
+                MaivwError::InvalidRecoveryCase
+            );
+        }
+        ***recovery = RecoveryCase {
+            schema_version: RECOVERY_CASE_SCHEMA_VERSION,
+            bump: ctx.bumps.recovery_case,
+            domain_hash: args.domain_hash,
+            global_domain_epoch: args.global_domain_epoch,
+            nonce: args.nonce,
+            attestation_digest: digest,
+            new_admin: args.new_admin,
+            new_operational_key: args.new_operational_key,
+            requested_by: ctx.accounts.requester.key(),
+            requested_at: now,
+            execute_after,
+            status: RecoveryStatus::Pending,
+            cancelled_by: Pubkey::default(),
+            cancelled_at: 0,
+            executed_by: Pubkey::default(),
+            executed_at: 0,
+            executed_epoch: 0,
+            executed_sequence: 0,
+        };
+        recovery.validate_identity(args.domain_hash, args.global_domain_epoch, args.nonce)?;
+
+        **ctx.accounts.recovery_receipt = RecoveryReceipt {
+            schema_version: RECOVERY_RECEIPT_SCHEMA_VERSION,
+            bump: ctx.bumps.recovery_receipt,
+            domain_hash: args.domain_hash,
+            global_domain_epoch: args.global_domain_epoch,
+            nonce: args.nonce,
+            attestation_digest: digest,
+            recovery_case: recovery.key(),
+            consumed_by: ctx.accounts.requester.key(),
+            consumed_at: now,
+        };
+        ctx.accounts.recovery_receipt.validate()?;
+
+        emit!(RecoveryRequested {
+            domain_hash: args.domain_hash,
+            global_domain_epoch: args.global_domain_epoch,
+            origin_sequence: domain.origin_sequence,
+            nonce: args.nonce,
+            new_admin: args.new_admin,
+            new_operational_key: args.new_operational_key,
+            requested_by: ctx.accounts.requester.key(),
+            requested_at: now,
+            execute_after,
+        });
+        Ok(())
+    }
+
+    pub fn cancel_recovery(
+        ctx: Context<CancelRecovery>,
+        args: RecoveryCaseArgs,
+    ) -> Result<()> {
+        let config = &ctx.accounts.config;
+        let domain = &ctx.accounts.domain_record;
+        domain.validate(config.network_hash, ID.to_bytes())?;
+        require!(
+            matches!(domain.kind, RecordKind::Origin),
+            MaivwError::MirrorReadOnly
+        );
+        require!(
+            domain.global_domain_epoch == args.global_domain_epoch,
+            MaivwError::InvalidRecoveryCase
+        );
+        let recovery = &mut ctx.accounts.recovery_case;
+        recovery.validate_identity(args.domain_hash, args.global_domain_epoch, args.nonce)?;
+        authorize_recovery_cancellation(
+            recovery,
+            domain.admin_key,
+            ctx.accounts.current_admin.key(),
+        )?;
+
+        let now = Clock::get()?.unix_timestamp;
+        recovery.status = RecoveryStatus::Cancelled;
+        recovery.cancelled_by = ctx.accounts.current_admin.key();
+        recovery.cancelled_at = now;
+
+        emit!(RecoveryCancelled {
+            domain_hash: args.domain_hash,
+            global_domain_epoch: args.global_domain_epoch,
+            nonce: args.nonce,
+            cancelled_by: ctx.accounts.current_admin.key(),
+            timestamp: now,
+        });
+        Ok(())
+    }
+
+    pub fn execute_recovery(
+        ctx: Context<ExecuteRecovery>,
+        args: RecoveryCaseArgs,
+    ) -> Result<()> {
+        let config = &ctx.accounts.config;
+        let domain = &mut ctx.accounts.domain_record;
+        domain.validate(config.network_hash, ID.to_bytes())?;
+        require!(
+            matches!(domain.kind, RecordKind::Origin),
+            MaivwError::MirrorReadOnly
+        );
+        require!(
+            matches!(domain.status, DomainStatus::Active),
+            MaivwError::InvalidDomainStatus
+        );
+        require!(
+            domain.global_domain_epoch == args.global_domain_epoch,
+            MaivwError::InvalidRecoveryCase
+        );
+        let recovery = &mut ctx.accounts.recovery_case;
+        recovery.validate_identity(args.domain_hash, args.global_domain_epoch, args.nonce)?;
+        let now = Clock::get()?.unix_timestamp;
+        authorize_recovery_execution(recovery, now)?;
+
+        let old_admin = Pubkey::new_from_array(domain.admin_key.value);
+        let old_operational_key = domain.operational_key.value;
+        let new_epoch = next_recovery_epoch(domain.global_domain_epoch)?;
+        domain.admin_key = KeyDescriptor {
+            algorithm: KeyAlgorithm::Ed25519SolanaPubkey,
+            value: recovery.new_admin.to_bytes(),
+        };
+        domain.operational_key = KeyDescriptor {
+            algorithm: KeyAlgorithm::Ed25519SolanaPubkey,
+            value: recovery.new_operational_key,
+        };
+        domain.global_domain_epoch = new_epoch;
+        domain.origin_sequence = 1;
+        domain.updated_at = now;
+        domain.validate(config.network_hash, ID.to_bytes())?;
+
+        recovery.status = RecoveryStatus::Executed;
+        recovery.executed_by = ctx.accounts.executor.key();
+        recovery.executed_at = now;
+        recovery.executed_epoch = new_epoch;
+        recovery.executed_sequence = domain.origin_sequence;
+
+        emit!(RecoveryExecuted {
+            domain_hash: args.domain_hash,
+            previous_global_domain_epoch: args.global_domain_epoch,
+            global_domain_epoch: new_epoch,
+            origin_sequence: domain.origin_sequence,
+            nonce: args.nonce,
+            old_admin,
+            new_admin: recovery.new_admin,
+            old_operational_key,
+            new_operational_key: recovery.new_operational_key,
+            executed_by: ctx.accounts.executor.key(),
+            timestamp: now,
+        });
+        Ok(())
+    }
 }
 
 #[derive(Accounts)]
@@ -1577,6 +1782,115 @@ pub struct AcceptDomainAdmin<'info> {
     pub pending_admin: Box<Account<'info, PendingAdmin>>,
 }
 
+#[derive(Accounts)]
+#[instruction(args: RequestRecoveryArgs)]
+pub struct RequestRecovery<'info> {
+    #[account(mut)]
+    pub requester: Signer<'info>,
+    #[account(
+        seeds = [REGISTRY_CONFIG_SEED],
+        bump = config.bump,
+        constraint = config.active @ MaivwError::RegistryPaused
+    )]
+    pub config: Box<Account<'info, RegistryConfig>>,
+    #[account(
+        seeds = [DOMAIN_RECORD_SEED, args.domain_hash.as_ref()],
+        bump = domain_record.bump,
+        constraint = domain_record.domain_hash == args.domain_hash @ MaivwError::InvalidDomainHash,
+        constraint = domain_record.global_domain_epoch == args.global_domain_epoch
+            @ MaivwError::InvalidRecoveryCase
+    )]
+    pub domain_record: Box<Account<'info, DomainRecord>>,
+    #[account(
+        init_if_needed,
+        payer = requester,
+        space = RecoveryCase::SPACE,
+        seeds = [
+            RECOVERY_CASE_SEED,
+            args.domain_hash.as_ref(),
+            args.global_domain_epoch.to_le_bytes().as_ref()
+        ],
+        bump
+    )]
+    pub recovery_case: Box<Account<'info, RecoveryCase>>,
+    #[account(
+        init,
+        payer = requester,
+        space = RecoveryReceipt::SPACE,
+        seeds = [
+            RECOVERY_RECEIPT_SEED,
+            args.domain_hash.as_ref(),
+            args.nonce.as_ref()
+        ],
+        bump
+    )]
+    pub recovery_receipt: Box<Account<'info, RecoveryReceipt>>,
+    /// CHECK: constrained to Solana's instructions sysvar address.
+    #[account(
+        address = solana_instructions_sysvar::ID
+            @ MaivwError::InvalidInstructionsSysvar
+    )]
+    pub instructions: UncheckedAccount<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(args: RecoveryCaseArgs)]
+pub struct CancelRecovery<'info> {
+    pub current_admin: Signer<'info>,
+    #[account(seeds = [REGISTRY_CONFIG_SEED], bump = config.bump)]
+    pub config: Box<Account<'info, RegistryConfig>>,
+    #[account(
+        seeds = [DOMAIN_RECORD_SEED, args.domain_hash.as_ref()],
+        bump = domain_record.bump,
+        constraint = domain_record.domain_hash == args.domain_hash @ MaivwError::InvalidDomainHash,
+        constraint = domain_record.global_domain_epoch == args.global_domain_epoch
+            @ MaivwError::InvalidRecoveryCase
+    )]
+    pub domain_record: Box<Account<'info, DomainRecord>>,
+    #[account(
+        mut,
+        seeds = [
+            RECOVERY_CASE_SEED,
+            args.domain_hash.as_ref(),
+            args.global_domain_epoch.to_le_bytes().as_ref()
+        ],
+        bump = recovery_case.bump
+    )]
+    pub recovery_case: Box<Account<'info, RecoveryCase>>,
+}
+
+#[derive(Accounts)]
+#[instruction(args: RecoveryCaseArgs)]
+pub struct ExecuteRecovery<'info> {
+    pub executor: Signer<'info>,
+    #[account(
+        seeds = [REGISTRY_CONFIG_SEED],
+        bump = config.bump,
+        constraint = config.active @ MaivwError::RegistryPaused
+    )]
+    pub config: Box<Account<'info, RegistryConfig>>,
+    #[account(
+        mut,
+        seeds = [DOMAIN_RECORD_SEED, args.domain_hash.as_ref()],
+        bump = domain_record.bump,
+        constraint = domain_record.domain_hash == args.domain_hash @ MaivwError::InvalidDomainHash,
+        constraint = domain_record.global_domain_epoch == args.global_domain_epoch
+            @ MaivwError::InvalidRecoveryCase
+    )]
+    pub domain_record: Box<Account<'info, DomainRecord>>,
+    #[account(
+        mut,
+        seeds = [
+            RECOVERY_CASE_SEED,
+            args.domain_hash.as_ref(),
+            args.global_domain_epoch.to_le_bytes().as_ref()
+        ],
+        bump = recovery_case.bump
+    )]
+    pub recovery_case: Box<Account<'info, RecoveryCase>>,
+}
+
 #[event]
 pub struct StakeToppedUp {
     pub domain_hash: [u8; 32],
@@ -1698,6 +2012,43 @@ pub struct DomainAdminUpdated {
     pub origin_sequence: u64,
     pub old_admin: Pubkey,
     pub new_admin: Pubkey,
+    pub timestamp: i64,
+}
+
+#[event]
+pub struct RecoveryRequested {
+    pub domain_hash: [u8; 32],
+    pub global_domain_epoch: u64,
+    pub origin_sequence: u64,
+    pub nonce: [u8; 32],
+    pub new_admin: Pubkey,
+    pub new_operational_key: [u8; 32],
+    pub requested_by: Pubkey,
+    pub requested_at: i64,
+    pub execute_after: i64,
+}
+
+#[event]
+pub struct RecoveryCancelled {
+    pub domain_hash: [u8; 32],
+    pub global_domain_epoch: u64,
+    pub nonce: [u8; 32],
+    pub cancelled_by: Pubkey,
+    pub timestamp: i64,
+}
+
+#[event]
+pub struct RecoveryExecuted {
+    pub domain_hash: [u8; 32],
+    pub previous_global_domain_epoch: u64,
+    pub global_domain_epoch: u64,
+    pub origin_sequence: u64,
+    pub nonce: [u8; 32],
+    pub old_admin: Pubkey,
+    pub new_admin: Pubkey,
+    pub old_operational_key: [u8; 32],
+    pub new_operational_key: [u8; 32],
+    pub executed_by: Pubkey,
     pub timestamp: i64,
 }
 

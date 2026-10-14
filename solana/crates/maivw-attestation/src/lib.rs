@@ -22,6 +22,7 @@ pub enum AttestationAction {
     RegisterMirror = 2,
     SyncMirror = 3,
     RevokeMirror = 4,
+    RecoverOrigin = 5,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -83,6 +84,7 @@ impl AttestationV1 {
             2 => AttestationAction::RegisterMirror,
             3 => AttestationAction::SyncMirror,
             4 => AttestationAction::RevokeMirror,
+            5 => AttestationAction::RecoverOrigin,
             value => return Err(AttestationError::UnknownAction(value)),
         };
         let reserved = read_u8(input, &mut offset);
@@ -161,6 +163,7 @@ impl AttestationV1 {
                 AttestationAction::RegisterMirror
                     | AttestationAction::SyncMirror
                     | AttestationAction::RevokeMirror
+                    | AttestationAction::RecoverOrigin
             )
         );
         if valid {

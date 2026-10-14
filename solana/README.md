@@ -31,6 +31,8 @@ A carteira é ignorada pelo Git e nunca deve receber ativos reais.
 | `ReporterPool` | `['reporter-pool', domain_hash, global_domain_epoch_le]` | Raiz Merkle e contabilidade pull-payment das recompensas |
 | `ReporterClaim` | `['reporter-claim', reporter_pool, reporter]` | Recibo único que impede saque duplicado por reporter |
 | `PendingAdmin` | `['pending-admin', domain_hash, global_domain_epoch_le]` | Proposta two-step de rotação da chave administrativa |
+| `RecoveryCase` | `['recovery-case', domain_hash, global_domain_epoch_le]` | Pedido, timelock, cancelamento e execução de recovery |
+| `RecoveryReceipt` | `['recovery-receipt', domain_hash, nonce]` | Consumo append-only da autorização do oracle |
 
 `DomainRecord` reserva espaço para domínio DNS de 253 bytes e endpoint de 512
 bytes. Os testes serializam o pior caso, comparam o tamanho declarado e calculam
@@ -100,6 +102,23 @@ momento a sequence é incrementada e a proposta fica marcada como aceita.
 O aceite confere que `proposed_by` ainda corresponde ao admin atual. Como o PDA
 inclui `globalDomainEpoch` e o handler exige igualdade com o epoch do domínio,
 recovery ou reclaim invalidam propostas antigas sem permitir aceite tardio.
+
+## Recovery
+
+`request_recovery` aceita uma atestação Ed25519 do oracle apresentada por
+qualquer relayer. A prova vincula domínio, epoch, sequence corrente, nonce e as
+novas chaves; um `RecoveryReceipt` imutável impede replay mesmo se o pedido for
+cancelado ou substituído. O caso fica pendente até
+`recoveryDelaySeconds`.
+
+O admin corrente pode chamar `cancel_recovery` durante o timelock, inclusive
+quando o Registry está pausado. Após o prazo, `execute_recovery` é permissionless
+e exige que o domínio ainda seja uma origem ativa no mesmo epoch. A execução
+troca admin e chave operacional, incrementa o epoch e inicia a nova versão em
+`originSequence = 1`, invalidando propostas vinculadas ao epoch anterior.
+
+O layout assinado está em
+[`SOLANA_RECOVERY_PAYLOAD_V1.md`](../specs/multichain/SOLANA_RECOVERY_PAYLOAD_V1.md).
 
 ## Slashing escalável
 

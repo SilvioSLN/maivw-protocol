@@ -5,10 +5,11 @@ use crate::{
         DOMAIN_RECORD_SEED, DOMAIN_SCHEMA_VERSION, MAX_DOMAIN_LEN, MAX_ENDPOINT_LEN,
         MIN_STRIKES_TO_DRAIN, ORIGIN_CLAIM_RECEIPT_SEED, PENDING_ADMIN_SCHEMA_VERSION,
         PENDING_ADMIN_SEED, PROVIDER_TIER_COUNT, RECEIPT_SCHEMA_VERSION, REGISTRY_CONFIG_SEED,
-        REGISTRY_SCHEMA_VERSION, REPORTER_CLAIM_SCHEMA_VERSION, REPORTER_CLAIM_SEED,
-        REPORTER_POOL_SCHEMA_VERSION, REPORTER_POOL_SEED, SLASH_CASE_SCHEMA_VERSION,
-        SLASH_CASE_SEED, STAKE_VAULT_SCHEMA_VERSION, STAKE_VAULT_SEED,
-        SUB_IDENTITY_STRIKE_SCHEMA_VERSION, SUB_IDENTITY_STRIKE_SEED,
+        RECOVERY_CASE_SCHEMA_VERSION, RECOVERY_CASE_SEED, RECOVERY_RECEIPT_SCHEMA_VERSION,
+        RECOVERY_RECEIPT_SEED, REGISTRY_SCHEMA_VERSION, REPORTER_CLAIM_SCHEMA_VERSION,
+        REPORTER_CLAIM_SEED, REPORTER_POOL_SCHEMA_VERSION, REPORTER_POOL_SEED,
+        SLASH_CASE_SCHEMA_VERSION, SLASH_CASE_SEED, STAKE_VAULT_SCHEMA_VERSION,
+        STAKE_VAULT_SEED, SUB_IDENTITY_STRIKE_SCHEMA_VERSION, SUB_IDENTITY_STRIKE_SEED,
     },
     error::MaivwError,
     ID,
@@ -58,6 +59,14 @@ pub enum SlashCaseStatus {
 pub enum PendingAdminStatus {
     Pending,
     Accepted,
+}
+
+#[repr(u8)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RecoveryStatus {
+    Pending,
+    Cancelled,
+    Executed,
 }
 
 #[repr(u8)]
@@ -624,6 +633,103 @@ impl PendingAdmin {
     }
 }
 
+#[account]
+#[derive(Debug)]
+pub struct RecoveryCase {
+    pub schema_version: u16,
+    pub bump: u8,
+    pub domain_hash: [u8; 32],
+    pub global_domain_epoch: u64,
+    pub nonce: [u8; 32],
+    pub attestation_digest: [u8; 32],
+    pub new_admin: Pubkey,
+    pub new_operational_key: [u8; 32],
+    pub requested_by: Pubkey,
+    pub requested_at: i64,
+    pub execute_after: i64,
+    pub status: RecoveryStatus,
+    pub cancelled_by: Pubkey,
+    pub cancelled_at: i64,
+    pub executed_by: Pubkey,
+    pub executed_at: i64,
+    pub executed_epoch: u64,
+    pub executed_sequence: u64,
+}
+
+impl RecoveryCase {
+    pub const DATA_LEN: usize = 316;
+    pub const SPACE: usize = 8 + Self::DATA_LEN;
+
+    pub fn pda(domain_hash: &[u8; 32], global_domain_epoch: u64) -> (Pubkey, u8) {
+        Pubkey::find_program_address(
+            &[
+                RECOVERY_CASE_SEED,
+                domain_hash,
+                global_domain_epoch.to_le_bytes().as_ref(),
+            ],
+            &ID,
+        )
+    }
+
+    pub fn validate_identity(
+        &self,
+        domain_hash: [u8; 32],
+        global_domain_epoch: u64,
+        nonce: [u8; 32],
+    ) -> Result<()> {
+        require!(
+            self.schema_version == RECOVERY_CASE_SCHEMA_VERSION
+                && self.domain_hash == domain_hash
+                && self.global_domain_epoch == global_domain_epoch
+                && self.nonce == nonce
+                && self.nonce != [0; 32]
+                && self.attestation_digest != [0; 32]
+                && self.new_admin != Pubkey::default()
+                && self.new_operational_key != [0; 32]
+                && self.requested_by != Pubkey::default()
+                && self.execute_after >= self.requested_at,
+            MaivwError::InvalidRecoveryCase
+        );
+        Ok(())
+    }
+}
+
+#[account]
+#[derive(Debug)]
+pub struct RecoveryReceipt {
+    pub schema_version: u16,
+    pub bump: u8,
+    pub domain_hash: [u8; 32],
+    pub global_domain_epoch: u64,
+    pub nonce: [u8; 32],
+    pub attestation_digest: [u8; 32],
+    pub recovery_case: Pubkey,
+    pub consumed_by: Pubkey,
+    pub consumed_at: i64,
+}
+
+impl RecoveryReceipt {
+    pub const DATA_LEN: usize = 179;
+    pub const SPACE: usize = 8 + Self::DATA_LEN;
+
+    pub fn pda(domain_hash: &[u8; 32], nonce: &[u8; 32]) -> (Pubkey, u8) {
+        Pubkey::find_program_address(&[RECOVERY_RECEIPT_SEED, domain_hash, nonce], &ID)
+    }
+
+    pub fn validate(&self) -> Result<()> {
+        require!(
+            self.schema_version == RECOVERY_RECEIPT_SCHEMA_VERSION
+                && self.domain_hash != [0; 32]
+                && self.nonce != [0; 32]
+                && self.attestation_digest != [0; 32]
+                && self.recovery_case != Pubkey::default()
+                && self.consumed_by != Pubkey::default(),
+            MaivwError::InvalidRecoveryReceipt
+        );
+        Ok(())
+    }
+}
+
 fn is_canonical_domain(domain: &str) -> bool {
     !domain.is_empty()
         && domain.len() <= MAX_DOMAIN_LEN
@@ -869,6 +975,51 @@ mod tests {
         assert_eq!(pending_admin_bytes.len(), PendingAdmin::SPACE);
         assert!(pending_admin.validate_identity([1; 32], 2).is_ok());
 
+        let recovery_case = RecoveryCase {
+            schema_version: RECOVERY_CASE_SCHEMA_VERSION,
+            bump: 1,
+            domain_hash: [1; 32],
+            global_domain_epoch: 2,
+            nonce: [3; 32],
+            attestation_digest: [4; 32],
+            new_admin: Pubkey::new_unique(),
+            new_operational_key: [5; 32],
+            requested_by: Pubkey::new_unique(),
+            requested_at: 6,
+            execute_after: 7,
+            status: RecoveryStatus::Pending,
+            cancelled_by: Pubkey::default(),
+            cancelled_at: 0,
+            executed_by: Pubkey::default(),
+            executed_at: 0,
+            executed_epoch: 0,
+            executed_sequence: 0,
+        };
+        let mut recovery_case_bytes = Vec::new();
+        recovery_case
+            .try_serialize(&mut recovery_case_bytes)
+            .unwrap();
+        assert_eq!(recovery_case_bytes.len(), RecoveryCase::SPACE);
+        assert!(recovery_case.validate_identity([1; 32], 2, [3; 32]).is_ok());
+
+        let recovery_receipt = RecoveryReceipt {
+            schema_version: RECOVERY_RECEIPT_SCHEMA_VERSION,
+            bump: 1,
+            domain_hash: [1; 32],
+            global_domain_epoch: 2,
+            nonce: [3; 32],
+            attestation_digest: [4; 32],
+            recovery_case: RecoveryCase::pda(&[1; 32], 2).0,
+            consumed_by: Pubkey::new_unique(),
+            consumed_at: 6,
+        };
+        let mut recovery_receipt_bytes = Vec::new();
+        recovery_receipt
+            .try_serialize(&mut recovery_receipt_bytes)
+            .unwrap();
+        assert_eq!(recovery_receipt_bytes.len(), RecoveryReceipt::SPACE);
+        assert!(recovery_receipt.validate().is_ok());
+
         assert!(Rent::default().minimum_balance(DomainRecord::SPACE) > 0);
         assert!(Rent::default().minimum_balance(RegistryConfig::SPACE) > 0);
         assert!(Rent::default().minimum_balance(OriginClaimReceipt::SPACE) > 0);
@@ -878,6 +1029,8 @@ mod tests {
         assert!(Rent::default().minimum_balance(ReporterPool::SPACE) > 0);
         assert!(Rent::default().minimum_balance(ReporterClaim::SPACE) > 0);
         assert!(Rent::default().minimum_balance(PendingAdmin::SPACE) > 0);
+        assert!(Rent::default().minimum_balance(RecoveryCase::SPACE) > 0);
+        assert!(Rent::default().minimum_balance(RecoveryReceipt::SPACE) > 0);
     }
 
     #[test]
@@ -969,6 +1122,14 @@ mod tests {
         assert_ne!(
             PendingAdmin::pda(&[1; 32], 0),
             PendingAdmin::pda(&[1; 32], 1)
+        );
+        assert_ne!(
+            RecoveryCase::pda(&[1; 32], 0),
+            RecoveryCase::pda(&[1; 32], 1)
+        );
+        assert_ne!(
+            RecoveryReceipt::pda(&[1; 32], &[2; 32]),
+            RecoveryReceipt::pda(&[1; 32], &[3; 32])
         );
     }
 }

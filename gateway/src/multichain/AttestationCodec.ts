@@ -23,6 +23,7 @@ export enum AttestationAction {
   REGISTER_MIRROR = 2,
   SYNC_MIRROR = 3,
   REVOKE_MIRROR = 4,
+  RECOVER_ORIGIN = 5,
 }
 
 export interface AttestationV1 {
@@ -72,7 +73,7 @@ function assertKindAction(kind: AttestationKind, action: AttestationAction): voi
     (kind === AttestationKind.ORIGIN_CLAIM && action === AttestationAction.REGISTER_ORIGIN) ||
     (kind === AttestationKind.STATE_ATTESTATION &&
       action >= AttestationAction.REGISTER_MIRROR &&
-      action <= AttestationAction.REVOKE_MIRROR);
+      action <= AttestationAction.RECOVER_ORIGIN);
   if (!valid) {
     throw new Error(`invalid attestation kind/action pair: ${kind}/${action}`);
   }

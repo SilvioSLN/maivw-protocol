@@ -22,6 +22,13 @@ contract MAIVWAttestationV1Test is Test {
         this.encode(attestation);
     }
 
+    function test_AcceptsRecoveryStateAttestation() public pure {
+        MAIVWAttestationV1.Attestation memory attestation = _fixture();
+        attestation.action = 5;
+
+        assertEq(MAIVWAttestationV1.encode(attestation).length, 292);
+    }
+
     function encode(MAIVWAttestationV1.Attestation memory attestation) external pure returns (bytes memory) {
         return MAIVWAttestationV1.encode(attestation);
     }

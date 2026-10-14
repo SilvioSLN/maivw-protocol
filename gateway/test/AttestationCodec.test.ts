@@ -104,4 +104,13 @@ describe("AttestationCodec V1", () => {
 
     assert.equal(size(encodeAttestationV1(claim)), ATTESTATION_V1_SIZE);
   });
+
+  it("supports a recovery authorization as a state attestation", () => {
+    const recovery = {
+      ...fixture(),
+      action: AttestationAction.RECOVER_ORIGIN,
+    };
+
+    assert.equal(size(encodeAttestationV1(recovery)), ATTESTATION_V1_SIZE);
+  });
 });

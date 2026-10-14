@@ -216,6 +216,45 @@
         { "name": "pending_admin", "writable": true }
       ],
       "args": [{ "name": "args", "type": { "defined": { "name": "maivw_registry::admin_rotation::AcceptDomainAdminArgs" } } }]
+    },
+    {
+      "name": "request_recovery",
+      "discriminator": [169, 44, 164, 157, 148, 175, 110, 130],
+      "accounts": [
+        { "name": "requester", "writable": true, "signer": true },
+        { "name": "config" },
+        { "name": "domain_record" },
+        { "name": "recovery_case", "writable": true },
+        { "name": "recovery_receipt", "writable": true },
+        { "name": "instructions" },
+        { "name": "system_program" }
+      ],
+      "args": [
+        { "name": "args", "type": { "defined": { "name": "maivw_registry::recovery::RequestRecoveryArgs" } } },
+        { "name": "envelope", "type": "bytes" }
+      ]
+    },
+    {
+      "name": "cancel_recovery",
+      "discriminator": [176, 23, 203, 37, 121, 251, 227, 83],
+      "accounts": [
+        { "name": "current_admin", "signer": true },
+        { "name": "config" },
+        { "name": "domain_record" },
+        { "name": "recovery_case", "writable": true }
+      ],
+      "args": [{ "name": "args", "type": { "defined": { "name": "maivw_registry::recovery::RecoveryCaseArgs" } } }]
+    },
+    {
+      "name": "execute_recovery",
+      "discriminator": [203, 133, 133, 228, 153, 121, 182, 237],
+      "accounts": [
+        { "name": "executor", "signer": true },
+        { "name": "config" },
+        { "name": "domain_record", "writable": true },
+        { "name": "recovery_case", "writable": true }
+      ],
+      "args": [{ "name": "args", "type": { "defined": { "name": "maivw_registry::recovery::RecoveryCaseArgs" } } }]
     }
   ],
   "accounts": [
@@ -227,7 +266,9 @@
     { "name": "maivw_registry::state::SlashCase", "discriminator": [208, 69, 223, 189, 133, 168, 35, 50] },
     { "name": "maivw_registry::state::ReporterPool", "discriminator": [9, 244, 234, 67, 88, 54, 124, 111] },
     { "name": "maivw_registry::state::ReporterClaim", "discriminator": [244, 75, 111, 100, 3, 14, 130, 40] },
-    { "name": "maivw_registry::state::PendingAdmin", "discriminator": [220, 45, 135, 16, 196, 153, 181, 56] }
+    { "name": "maivw_registry::state::PendingAdmin", "discriminator": [220, 45, 135, 16, 196, 153, 181, 56] },
+    { "name": "maivw_registry::state::RecoveryCase", "discriminator": [107, 167, 197, 89, 201, 180, 222, 10] },
+    { "name": "maivw_registry::state::RecoveryReceipt", "discriminator": [168, 128, 135, 250, 136, 3, 133, 138] }
   ],
   "events": [
     { "name": "maivw_registry::StakeToppedUp", "discriminator": [198, 194, 194, 30, 127, 26, 161, 239] },
@@ -240,7 +281,10 @@
     { "name": "maivw_registry::EndpointUpdated", "discriminator": [244, 122, 130, 126, 237, 133, 30, 55] },
     { "name": "maivw_registry::TlsFingerprintUpdated", "discriminator": [78, 184, 100, 140, 108, 68, 100, 226] },
     { "name": "maivw_registry::DomainAdminProposed", "discriminator": [206, 218, 181, 80, 26, 54, 49, 180] },
-    { "name": "maivw_registry::DomainAdminUpdated", "discriminator": [7, 234, 184, 68, 103, 97, 128, 251] }
+    { "name": "maivw_registry::DomainAdminUpdated", "discriminator": [7, 234, 184, 68, 103, 97, 128, 251] },
+    { "name": "maivw_registry::RecoveryRequested", "discriminator": [127, 3, 38, 230, 145, 28, 53, 141] },
+    { "name": "maivw_registry::RecoveryCancelled", "discriminator": [191, 25, 236, 86, 25, 77, 117, 96] },
+    { "name": "maivw_registry::RecoveryExecuted", "discriminator": [161, 218, 6, 191, 85, 217, 12, 144] }
   ],
   "types": [
     {
@@ -256,6 +300,24 @@
       "type": { "kind": "struct", "fields": [
         { "name": "domain_hash", "type": { "array": ["u8", 32] } },
         { "name": "global_domain_epoch", "type": "u64" }
+      ] }
+    },
+    {
+      "name": "maivw_registry::recovery::RequestRecoveryArgs",
+      "type": { "kind": "struct", "fields": [
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "global_domain_epoch", "type": "u64" },
+        { "name": "nonce", "type": { "array": ["u8", 32] } },
+        { "name": "new_admin", "type": "pubkey" },
+        { "name": "new_operational_key", "type": { "array": ["u8", 32] } }
+      ] }
+    },
+    {
+      "name": "maivw_registry::recovery::RecoveryCaseArgs",
+      "type": { "kind": "struct", "fields": [
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "global_domain_epoch", "type": "u64" },
+        { "name": "nonce", "type": { "array": ["u8", 32] } }
       ] }
     },
     {
@@ -398,6 +460,11 @@
       "name": "maivw_registry::state::PendingAdminStatus",
       "repr": { "kind": "rust" },
       "type": { "kind": "enum", "variants": [{ "name": "Pending" }, { "name": "Accepted" }] }
+    },
+    {
+      "name": "maivw_registry::state::RecoveryStatus",
+      "repr": { "kind": "rust" },
+      "type": { "kind": "enum", "variants": [{ "name": "Pending" }, { "name": "Cancelled" }, { "name": "Executed" }] }
     },
     {
       "name": "maivw_registry::state::KeyAlgorithm",
@@ -566,6 +633,43 @@
       ] }
     },
     {
+      "name": "maivw_registry::state::RecoveryCase",
+      "type": { "kind": "struct", "fields": [
+        { "name": "schema_version", "type": "u16" },
+        { "name": "bump", "type": "u8" },
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "global_domain_epoch", "type": "u64" },
+        { "name": "nonce", "type": { "array": ["u8", 32] } },
+        { "name": "attestation_digest", "type": { "array": ["u8", 32] } },
+        { "name": "new_admin", "type": "pubkey" },
+        { "name": "new_operational_key", "type": { "array": ["u8", 32] } },
+        { "name": "requested_by", "type": "pubkey" },
+        { "name": "requested_at", "type": "i64" },
+        { "name": "execute_after", "type": "i64" },
+        { "name": "status", "type": { "defined": { "name": "maivw_registry::state::RecoveryStatus" } } },
+        { "name": "cancelled_by", "type": "pubkey" },
+        { "name": "cancelled_at", "type": "i64" },
+        { "name": "executed_by", "type": "pubkey" },
+        { "name": "executed_at", "type": "i64" },
+        { "name": "executed_epoch", "type": "u64" },
+        { "name": "executed_sequence", "type": "u64" }
+      ] }
+    },
+    {
+      "name": "maivw_registry::state::RecoveryReceipt",
+      "type": { "kind": "struct", "fields": [
+        { "name": "schema_version", "type": "u16" },
+        { "name": "bump", "type": "u8" },
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "global_domain_epoch", "type": "u64" },
+        { "name": "nonce", "type": { "array": ["u8", 32] } },
+        { "name": "attestation_digest", "type": { "array": ["u8", 32] } },
+        { "name": "recovery_case", "type": "pubkey" },
+        { "name": "consumed_by", "type": "pubkey" },
+        { "name": "consumed_at", "type": "i64" }
+      ] }
+    },
+    {
       "name": "maivw_registry::StakeToppedUp",
       "type": { "kind": "struct", "fields": [
         { "name": "domain_hash", "type": { "array": ["u8", 32] } },
@@ -699,6 +803,46 @@
         { "name": "new_admin", "type": "pubkey" },
         { "name": "timestamp", "type": "i64" }
       ] }
+    },
+    {
+      "name": "maivw_registry::RecoveryRequested",
+      "type": { "kind": "struct", "fields": [
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "global_domain_epoch", "type": "u64" },
+        { "name": "origin_sequence", "type": "u64" },
+        { "name": "nonce", "type": { "array": ["u8", 32] } },
+        { "name": "new_admin", "type": "pubkey" },
+        { "name": "new_operational_key", "type": { "array": ["u8", 32] } },
+        { "name": "requested_by", "type": "pubkey" },
+        { "name": "requested_at", "type": "i64" },
+        { "name": "execute_after", "type": "i64" }
+      ] }
+    },
+    {
+      "name": "maivw_registry::RecoveryCancelled",
+      "type": { "kind": "struct", "fields": [
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "global_domain_epoch", "type": "u64" },
+        { "name": "nonce", "type": { "array": ["u8", 32] } },
+        { "name": "cancelled_by", "type": "pubkey" },
+        { "name": "timestamp", "type": "i64" }
+      ] }
+    },
+    {
+      "name": "maivw_registry::RecoveryExecuted",
+      "type": { "kind": "struct", "fields": [
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "previous_global_domain_epoch", "type": "u64" },
+        { "name": "global_domain_epoch", "type": "u64" },
+        { "name": "origin_sequence", "type": "u64" },
+        { "name": "nonce", "type": { "array": ["u8", 32] } },
+        { "name": "old_admin", "type": "pubkey" },
+        { "name": "new_admin", "type": "pubkey" },
+        { "name": "old_operational_key", "type": { "array": ["u8", 32] } },
+        { "name": "new_operational_key", "type": { "array": ["u8", 32] } },
+        { "name": "executed_by", "type": "pubkey" },
+        { "name": "timestamp", "type": "i64" }
+      ] }
     }
   ],
   "errors": [
@@ -748,6 +892,12 @@
     { "code": 6043, "name": "InvalidEndpoint", "msg": "endpoint is empty or exceeds the protocol limit" },
     { "code": 6044, "name": "InvalidNewDomainAdmin", "msg": "new domain admin must be non-zero and different from the current admin" },
     { "code": 6045, "name": "InvalidPendingAdmin", "msg": "pending domain admin proposal is invalid" },
-    { "code": 6046, "name": "UnauthorizedPendingAdmin", "msg": "signer is not the pending domain admin candidate" }
+    { "code": 6046, "name": "UnauthorizedPendingAdmin", "msg": "signer is not the pending domain admin candidate" },
+    { "code": 6047, "name": "InvalidRecoveryAttestation", "msg": "recovery attestation does not authorize this request" },
+    { "code": 6048, "name": "InvalidRecoveryPayload", "msg": "recovery payload does not match the requested keys" },
+    { "code": 6049, "name": "MissingRecoveryEvidence", "msg": "recovery attestation must carry non-zero evidence" },
+    { "code": 6050, "name": "InvalidRecoveryCase", "msg": "recovery case is invalid or unavailable" },
+    { "code": 6051, "name": "InvalidRecoveryReceipt", "msg": "recovery authorization receipt is invalid" },
+    { "code": 6052, "name": "RecoveryNotReady", "msg": "recovery timelock has not elapsed" }
   ]
 }
