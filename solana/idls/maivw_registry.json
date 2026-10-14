@@ -106,6 +106,22 @@
       ]
     },
     {
+      "name": "revoke_mirror",
+      "discriminator": [105, 99, 35, 241, 103, 60, 119, 105],
+      "accounts": [
+        { "name": "relayer", "writable": true, "signer": true },
+        { "name": "config" },
+        { "name": "domain_record", "writable": true },
+        { "name": "attestation_receipt", "writable": true },
+        { "name": "instructions" },
+        { "name": "system_program" }
+      ],
+      "args": [
+        { "name": "args", "type": { "defined": { "name": "maivw_registry::mirror::RevokeMirrorArgs" } } },
+        { "name": "envelope", "type": "bytes" }
+      ]
+    },
+    {
       "name": "top_up_stake",
       "discriminator": [152, 222, 110, 73, 38, 18, 139, 17],
       "accounts": [
@@ -365,7 +381,8 @@
     { "name": "maivw_registry::DomainReclaimed", "discriminator": [85, 68, 87, 69, 86, 212, 238, 72] },
     { "name": "maivw_registry::IntentBatchRegistered", "discriminator": [229, 31, 187, 253, 188, 133, 17, 19] },
     { "name": "maivw_registry::MirrorRegistered", "discriminator": [15, 45, 191, 174, 234, 253, 143, 85] },
-    { "name": "maivw_registry::MirrorSynchronized", "discriminator": [35, 80, 138, 18, 252, 66, 148, 31] }
+    { "name": "maivw_registry::MirrorSynchronized", "discriminator": [35, 80, 138, 18, 252, 66, 148, 31] },
+    { "name": "maivw_registry::MirrorRevoked", "discriminator": [209, 24, 122, 168, 22, 152, 49, 139] }
   ],
   "types": [
     {
@@ -447,6 +464,26 @@
     },
     {
       "name": "maivw_registry::mirror::SyncMirrorArgs",
+      "type": { "kind": "struct", "fields": [
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "attestation_nonce", "type": { "array": ["u8", 32] } },
+        { "name": "domain", "type": "string" },
+        { "name": "origin_family", "type": { "defined": { "name": "maivw_registry::state::NetworkFamily" } } },
+        { "name": "operational_key", "type": { "defined": { "name": "maivw_registry::state::KeyDescriptor" } } },
+        { "name": "admin_key", "type": { "defined": { "name": "maivw_registry::state::KeyDescriptor" } } },
+        { "name": "endpoint", "type": "string" },
+        { "name": "tls_fingerprint", "type": { "array": ["u8", 32] } },
+        { "name": "status", "type": { "defined": { "name": "maivw_registry::state::DomainStatus" } } },
+        { "name": "is_provider", "type": "bool" },
+        { "name": "provider_tier", "type": { "defined": { "name": "maivw_registry::state::ProviderTier" } } },
+        { "name": "strikes", "type": "u32" },
+        { "name": "registration_time", "type": "u64" },
+        { "name": "attested_stake", "type": "u64" },
+        { "name": "attested_daily_limit", "type": "u64" }
+      ] }
+    },
+    {
+      "name": "maivw_registry::mirror::RevokeMirrorArgs",
       "type": { "kind": "struct", "fields": [
         { "name": "domain_hash", "type": { "array": ["u8", 32] } },
         { "name": "attestation_nonce", "type": { "array": ["u8", 32] } },
@@ -1092,6 +1129,23 @@
         { "name": "provider_tier", "type": { "defined": { "name": "maivw_registry::state::ProviderTier" } } },
         { "name": "attested_stake", "type": "u64" },
         { "name": "attested_daily_limit", "type": "u64" },
+        { "name": "origin_transaction", "type": { "array": ["u8", 32] } },
+        { "name": "attestation_nonce", "type": { "array": ["u8", 32] } },
+        { "name": "relayer", "type": "pubkey" },
+        { "name": "timestamp", "type": "i64" }
+      ] }
+    },
+    {
+      "name": "maivw_registry::MirrorRevoked",
+      "type": { "kind": "struct", "fields": [
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "origin_family", "type": { "defined": { "name": "maivw_registry::state::NetworkFamily" } } },
+        { "name": "origin_network_hash", "type": { "array": ["u8", 32] } },
+        { "name": "origin_registry", "type": { "array": ["u8", 32] } },
+        { "name": "previous_global_domain_epoch", "type": "u64" },
+        { "name": "previous_origin_sequence", "type": "u64" },
+        { "name": "global_domain_epoch", "type": "u64" },
+        { "name": "origin_sequence", "type": "u64" },
         { "name": "origin_transaction", "type": { "array": ["u8", 32] } },
         { "name": "attestation_nonce", "type": { "array": ["u8", 32] } },
         { "name": "relayer", "type": "pubkey" },

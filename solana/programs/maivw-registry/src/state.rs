@@ -1310,6 +1310,9 @@ mod tests {
         evm_mirror.admin_key.value[..12].fill(0);
         assert!(evm_mirror.validate(local_network, local_registry).is_ok());
 
+        evm_mirror.status = DomainStatus::Revoked;
+        assert!(evm_mirror.validate(local_network, local_registry).is_ok());
+
         evm_mirror.current_stake = 1;
         assert!(evm_mirror.validate(local_network, local_registry).is_err());
     }

@@ -157,6 +157,58 @@ pub fn verify_sync_mirror(
 }
 
 #[allow(clippy::too_many_arguments)]
+pub fn verify_revoke_mirror(
+    config: &RegistryConfig,
+    instructions_sysvar: &AccountInfo<'_>,
+    envelope: &[u8],
+    expected_domain_hash: [u8; 32],
+    expected_origin_network_hash: [u8; 32],
+    expected_origin_registry: [u8; 32],
+    expected_payload_hash: [u8; 32],
+    expected_nonce: [u8; 32],
+) -> Result<AttestationV1> {
+    let attestation = verify(config, instructions_sysvar, envelope)?;
+    validate_revoke_mirror(
+        &attestation,
+        expected_domain_hash,
+        expected_origin_network_hash,
+        expected_origin_registry,
+        expected_payload_hash,
+        expected_nonce,
+    )?;
+    Ok(attestation)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn validate_revoke_mirror(
+    attestation: &AttestationV1,
+    expected_domain_hash: [u8; 32],
+    expected_origin_network_hash: [u8; 32],
+    expected_origin_registry: [u8; 32],
+    expected_payload_hash: [u8; 32],
+    expected_nonce: [u8; 32],
+) -> Result<()> {
+    require!(
+        matches!(attestation.kind, AttestationKind::StateAttestation)
+            && matches!(attestation.action, AttestationAction::RevokeMirror)
+            && attestation.domain_hash == expected_domain_hash
+            && attestation.nonce == expected_nonce,
+        MaivwError::InvalidMirrorAttestation
+    );
+    require!(
+        attestation.origin_network_hash == expected_origin_network_hash
+            && attestation.origin_registry == expected_origin_registry
+            && attestation.evidence_hash != [0; 32],
+        MaivwError::MirrorOriginMismatch
+    );
+    require!(
+        attestation.payload_hash == expected_payload_hash,
+        MaivwError::InvalidMirrorPayload
+    );
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
 fn validate_sync_mirror(
     attestation: &AttestationV1,
     expected_domain_hash: [u8; 32],
@@ -690,6 +742,45 @@ mod tests {
         sync.payload_hash = [9; 32];
         assert!(validate_sync_mirror(
             &sync,
+            [3; 32],
+            [4; 32],
+            [5; 32],
+            [7; 32],
+            [6; 32],
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn mirror_revoke_requires_its_action_and_the_immutable_origin() {
+        let mut revoke = envelope();
+        revoke.action = AttestationAction::RevokeMirror;
+
+        assert!(validate_revoke_mirror(
+            &revoke,
+            [3; 32],
+            [4; 32],
+            [5; 32],
+            [7; 32],
+            [6; 32],
+        )
+        .is_ok());
+
+        revoke.action = AttestationAction::SyncMirror;
+        assert!(validate_revoke_mirror(
+            &revoke,
+            [3; 32],
+            [4; 32],
+            [5; 32],
+            [7; 32],
+            [6; 32],
+        )
+        .is_err());
+
+        revoke.action = AttestationAction::RevokeMirror;
+        revoke.origin_network_hash = [9; 32];
+        assert!(validate_revoke_mirror(
+            &revoke,
             [3; 32],
             [4; 32],
             [5; 32],

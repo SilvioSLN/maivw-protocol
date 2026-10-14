@@ -102,3 +102,17 @@ timestamp de registro, stake/limite informativos e referência da transação de
 origem. Ela nunca altera a identidade da origem, cria stake local ou recebe
 tokens. Estado `Revoked` entra somente por `revoke_mirror`; um sync pode reativar
 um tombstone futuro apenas com versão estritamente superior.
+
+## Revogação e tombstone
+
+`revoke_mirror` exige ação `RevokeMirror`, payload com `status = Revoked`, mesma
+origem imutável e versão estritamente superior. A instrução não fecha o
+`DomainRecord`: ela substitui o estado replicado, grava a nova referência de
+transação e conserva domínio, origem, epoch e sequence como tombstone
+auditável.
+
+O tombstone continua sendo `RecordKind::Mirror`. Por isso não pode executar
+operações locais de origem, usar chaves administrativas locais, participar de
+slashing ou ser recuperado por `reclaim_domain`. Uma atestação posterior da
+mesma origem pode reativá-lo via `sync_mirror`, desde que tenha versão
+estritamente superior.

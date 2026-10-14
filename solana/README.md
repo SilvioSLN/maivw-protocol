@@ -171,6 +171,12 @@ Versões iguais, regressões e troca de origem falham antes de qualquer mutaçã
 Cada atualização consome um novo `MirrorAttestationReceipt`, substitui todo o
 estado replicado de forma atômica e conserva o stake local em zero.
 
+`revoke_mirror` aplica somente um payload `Revoked` de versão superior e mantém
+o `DomainRecord` como tombstone. A origem, versão e referência da transação
+continuam auditáveis; o registro permanece `Mirror`, portanto não pode executar
+operações locais nem `reclaim_domain`. Uma reativação posterior exige
+`sync_mirror` da mesma origem com uma versão ainda maior.
+
 ## Slashing escalável
 
 `propose_slash` exige o oracle configurado e cria uma proposta vinculada ao

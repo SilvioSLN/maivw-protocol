@@ -45,6 +45,25 @@ pub struct SyncMirrorArgs {
     pub attested_daily_limit: u64,
 }
 
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
+pub struct RevokeMirrorArgs {
+    pub domain_hash: [u8; 32],
+    pub attestation_nonce: [u8; 32],
+    pub domain: String,
+    pub origin_family: NetworkFamily,
+    pub operational_key: KeyDescriptor,
+    pub admin_key: KeyDescriptor,
+    pub endpoint: String,
+    pub tls_fingerprint: [u8; 32],
+    pub status: DomainStatus,
+    pub is_provider: bool,
+    pub provider_tier: ProviderTier,
+    pub strikes: u32,
+    pub registration_time: u64,
+    pub attested_stake: u64,
+    pub attested_daily_limit: u64,
+}
+
 pub fn validate_register_mirror(args: &RegisterMirrorArgs) -> Result<()> {
     validate_mirror_state(
         args.domain_hash,
@@ -58,6 +77,7 @@ pub fn validate_register_mirror(args: &RegisterMirrorArgs) -> Result<()> {
         args.provider_tier,
         args.registration_time,
         args.attested_daily_limit,
+        false,
     )
 }
 
@@ -74,6 +94,24 @@ pub fn validate_sync_mirror(args: &SyncMirrorArgs) -> Result<()> {
         args.provider_tier,
         args.registration_time,
         args.attested_daily_limit,
+        false,
+    )
+}
+
+pub fn validate_revoke_mirror(args: &RevokeMirrorArgs) -> Result<()> {
+    validate_mirror_state(
+        args.domain_hash,
+        &args.domain,
+        args.origin_family,
+        args.operational_key,
+        args.admin_key,
+        &args.endpoint,
+        args.status,
+        args.is_provider,
+        args.provider_tier,
+        args.registration_time,
+        args.attested_daily_limit,
+        true,
     )
 }
 
@@ -90,6 +128,7 @@ fn validate_mirror_state(
     provider_tier: ProviderTier,
     registration_time: u64,
     attested_daily_limit: u64,
+    require_revoked: bool,
 ) -> Result<()> {
     require!(
         domain_hash == maivw_attestation::keccak256(domain.as_bytes()),
@@ -100,7 +139,7 @@ fn validate_mirror_state(
         MaivwError::InvalidEndpoint
     );
     require!(
-        !matches!(status, DomainStatus::Revoked),
+        matches!(status, DomainStatus::Revoked) == require_revoked,
         MaivwError::InvalidMirrorState
     );
     validate_typed_key(origin_family, operational_key)?;
@@ -138,6 +177,22 @@ pub fn mirror_state_payload_hash(args: &RegisterMirrorArgs) -> [u8; 32] {
 }
 
 pub fn sync_mirror_payload_hash(args: &SyncMirrorArgs) -> [u8; 32] {
+    hash_mirror_state(
+        args.operational_key,
+        args.admin_key,
+        &args.endpoint,
+        args.tls_fingerprint,
+        args.status,
+        args.is_provider,
+        args.provider_tier,
+        args.strikes,
+        args.registration_time,
+        args.attested_stake,
+        args.attested_daily_limit,
+    )
+}
+
+pub fn revoke_mirror_payload_hash(args: &RevokeMirrorArgs) -> [u8; 32] {
     hash_mirror_state(
         args.operational_key,
         args.admin_key,
@@ -370,5 +425,52 @@ mod tests {
         assert!(validate_sync_version(7, 11, 7, 11).is_err());
         assert!(validate_sync_version(7, 11, 7, 10).is_err());
         assert!(validate_sync_version(7, 11, 6, u64::MAX).is_err());
+    }
+
+    #[test]
+    fn revoke_requires_revoked_state_and_uses_the_same_payload_codec() {
+        let register = args();
+        let revoke = RevokeMirrorArgs {
+            domain_hash: register.domain_hash,
+            attestation_nonce: register.attestation_nonce,
+            domain: register.domain,
+            origin_family: register.origin_family,
+            operational_key: register.operational_key,
+            admin_key: register.admin_key,
+            endpoint: register.endpoint,
+            tls_fingerprint: register.tls_fingerprint,
+            status: DomainStatus::Revoked,
+            is_provider: register.is_provider,
+            provider_tier: register.provider_tier,
+            strikes: register.strikes,
+            registration_time: register.registration_time,
+            attested_stake: register.attested_stake,
+            attested_daily_limit: register.attested_daily_limit,
+        };
+
+        assert!(validate_revoke_mirror(&revoke).is_ok());
+        let mut not_revoked = revoke.clone();
+        not_revoked.status = DomainStatus::Suspended;
+        assert!(validate_revoke_mirror(&not_revoked).is_err());
+        assert_eq!(
+            sync_mirror_payload_hash(&SyncMirrorArgs {
+                domain_hash: revoke.domain_hash,
+                attestation_nonce: revoke.attestation_nonce,
+                domain: revoke.domain.clone(),
+                origin_family: revoke.origin_family,
+                operational_key: revoke.operational_key,
+                admin_key: revoke.admin_key,
+                endpoint: revoke.endpoint.clone(),
+                tls_fingerprint: revoke.tls_fingerprint,
+                status: DomainStatus::Revoked,
+                is_provider: revoke.is_provider,
+                provider_tier: revoke.provider_tier,
+                strikes: revoke.strikes,
+                registration_time: revoke.registration_time,
+                attested_stake: revoke.attested_stake,
+                attested_daily_limit: revoke.attested_daily_limit,
+            }),
+            revoke_mirror_payload_hash(&revoke)
+        );
     }
 }
