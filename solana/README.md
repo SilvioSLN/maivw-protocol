@@ -165,6 +165,12 @@ somente transaction fee e rent. O payload de 448 bytes é compatível com
 `MAIVWMirrorRegistryV2.hashMirrorStateV2` e está especificado em
 [`SOLANA_MIRROR_STATE_V2.md`](../specs/multichain/SOLANA_MIRROR_STATE_V2.md).
 
+`sync_mirror` exige a mesma origem imutável do cadastro e aceita apenas uma
+versão lexicograficamente superior em `(globalDomainEpoch, originSequence)`.
+Versões iguais, regressões e troca de origem falham antes de qualquer mutação.
+Cada atualização consome um novo `MirrorAttestationReceipt`, substitui todo o
+estado replicado de forma atômica e conserva o stake local em zero.
+
 ## Slashing escalável
 
 `propose_slash` exige o oracle configurado e cria uma proposta vinculada ao

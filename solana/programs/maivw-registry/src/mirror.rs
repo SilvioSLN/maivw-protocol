@@ -26,55 +26,181 @@ pub struct RegisterMirrorArgs {
     pub attested_daily_limit: u64,
 }
 
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
+pub struct SyncMirrorArgs {
+    pub domain_hash: [u8; 32],
+    pub attestation_nonce: [u8; 32],
+    pub domain: String,
+    pub origin_family: NetworkFamily,
+    pub operational_key: KeyDescriptor,
+    pub admin_key: KeyDescriptor,
+    pub endpoint: String,
+    pub tls_fingerprint: [u8; 32],
+    pub status: DomainStatus,
+    pub is_provider: bool,
+    pub provider_tier: ProviderTier,
+    pub strikes: u32,
+    pub registration_time: u64,
+    pub attested_stake: u64,
+    pub attested_daily_limit: u64,
+}
+
 pub fn validate_register_mirror(args: &RegisterMirrorArgs) -> Result<()> {
+    validate_mirror_state(
+        args.domain_hash,
+        &args.domain,
+        args.origin_family,
+        args.operational_key,
+        args.admin_key,
+        &args.endpoint,
+        args.status,
+        args.is_provider,
+        args.provider_tier,
+        args.registration_time,
+        args.attested_daily_limit,
+    )
+}
+
+pub fn validate_sync_mirror(args: &SyncMirrorArgs) -> Result<()> {
+    validate_mirror_state(
+        args.domain_hash,
+        &args.domain,
+        args.origin_family,
+        args.operational_key,
+        args.admin_key,
+        &args.endpoint,
+        args.status,
+        args.is_provider,
+        args.provider_tier,
+        args.registration_time,
+        args.attested_daily_limit,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn validate_mirror_state(
+    domain_hash: [u8; 32],
+    domain: &str,
+    origin_family: NetworkFamily,
+    operational_key: KeyDescriptor,
+    admin_key: KeyDescriptor,
+    endpoint: &str,
+    status: DomainStatus,
+    is_provider: bool,
+    provider_tier: ProviderTier,
+    registration_time: u64,
+    attested_daily_limit: u64,
+) -> Result<()> {
     require!(
-        args.domain_hash == maivw_attestation::keccak256(args.domain.as_bytes()),
+        domain_hash == maivw_attestation::keccak256(domain.as_bytes()),
         MaivwError::InvalidDomainHash
     );
     require!(
-        !args.endpoint.is_empty() && args.endpoint.len() <= crate::constants::MAX_ENDPOINT_LEN,
+        !endpoint.is_empty() && endpoint.len() <= crate::constants::MAX_ENDPOINT_LEN,
         MaivwError::InvalidEndpoint
     );
     require!(
-        !matches!(args.status, DomainStatus::Revoked),
+        !matches!(status, DomainStatus::Revoked),
         MaivwError::InvalidMirrorState
     );
-    validate_typed_key(args.origin_family, args.operational_key)?;
-    validate_typed_key(args.origin_family, args.admin_key)?;
+    validate_typed_key(origin_family, operational_key)?;
+    validate_typed_key(origin_family, admin_key)?;
     require!(
-        (args.is_provider
-            && !matches!(args.provider_tier, ProviderTier::None)
-            && args.attested_daily_limit > 0)
-            || (!args.is_provider
-                && matches!(args.provider_tier, ProviderTier::None)
-                && args.attested_daily_limit == 0),
+        (is_provider
+            && !matches!(provider_tier, ProviderTier::None)
+            && attested_daily_limit > 0)
+            || (!is_provider
+                && matches!(provider_tier, ProviderTier::None)
+                && attested_daily_limit == 0),
         MaivwError::InvalidMirrorState
     );
     require!(
-        i64::try_from(args.registration_time).is_ok(),
+        i64::try_from(registration_time).is_ok(),
         MaivwError::InvalidMirrorState
     );
     Ok(())
 }
 
 pub fn mirror_state_payload_hash(args: &RegisterMirrorArgs) -> [u8; 32] {
+    hash_mirror_state(
+        args.operational_key,
+        args.admin_key,
+        &args.endpoint,
+        args.tls_fingerprint,
+        args.status,
+        args.is_provider,
+        args.provider_tier,
+        args.strikes,
+        args.registration_time,
+        args.attested_stake,
+        args.attested_daily_limit,
+    )
+}
+
+pub fn sync_mirror_payload_hash(args: &SyncMirrorArgs) -> [u8; 32] {
+    hash_mirror_state(
+        args.operational_key,
+        args.admin_key,
+        &args.endpoint,
+        args.tls_fingerprint,
+        args.status,
+        args.is_provider,
+        args.provider_tier,
+        args.strikes,
+        args.registration_time,
+        args.attested_stake,
+        args.attested_daily_limit,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn hash_mirror_state(
+    operational_key: KeyDescriptor,
+    admin_key: KeyDescriptor,
+    endpoint: &str,
+    tls_fingerprint: [u8; 32],
+    status: DomainStatus,
+    is_provider: bool,
+    provider_tier: ProviderTier,
+    strikes: u32,
+    registration_time: u64,
+    attested_stake: u64,
+    attested_daily_limit: u64,
+) -> [u8; 32] {
     let mut encoded = Vec::with_capacity(14 * 32);
     encoded.extend_from_slice(&maivw_attestation::keccak256(MIRROR_STATE_V2_TYPE));
-    push_u8_slot(&mut encoded, args.operational_key.algorithm as u8);
-    encoded.extend_from_slice(&args.operational_key.value);
-    push_u8_slot(&mut encoded, args.admin_key.algorithm as u8);
-    encoded.extend_from_slice(&args.admin_key.value);
-    encoded.extend_from_slice(&maivw_attestation::keccak256(args.endpoint.as_bytes()));
-    encoded.extend_from_slice(&args.tls_fingerprint);
-    push_u8_slot(&mut encoded, status_wire_value(args.status));
-    push_u8_slot(&mut encoded, u8::from(args.is_provider));
-    push_u8_slot(&mut encoded, args.provider_tier as u8);
-    push_u64_slot(&mut encoded, u64::from(args.strikes));
-    push_u64_slot(&mut encoded, args.registration_time);
-    push_u64_slot(&mut encoded, args.attested_stake);
-    push_u64_slot(&mut encoded, args.attested_daily_limit);
+    push_u8_slot(&mut encoded, operational_key.algorithm as u8);
+    encoded.extend_from_slice(&operational_key.value);
+    push_u8_slot(&mut encoded, admin_key.algorithm as u8);
+    encoded.extend_from_slice(&admin_key.value);
+    encoded.extend_from_slice(&maivw_attestation::keccak256(endpoint.as_bytes()));
+    encoded.extend_from_slice(&tls_fingerprint);
+    push_u8_slot(&mut encoded, status_wire_value(status));
+    push_u8_slot(&mut encoded, u8::from(is_provider));
+    push_u8_slot(&mut encoded, provider_tier as u8);
+    push_u64_slot(&mut encoded, u64::from(strikes));
+    push_u64_slot(&mut encoded, registration_time);
+    push_u64_slot(&mut encoded, attested_stake);
+    push_u64_slot(&mut encoded, attested_daily_limit);
     debug_assert_eq!(encoded.len(), 14 * 32);
     maivw_attestation::keccak256(&encoded)
+}
+
+pub fn validate_sync_version(
+    current_epoch: u64,
+    current_sequence: u64,
+    incoming_epoch: u64,
+    incoming_sequence: u64,
+) -> Result<()> {
+    if incoming_epoch == current_epoch && incoming_sequence == current_sequence {
+        return err!(MaivwError::MirrorVersionConflict);
+    }
+    require!(
+        incoming_epoch > current_epoch
+            || (incoming_epoch == current_epoch && incoming_sequence > current_sequence),
+        MaivwError::MirrorVersionRegression
+    );
+    Ok(())
 }
 
 fn validate_typed_key(origin_family: NetworkFamily, key: KeyDescriptor) -> Result<()> {
@@ -207,5 +333,42 @@ mod tests {
         assert_eq!(status_wire_value(DomainStatus::Active), 1);
         assert_eq!(status_wire_value(DomainStatus::Suspended), 2);
         assert_eq!(status_wire_value(DomainStatus::Revoked), 3);
+    }
+
+    #[test]
+    fn register_and_sync_share_the_exact_state_payload_codec() {
+        let register = args();
+        let sync = SyncMirrorArgs {
+            domain_hash: register.domain_hash,
+            attestation_nonce: register.attestation_nonce,
+            domain: register.domain.clone(),
+            origin_family: register.origin_family,
+            operational_key: register.operational_key,
+            admin_key: register.admin_key,
+            endpoint: register.endpoint.clone(),
+            tls_fingerprint: register.tls_fingerprint,
+            status: register.status,
+            is_provider: register.is_provider,
+            provider_tier: register.provider_tier,
+            strikes: register.strikes,
+            registration_time: register.registration_time,
+            attested_stake: register.attested_stake,
+            attested_daily_limit: register.attested_daily_limit,
+        };
+
+        assert!(validate_sync_mirror(&sync).is_ok());
+        assert_eq!(
+            mirror_state_payload_hash(&register),
+            sync_mirror_payload_hash(&sync)
+        );
+    }
+
+    #[test]
+    fn sync_requires_a_strictly_newer_lexicographic_version() {
+        assert!(validate_sync_version(7, 11, 7, 12).is_ok());
+        assert!(validate_sync_version(7, 11, 8, 0).is_ok());
+        assert!(validate_sync_version(7, 11, 7, 11).is_err());
+        assert!(validate_sync_version(7, 11, 7, 10).is_err());
+        assert!(validate_sync_version(7, 11, 6, u64::MAX).is_err());
     }
 }

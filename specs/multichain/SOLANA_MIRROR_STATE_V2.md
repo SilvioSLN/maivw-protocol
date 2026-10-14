@@ -77,3 +77,28 @@ O relayer paga transaction fee e rent dos PDAs `DomainRecord` e
 local. `attestedStake` e `attestedDailyLimit` são somente informativos;
 `currentStake` e `originalRegistrationAmount` permanecem zero no destino.
 
+## Sincronização
+
+`sync_mirror` reutiliza exatamente o mesmo `payloadHash`, mas exige ação
+`SyncMirror`. O domínio precisa existir como `RecordKind::Mirror` e a origem é
+imutável: família, network hash e registry devem coincidir com o cadastro.
+
+A versão é comparada lexicograficamente:
+
+```text
+incoming > current quando
+  incoming.epoch > current.epoch
+  ou
+  incoming.epoch == current.epoch e incoming.sequence > current.sequence
+```
+
+Epoch ou sequence regressivos são rejeitados. A mesma versão também é
+rejeitada, mesmo com outro nonce; cada sincronização aplicada deve representar
+uma transição nova da origem. O PDA de recibo continua vinculado ao nonce e
+impede a reapresentação da mesma autorização.
+
+Uma sincronização atualiza chaves, endpoint, TLS, status, tier, strikes,
+timestamp de registro, stake/limite informativos e referência da transação de
+origem. Ela nunca altera a identidade da origem, cria stake local ou recebe
+tokens. Estado `Revoked` entra somente por `revoke_mirror`; um sync pode reativar
+um tombstone futuro apenas com versão estritamente superior.

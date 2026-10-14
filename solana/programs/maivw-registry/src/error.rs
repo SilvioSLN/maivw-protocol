@@ -134,4 +134,10 @@ pub enum MaivwError {
     InvalidTypedKey,
     #[msg("mirror attestation receipt is invalid")]
     InvalidMirrorReceipt,
+    #[msg("mirror attestation origin does not match the registered origin")]
+    MirrorOriginMismatch,
+    #[msg("mirror version regresses the registered epoch or sequence")]
+    MirrorVersionRegression,
+    #[msg("mirror version must be strictly newer than the registered version")]
+    MirrorVersionConflict,
 }

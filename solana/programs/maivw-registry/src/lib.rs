@@ -46,7 +46,10 @@ use economics::{
 };
 use error::MaivwError;
 use intent_batch::{authorize_intent_batch, validate_intent_batch, RegisterIntentBatchArgs};
-use mirror::{mirror_state_payload_hash, validate_register_mirror, RegisterMirrorArgs};
+use mirror::{
+    mirror_state_payload_hash, sync_mirror_payload_hash, validate_register_mirror,
+    validate_sync_mirror, validate_sync_version, RegisterMirrorArgs, SyncMirrorArgs,
+};
 use provider::{top_up_transition, warning_transition, IssueWarningArgs, TopUpStakeArgs};
 use reclaim::{close_pending_processes, reclaim_payload_hash, ReclaimDomainArgs};
 use recovery::{
@@ -341,6 +344,100 @@ pub mod maivw_registry {
             origin_sequence: attestation.origin_sequence,
             operational_key: args.operational_key,
             admin_key: args.admin_key,
+            status: args.status,
+            is_provider: args.is_provider,
+            provider_tier: args.provider_tier,
+            attested_stake: args.attested_stake,
+            attested_daily_limit: args.attested_daily_limit,
+            origin_transaction: attestation.evidence_hash,
+            attestation_nonce: args.attestation_nonce,
+            relayer: ctx.accounts.relayer.key(),
+            timestamp: now,
+        });
+        Ok(())
+    }
+
+    pub fn sync_mirror(
+        ctx: Context<SyncMirror>,
+        args: SyncMirrorArgs,
+        envelope: Vec<u8>,
+    ) -> Result<()> {
+        validate_sync_mirror(&args)?;
+        let config = &ctx.accounts.config;
+        let domain = &ctx.accounts.domain_record;
+        domain.validate(config.network_hash, ID.to_bytes())?;
+        require!(
+            matches!(domain.kind, RecordKind::Mirror),
+            MaivwError::InvalidMirrorState
+        );
+        require!(
+            domain.domain == args.domain && domain.origin.family == args.origin_family,
+            MaivwError::MirrorOriginMismatch
+        );
+
+        let payload_hash = sync_mirror_payload_hash(&args);
+        let attestation = attestation::verify_sync_mirror(
+            config,
+            &ctx.accounts.instructions.to_account_info(),
+            &envelope,
+            args.domain_hash,
+            domain.origin.network_hash,
+            domain.origin_registry,
+            payload_hash,
+            args.attestation_nonce,
+        )?;
+        validate_sync_version(
+            domain.global_domain_epoch,
+            domain.origin_sequence,
+            attestation.global_domain_epoch,
+            attestation.origin_sequence,
+        )?;
+        let previous_global_domain_epoch = domain.global_domain_epoch;
+        let previous_origin_sequence = domain.origin_sequence;
+        let registration_time = i64::try_from(args.registration_time)
+            .map_err(|_| error!(MaivwError::InvalidMirrorState))?;
+        let now = Clock::get()?.unix_timestamp;
+
+        write_mirror_receipt(
+            &mut ctx.accounts.attestation_receipt,
+            ctx.bumps.attestation_receipt,
+            &attestation,
+            ctx.accounts.relayer.key(),
+            now,
+        )?;
+
+        let domain = &mut ctx.accounts.domain_record;
+        domain.operational_key = args.operational_key;
+        domain.admin_key = args.admin_key;
+        domain.endpoint = args.endpoint.clone();
+        domain.tls_fingerprint = args.tls_fingerprint;
+        domain.status = args.status;
+        domain.global_domain_epoch = attestation.global_domain_epoch;
+        domain.origin_sequence = attestation.origin_sequence;
+        domain.provider = Pubkey::default();
+        domain.provider_tier = args.provider_tier;
+        domain.strikes = args.strikes;
+        domain.created_at = registration_time;
+        domain.updated_at = now;
+        domain.attested_stake = args.attested_stake;
+        domain.attested_daily_limit = args.attested_daily_limit;
+        domain.original_registration_amount = 0;
+        domain.current_stake = 0;
+        domain.origin_transaction = TransactionReference {
+            family: args.origin_family,
+            hash: attestation.evidence_hash,
+        };
+        domain.validate(config.network_hash, ID.to_bytes())?;
+
+        emit!(MirrorSynchronized {
+            domain_hash: args.domain_hash,
+            origin_family: args.origin_family,
+            origin_network_hash: attestation.origin_network_hash,
+            origin_registry: attestation.origin_registry,
+            previous_global_domain_epoch,
+            previous_origin_sequence,
+            global_domain_epoch: attestation.global_domain_epoch,
+            origin_sequence: attestation.origin_sequence,
             status: args.status,
             is_provider: args.is_provider,
             provider_tier: args.provider_tier,
@@ -1760,6 +1857,42 @@ pub struct RegisterMirror<'info> {
 }
 
 #[derive(Accounts)]
+#[instruction(args: SyncMirrorArgs)]
+pub struct SyncMirror<'info> {
+    #[account(mut)]
+    pub relayer: Signer<'info>,
+    #[account(
+        seeds = [REGISTRY_CONFIG_SEED],
+        bump = config.bump,
+        constraint = config.active @ MaivwError::RegistryPaused
+    )]
+    pub config: Box<Account<'info, RegistryConfig>>,
+    #[account(
+        mut,
+        seeds = [DOMAIN_RECORD_SEED, args.domain_hash.as_ref()],
+        bump = domain_record.bump,
+        constraint = domain_record.domain_hash == args.domain_hash @ MaivwError::InvalidDomainHash
+    )]
+    pub domain_record: Box<Account<'info, DomainRecord>>,
+    #[account(
+        init,
+        payer = relayer,
+        space = MirrorAttestationReceipt::SPACE,
+        seeds = [
+            MIRROR_ATTESTATION_RECEIPT_SEED,
+            args.domain_hash.as_ref(),
+            args.attestation_nonce.as_ref()
+        ],
+        bump
+    )]
+    pub attestation_receipt: Box<Account<'info, MirrorAttestationReceipt>>,
+    /// CHECK: constrained to Solana's instructions sysvar address.
+    #[account(address = solana_instructions_sysvar::ID @ MaivwError::InvalidInstructionsSysvar)]
+    pub instructions: UncheckedAccount<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
 #[instruction(args: ReclaimDomainArgs)]
 pub struct ReclaimDomain<'info> {
     #[account(mut)]
@@ -2481,6 +2614,27 @@ pub struct MirrorRegistered {
     pub origin_sequence: u64,
     pub operational_key: KeyDescriptor,
     pub admin_key: KeyDescriptor,
+    pub status: DomainStatus,
+    pub is_provider: bool,
+    pub provider_tier: ProviderTier,
+    pub attested_stake: u64,
+    pub attested_daily_limit: u64,
+    pub origin_transaction: [u8; 32],
+    pub attestation_nonce: [u8; 32],
+    pub relayer: Pubkey,
+    pub timestamp: i64,
+}
+
+#[event]
+pub struct MirrorSynchronized {
+    pub domain_hash: [u8; 32],
+    pub origin_family: NetworkFamily,
+    pub origin_network_hash: [u8; 32],
+    pub origin_registry: [u8; 32],
+    pub previous_global_domain_epoch: u64,
+    pub previous_origin_sequence: u64,
+    pub global_domain_epoch: u64,
+    pub origin_sequence: u64,
     pub status: DomainStatus,
     pub is_provider: bool,
     pub provider_tier: ProviderTier,

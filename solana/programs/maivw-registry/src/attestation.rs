@@ -133,6 +133,58 @@ pub fn verify_register_mirror(
     Ok(attestation)
 }
 
+#[allow(clippy::too_many_arguments)]
+pub fn verify_sync_mirror(
+    config: &RegistryConfig,
+    instructions_sysvar: &AccountInfo<'_>,
+    envelope: &[u8],
+    expected_domain_hash: [u8; 32],
+    expected_origin_network_hash: [u8; 32],
+    expected_origin_registry: [u8; 32],
+    expected_payload_hash: [u8; 32],
+    expected_nonce: [u8; 32],
+) -> Result<AttestationV1> {
+    let attestation = verify(config, instructions_sysvar, envelope)?;
+    validate_sync_mirror(
+        &attestation,
+        expected_domain_hash,
+        expected_origin_network_hash,
+        expected_origin_registry,
+        expected_payload_hash,
+        expected_nonce,
+    )?;
+    Ok(attestation)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn validate_sync_mirror(
+    attestation: &AttestationV1,
+    expected_domain_hash: [u8; 32],
+    expected_origin_network_hash: [u8; 32],
+    expected_origin_registry: [u8; 32],
+    expected_payload_hash: [u8; 32],
+    expected_nonce: [u8; 32],
+) -> Result<()> {
+    require!(
+        matches!(attestation.kind, AttestationKind::StateAttestation)
+            && matches!(attestation.action, AttestationAction::SyncMirror)
+            && attestation.domain_hash == expected_domain_hash
+            && attestation.nonce == expected_nonce,
+        MaivwError::InvalidMirrorAttestation
+    );
+    require!(
+        attestation.origin_network_hash == expected_origin_network_hash
+            && attestation.origin_registry == expected_origin_registry
+            && attestation.evidence_hash != [0; 32],
+        MaivwError::MirrorOriginMismatch
+    );
+    require!(
+        attestation.payload_hash == expected_payload_hash,
+        MaivwError::InvalidMirrorPayload
+    );
+    Ok(())
+}
+
 fn validate_register_mirror(
     attestation: &AttestationV1,
     config: &RegistryConfig,
@@ -603,6 +655,44 @@ mod tests {
             &mirror,
             &registry,
             [3; 32],
+            [7; 32],
+            [6; 32],
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn mirror_sync_binds_the_immutable_origin_payload_nonce_and_evidence() {
+        let mut sync = envelope();
+
+        assert!(validate_sync_mirror(
+            &sync,
+            [3; 32],
+            [4; 32],
+            [5; 32],
+            [7; 32],
+            [6; 32],
+        )
+        .is_ok());
+
+        sync.origin_registry = [9; 32];
+        assert!(validate_sync_mirror(
+            &sync,
+            [3; 32],
+            [4; 32],
+            [5; 32],
+            [7; 32],
+            [6; 32],
+        )
+        .is_err());
+
+        sync.origin_registry = [5; 32];
+        sync.payload_hash = [9; 32];
+        assert!(validate_sync_mirror(
+            &sync,
+            [3; 32],
+            [4; 32],
+            [5; 32],
             [7; 32],
             [6; 32],
         )
