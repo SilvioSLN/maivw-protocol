@@ -82,4 +82,12 @@ pub enum MaivwError {
     NothingToClaim,
     #[msg("reporter claim account is invalid")]
     InvalidReporterClaim,
+    #[msg("signer does not match the domain admin key")]
+    UnauthorizedDomainAdmin,
+    #[msg("mirror records are read-only on this deployment")]
+    MirrorReadOnly,
+    #[msg("operational mail key must not be zero")]
+    InvalidOperationalKey,
+    #[msg("endpoint is empty or exceeds the protocol limit")]
+    InvalidEndpoint,
 }

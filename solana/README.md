@@ -4,7 +4,7 @@ Workspace Anchor do Registry MAIVW capaz de operar como origem canônica ou como
 espelho de uma origem EVM/Solana. A implementação é incremental; o estado deste
 marco cobre o schema base, autenticação de atestações, inicialização do registry
 e registros de origem para domínios e provedores com pagamento SPL atômico,
-warnings e slashing escalável.
+warnings, slashing escalável e atualizações administrativas de domínio.
 
 ## Toolchain fixada
 
@@ -75,6 +75,20 @@ Tokens enviados diretamente ao ATA do stake vault sem passar pelo programa são
 tratados como excedente não contabilizado: satisfazem solvência, mas não elevam
 `currentStake`. Isso impede que depósitos não solicitados bloqueiem as operações
 e evita que terceiros alterem a caução canônica fora de `top_up_stake`.
+
+## Atualizações administrativas do domínio
+
+`update_mail_key`, `update_endpoint` e `update_tls_fingerprint` aceitam somente
+a assinatura da `admin_key` Ed25519 gravada no domínio. A chave operacional não
+pode rotacionar a si própria. As instruções exigem Registry ativo, registro
+`Origin` local em status `Active` e o PDA canônico do domínio; mirrors e domínios
+suspensos ou revogados são somente leitura.
+
+A nova mail key deve ser diferente de zero e o endpoint deve conter de 1 a 512
+bytes. O fingerprint TLS ocupa 32 bytes; zero representa remoção explícita do
+fingerprint. Cada mutação atualiza `updatedAt`, incrementa exatamente uma vez o
+`originSequence` e emite evento com `globalDomainEpoch` e a nova sequence para
+ordenamento dos mirrors.
 
 ## Slashing escalável
 

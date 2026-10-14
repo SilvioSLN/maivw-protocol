@@ -8,6 +8,7 @@ use anchor_spl::{
 
 pub mod attestation;
 pub mod constants;
+pub mod domain_updates;
 pub mod economics;
 pub mod error;
 pub mod provider;
@@ -22,6 +23,10 @@ use constants::{
     REPORTER_POOL_SCHEMA_VERSION, REPORTER_POOL_SEED, SLASH_CASE_SCHEMA_VERSION, SLASH_CASE_SEED,
     STAKE_VAULT_SCHEMA_VERSION, STAKE_VAULT_SEED, SUB_IDENTITY_STRIKE_SCHEMA_VERSION,
     SUB_IDENTITY_STRIKE_SEED, TREASURY_VAULT_AUTHORITY_SEED,
+};
+use domain_updates::{
+    authorize_domain_admin, next_origin_sequence, validate_endpoint, validate_mail_key,
+    UpdateEndpointArgs, UpdateMailKeyArgs, UpdateTlsFingerprintArgs,
 };
 use economics::{
     burn_tokens_signed, slash_distribution, split_standard_fee, transfer_tokens,
@@ -766,6 +771,104 @@ pub mod maivw_registry {
         });
         Ok(())
     }
+
+    pub fn update_mail_key(ctx: Context<UpdateMailKey>, args: UpdateMailKeyArgs) -> Result<()> {
+        let config = &ctx.accounts.config;
+        let domain = &mut ctx.accounts.domain_record;
+        domain.validate(config.network_hash, ID.to_bytes())?;
+        authorize_domain_admin(
+            domain.kind,
+            domain.status,
+            domain.admin_key,
+            ctx.accounts.domain_admin.key(),
+        )?;
+        validate_mail_key(args.new_mail_key)?;
+
+        let old_mail_key = domain.operational_key.value;
+        let now = Clock::get()?.unix_timestamp;
+        domain.operational_key = KeyDescriptor {
+            algorithm: KeyAlgorithm::Ed25519SolanaPubkey,
+            value: args.new_mail_key,
+        };
+        domain.origin_sequence = next_origin_sequence(domain.origin_sequence)?;
+        domain.updated_at = now;
+        domain.validate(config.network_hash, ID.to_bytes())?;
+
+        emit!(MailKeyUpdated {
+            domain_hash: args.domain_hash,
+            global_domain_epoch: domain.global_domain_epoch,
+            origin_sequence: domain.origin_sequence,
+            domain_admin: ctx.accounts.domain_admin.key(),
+            old_mail_key,
+            new_mail_key: args.new_mail_key,
+            timestamp: now,
+        });
+        Ok(())
+    }
+
+    pub fn update_endpoint(ctx: Context<UpdateEndpoint>, args: UpdateEndpointArgs) -> Result<()> {
+        let config = &ctx.accounts.config;
+        let domain = &mut ctx.accounts.domain_record;
+        domain.validate(config.network_hash, ID.to_bytes())?;
+        authorize_domain_admin(
+            domain.kind,
+            domain.status,
+            domain.admin_key,
+            ctx.accounts.domain_admin.key(),
+        )?;
+        validate_endpoint(&args.new_endpoint)?;
+
+        let old_endpoint_hash = maivw_attestation::keccak256(domain.endpoint.as_bytes());
+        let now = Clock::get()?.unix_timestamp;
+        domain.endpoint = args.new_endpoint.clone();
+        domain.origin_sequence = next_origin_sequence(domain.origin_sequence)?;
+        domain.updated_at = now;
+        domain.validate(config.network_hash, ID.to_bytes())?;
+
+        emit!(EndpointUpdated {
+            domain_hash: args.domain_hash,
+            global_domain_epoch: domain.global_domain_epoch,
+            origin_sequence: domain.origin_sequence,
+            domain_admin: ctx.accounts.domain_admin.key(),
+            old_endpoint_hash,
+            new_endpoint: args.new_endpoint,
+            timestamp: now,
+        });
+        Ok(())
+    }
+
+    pub fn update_tls_fingerprint(
+        ctx: Context<UpdateTlsFingerprint>,
+        args: UpdateTlsFingerprintArgs,
+    ) -> Result<()> {
+        let config = &ctx.accounts.config;
+        let domain = &mut ctx.accounts.domain_record;
+        domain.validate(config.network_hash, ID.to_bytes())?;
+        authorize_domain_admin(
+            domain.kind,
+            domain.status,
+            domain.admin_key,
+            ctx.accounts.domain_admin.key(),
+        )?;
+
+        let old_tls_fingerprint = domain.tls_fingerprint;
+        let now = Clock::get()?.unix_timestamp;
+        domain.tls_fingerprint = args.new_tls_fingerprint;
+        domain.origin_sequence = next_origin_sequence(domain.origin_sequence)?;
+        domain.updated_at = now;
+        domain.validate(config.network_hash, ID.to_bytes())?;
+
+        emit!(TlsFingerprintUpdated {
+            domain_hash: args.domain_hash,
+            global_domain_epoch: domain.global_domain_epoch,
+            origin_sequence: domain.origin_sequence,
+            domain_admin: ctx.accounts.domain_admin.key(),
+            old_tls_fingerprint,
+            new_tls_fingerprint: args.new_tls_fingerprint,
+            timestamp: now,
+        });
+        Ok(())
+    }
 }
 
 #[derive(Accounts)]
@@ -1248,6 +1351,63 @@ pub struct ClaimReporterReward<'info> {
     pub system_program: Program<'info, System>,
 }
 
+#[derive(Accounts)]
+#[instruction(args: UpdateMailKeyArgs)]
+pub struct UpdateMailKey<'info> {
+    pub domain_admin: Signer<'info>,
+    #[account(
+        seeds = [REGISTRY_CONFIG_SEED],
+        bump = config.bump,
+        constraint = config.active @ MaivwError::RegistryPaused
+    )]
+    pub config: Box<Account<'info, RegistryConfig>>,
+    #[account(
+        mut,
+        seeds = [DOMAIN_RECORD_SEED, args.domain_hash.as_ref()],
+        bump = domain_record.bump,
+        constraint = domain_record.domain_hash == args.domain_hash @ MaivwError::InvalidDomainHash
+    )]
+    pub domain_record: Box<Account<'info, DomainRecord>>,
+}
+
+#[derive(Accounts)]
+#[instruction(args: UpdateEndpointArgs)]
+pub struct UpdateEndpoint<'info> {
+    pub domain_admin: Signer<'info>,
+    #[account(
+        seeds = [REGISTRY_CONFIG_SEED],
+        bump = config.bump,
+        constraint = config.active @ MaivwError::RegistryPaused
+    )]
+    pub config: Box<Account<'info, RegistryConfig>>,
+    #[account(
+        mut,
+        seeds = [DOMAIN_RECORD_SEED, args.domain_hash.as_ref()],
+        bump = domain_record.bump,
+        constraint = domain_record.domain_hash == args.domain_hash @ MaivwError::InvalidDomainHash
+    )]
+    pub domain_record: Box<Account<'info, DomainRecord>>,
+}
+
+#[derive(Accounts)]
+#[instruction(args: UpdateTlsFingerprintArgs)]
+pub struct UpdateTlsFingerprint<'info> {
+    pub domain_admin: Signer<'info>,
+    #[account(
+        seeds = [REGISTRY_CONFIG_SEED],
+        bump = config.bump,
+        constraint = config.active @ MaivwError::RegistryPaused
+    )]
+    pub config: Box<Account<'info, RegistryConfig>>,
+    #[account(
+        mut,
+        seeds = [DOMAIN_RECORD_SEED, args.domain_hash.as_ref()],
+        bump = domain_record.bump,
+        constraint = domain_record.domain_hash == args.domain_hash @ MaivwError::InvalidDomainHash
+    )]
+    pub domain_record: Box<Account<'info, DomainRecord>>,
+}
+
 #[event]
 pub struct StakeToppedUp {
     pub domain_hash: [u8; 32],
@@ -1316,6 +1476,39 @@ pub struct ReporterRewardClaimed {
     pub reporter: Pubkey,
     pub amount: u64,
     pub claimed_count: u32,
+    pub timestamp: i64,
+}
+
+#[event]
+pub struct MailKeyUpdated {
+    pub domain_hash: [u8; 32],
+    pub global_domain_epoch: u64,
+    pub origin_sequence: u64,
+    pub domain_admin: Pubkey,
+    pub old_mail_key: [u8; 32],
+    pub new_mail_key: [u8; 32],
+    pub timestamp: i64,
+}
+
+#[event]
+pub struct EndpointUpdated {
+    pub domain_hash: [u8; 32],
+    pub global_domain_epoch: u64,
+    pub origin_sequence: u64,
+    pub domain_admin: Pubkey,
+    pub old_endpoint_hash: [u8; 32],
+    pub new_endpoint: String,
+    pub timestamp: i64,
+}
+
+#[event]
+pub struct TlsFingerprintUpdated {
+    pub domain_hash: [u8; 32],
+    pub global_domain_epoch: u64,
+    pub origin_sequence: u64,
+    pub domain_admin: Pubkey,
+    pub old_tls_fingerprint: [u8; 32],
+    pub new_tls_fingerprint: [u8; 32],
     pub timestamp: i64,
 }
 

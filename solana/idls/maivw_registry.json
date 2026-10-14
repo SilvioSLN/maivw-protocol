@@ -163,6 +163,36 @@
         { "name": "system_program" }
       ],
       "args": [{ "name": "args", "type": { "defined": { "name": "maivw_registry::slashing::ClaimReporterRewardArgs" } } }]
+    },
+    {
+      "name": "update_mail_key",
+      "discriminator": [152, 199, 54, 239, 202, 73, 33, 113],
+      "accounts": [
+        { "name": "domain_admin", "signer": true },
+        { "name": "config" },
+        { "name": "domain_record", "writable": true }
+      ],
+      "args": [{ "name": "args", "type": { "defined": { "name": "maivw_registry::domain_updates::UpdateMailKeyArgs" } } }]
+    },
+    {
+      "name": "update_endpoint",
+      "discriminator": [181, 225, 20, 139, 157, 236, 1, 94],
+      "accounts": [
+        { "name": "domain_admin", "signer": true },
+        { "name": "config" },
+        { "name": "domain_record", "writable": true }
+      ],
+      "args": [{ "name": "args", "type": { "defined": { "name": "maivw_registry::domain_updates::UpdateEndpointArgs" } } }]
+    },
+    {
+      "name": "update_tls_fingerprint",
+      "discriminator": [38, 124, 127, 11, 177, 55, 65, 198],
+      "accounts": [
+        { "name": "domain_admin", "signer": true },
+        { "name": "config" },
+        { "name": "domain_record", "writable": true }
+      ],
+      "args": [{ "name": "args", "type": { "defined": { "name": "maivw_registry::domain_updates::UpdateTlsFingerprintArgs" } } }]
     }
   ],
   "accounts": [
@@ -181,7 +211,10 @@
     { "name": "maivw_registry::SlashProposed", "discriminator": [158, 90, 179, 8, 227, 190, 15, 231] },
     { "name": "maivw_registry::SlashVetoed", "discriminator": [7, 146, 105, 203, 141, 130, 94, 117] },
     { "name": "maivw_registry::SlashExecuted", "discriminator": [170, 48, 78, 119, 242, 155, 108, 61] },
-    { "name": "maivw_registry::ReporterRewardClaimed", "discriminator": [172, 175, 99, 130, 105, 163, 83, 55] }
+    { "name": "maivw_registry::ReporterRewardClaimed", "discriminator": [172, 175, 99, 130, 105, 163, 83, 55] },
+    { "name": "maivw_registry::MailKeyUpdated", "discriminator": [110, 167, 82, 150, 88, 247, 77, 227] },
+    { "name": "maivw_registry::EndpointUpdated", "discriminator": [244, 122, 130, 126, 237, 133, 30, 55] },
+    { "name": "maivw_registry::TlsFingerprintUpdated", "discriminator": [78, 184, 100, 140, 108, 68, 100, 226] }
   ],
   "types": [
     {
@@ -196,6 +229,27 @@
       "type": { "kind": "struct", "fields": [
         { "name": "domain_hash", "type": { "array": ["u8", 32] } },
         { "name": "amount", "type": "u64" }
+      ] }
+    },
+    {
+      "name": "maivw_registry::domain_updates::UpdateMailKeyArgs",
+      "type": { "kind": "struct", "fields": [
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "new_mail_key", "type": { "array": ["u8", 32] } }
+      ] }
+    },
+    {
+      "name": "maivw_registry::domain_updates::UpdateEndpointArgs",
+      "type": { "kind": "struct", "fields": [
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "new_endpoint", "type": "string" }
+      ] }
+    },
+    {
+      "name": "maivw_registry::domain_updates::UpdateTlsFingerprintArgs",
+      "type": { "kind": "struct", "fields": [
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "new_tls_fingerprint", "type": { "array": ["u8", 32] } }
       ] }
     },
     {
@@ -525,6 +579,42 @@
         { "name": "claimed_count", "type": "u32" },
         { "name": "timestamp", "type": "i64" }
       ] }
+    },
+    {
+      "name": "maivw_registry::MailKeyUpdated",
+      "type": { "kind": "struct", "fields": [
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "global_domain_epoch", "type": "u64" },
+        { "name": "origin_sequence", "type": "u64" },
+        { "name": "domain_admin", "type": "pubkey" },
+        { "name": "old_mail_key", "type": { "array": ["u8", 32] } },
+        { "name": "new_mail_key", "type": { "array": ["u8", 32] } },
+        { "name": "timestamp", "type": "i64" }
+      ] }
+    },
+    {
+      "name": "maivw_registry::EndpointUpdated",
+      "type": { "kind": "struct", "fields": [
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "global_domain_epoch", "type": "u64" },
+        { "name": "origin_sequence", "type": "u64" },
+        { "name": "domain_admin", "type": "pubkey" },
+        { "name": "old_endpoint_hash", "type": { "array": ["u8", 32] } },
+        { "name": "new_endpoint", "type": "string" },
+        { "name": "timestamp", "type": "i64" }
+      ] }
+    },
+    {
+      "name": "maivw_registry::TlsFingerprintUpdated",
+      "type": { "kind": "struct", "fields": [
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "global_domain_epoch", "type": "u64" },
+        { "name": "origin_sequence", "type": "u64" },
+        { "name": "domain_admin", "type": "pubkey" },
+        { "name": "old_tls_fingerprint", "type": { "array": ["u8", 32] } },
+        { "name": "new_tls_fingerprint", "type": { "array": ["u8", 32] } },
+        { "name": "timestamp", "type": "i64" }
+      ] }
     }
   ],
   "errors": [
@@ -567,6 +657,10 @@
     { "code": 6036, "name": "InvalidMerkleProof", "msg": "reporter Merkle proof is invalid" },
     { "code": 6037, "name": "InvalidReporterPool", "msg": "reporter pool accounting is invalid" },
     { "code": 6038, "name": "NothingToClaim", "msg": "reporter reward is zero or unavailable" },
-    { "code": 6039, "name": "InvalidReporterClaim", "msg": "reporter claim account is invalid" }
+    { "code": 6039, "name": "InvalidReporterClaim", "msg": "reporter claim account is invalid" },
+    { "code": 6040, "name": "UnauthorizedDomainAdmin", "msg": "signer does not match the domain admin key" },
+    { "code": 6041, "name": "MirrorReadOnly", "msg": "mirror records are read-only on this deployment" },
+    { "code": 6042, "name": "InvalidOperationalKey", "msg": "operational mail key must not be zero" },
+    { "code": 6043, "name": "InvalidEndpoint", "msg": "endpoint is empty or exceeds the protocol limit" }
   ]
 }
