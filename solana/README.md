@@ -189,6 +189,22 @@ depende do config ativo, e `veto_slash` e `cancel_recovery` permanecem
 disponíveis como proteções durante incidentes. A política completa está em
 [`SOLANA_GOVERNANCE_V1.md`](../specs/multichain/SOLANA_GOVERNANCE_V1.md).
 
+## Versionamento e migração de contas
+
+Contas persistidas carregam `schemaVersion` e os handlers aceitam somente a
+versão corrente. `DomainRecord` V2 adiciona o slot da migração e 32 bytes
+reservados, que devem permanecer zerados. Registros novos já nascem em V2.
+
+Uma conta V1 não é reinterpretada silenciosamente: a authority precisa executar
+`migrate_domain_record_v1_to_v2`. A instrução confere owner, PDA, discriminator,
+tamanho e versão antigos, complementa o rent, expande a conta e preserva todo o
+estado canônico. Replay, salto de versão e layout desconhecido falham. A
+migração permanece disponível com o Registry pausado para não bloquear upgrades
+ou resposta a incidentes.
+
+A política normativa está em
+[`SOLANA_ACCOUNT_MIGRATIONS_V1.md`](../specs/multichain/SOLANA_ACCOUNT_MIGRATIONS_V1.md).
+
 ## Slashing escalável
 
 `propose_slash` exige o oracle configurado e cria uma proposta vinculada ao

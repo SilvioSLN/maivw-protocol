@@ -148,4 +148,10 @@ pub enum MaivwError {
     RegistryAlreadyPaused,
     #[msg("registry is already active")]
     RegistryAlreadyActive,
+    #[msg("only the registry authority can migrate program accounts")]
+    UnauthorizedAccountMigration,
+    #[msg("account discriminator or serialized layout is invalid for migration")]
+    InvalidAccountMigration,
+    #[msg("account schema has no supported migration path")]
+    UnsupportedAccountMigration,
 }

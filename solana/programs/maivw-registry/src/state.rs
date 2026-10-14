@@ -2,7 +2,8 @@ use anchor_lang::prelude::*;
 
 use crate::{
     constants::{
-        DOMAIN_RECORD_SEED, DOMAIN_SCHEMA_VERSION, INTENT_BATCH_SCHEMA_VERSION,
+        DOMAIN_MIGRATION_RESERVED_LEN, DOMAIN_RECORD_SEED, DOMAIN_SCHEMA_VERSION,
+        INTENT_BATCH_SCHEMA_VERSION,
         INTENT_BATCH_SEED, MAX_DOMAIN_LEN, MAX_ENDPOINT_LEN, MAX_MESSAGE_CLASS_LEN,
         MIN_STRIKES_TO_DRAIN, ORIGIN_CLAIM_RECEIPT_SEED, PENDING_ADMIN_SCHEMA_VERSION,
         PENDING_ADMIN_SEED, PROVIDER_TIER_COUNT, RECEIPT_SCHEMA_VERSION, RECOVERY_CASE_SCHEMA_VERSION,
@@ -227,6 +228,8 @@ pub struct DomainRecord {
     pub original_registration_amount: u64,
     pub current_stake: u64,
     pub origin_transaction: TransactionReference,
+    pub last_migrated_slot: u64,
+    pub migration_reserved: [u8; DOMAIN_MIGRATION_RESERVED_LEN],
 }
 
 impl DomainRecord {
@@ -255,7 +258,9 @@ impl DomainRecord {
         + 8
         + 8
         + 8
-        + 33;
+        + 33
+        + 8
+        + DOMAIN_MIGRATION_RESERVED_LEN;
     pub const SPACE: usize = 8 + Self::DATA_LEN;
 
     pub fn pda(domain_hash: &[u8; 32]) -> (Pubkey, u8) {
@@ -265,6 +270,10 @@ impl DomainRecord {
     pub fn validate(&self, local_network_hash: [u8; 32], local_registry: [u8; 32]) -> Result<()> {
         require!(
             self.schema_version == DOMAIN_SCHEMA_VERSION,
+            MaivwError::InvalidDomainRecord
+        );
+        require!(
+            self.migration_reserved == [0; DOMAIN_MIGRATION_RESERVED_LEN],
             MaivwError::InvalidDomainRecord
         );
         require!(is_canonical_domain(&self.domain), MaivwError::InvalidDomain);
@@ -909,7 +918,7 @@ mod tests {
     fn record(kind: RecordKind, local_network: [u8; 32], local_registry: [u8; 32]) -> DomainRecord {
         let domain = "mail.example".to_owned();
         DomainRecord {
-            schema_version: 1,
+            schema_version: DOMAIN_SCHEMA_VERSION,
             bump: 255,
             kind,
             domain_hash: maivw_attestation::keccak256(domain.as_bytes()),
@@ -957,6 +966,8 @@ mod tests {
                 family: NetworkFamily::Solana,
                 hash: [7; 32],
             },
+            last_migrated_slot: 0,
+            migration_reserved: [0; DOMAIN_MIGRATION_RESERVED_LEN],
         }
     }
 

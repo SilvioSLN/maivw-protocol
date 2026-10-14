@@ -44,6 +44,17 @@
       "args": []
     },
     {
+      "name": "migrate_domain_record_v1_to_v2",
+      "discriminator": [84, 156, 72, 95, 191, 233, 122, 180],
+      "accounts": [
+        { "name": "authority", "writable": true, "signer": true },
+        { "name": "config" },
+        { "name": "domain_record", "writable": true },
+        { "name": "system_program" }
+      ],
+      "args": [{ "name": "domain_hash", "type": { "array": ["u8", 32] } }]
+    },
+    {
       "name": "register_domain",
       "discriminator": [236, 7, 208, 151, 173, 149, 73, 104],
       "accounts": [
@@ -384,6 +395,7 @@
   "events": [
     { "name": "maivw_registry::RegistryPaused", "discriminator": [187, 60, 205, 238, 36, 219, 148, 187] },
     { "name": "maivw_registry::RegistryUnpaused", "discriminator": [217, 244, 140, 55, 27, 37, 56, 112] },
+    { "name": "maivw_registry::DomainRecordMigrated", "discriminator": [48, 175, 85, 197, 107, 24, 85, 158] },
     { "name": "maivw_registry::StakeToppedUp", "discriminator": [198, 194, 194, 30, 127, 26, 161, 239] },
     { "name": "maivw_registry::WarningIssued", "discriminator": [213, 152, 42, 98, 199, 162, 84, 83] },
     { "name": "maivw_registry::SlashProposed", "discriminator": [158, 90, 179, 8, 227, 190, 15, 231] },
@@ -417,6 +429,23 @@
       "type": { "kind": "struct", "fields": [
         { "name": "unpaused_by", "type": "pubkey" },
         { "name": "timestamp", "type": "i64" }
+      ] }
+    },
+    {
+      "name": "maivw_registry::DomainRecordMigrated",
+      "type": { "kind": "struct", "fields": [
+        { "name": "domain_hash", "type": { "array": ["u8", 32] } },
+        { "name": "record_kind", "type": { "defined": { "name": "maivw_registry::state::RecordKind" } } },
+        { "name": "origin_family", "type": { "defined": { "name": "maivw_registry::state::NetworkFamily" } } },
+        { "name": "origin_network_hash", "type": { "array": ["u8", 32] } },
+        { "name": "origin_registry", "type": { "array": ["u8", 32] } },
+        { "name": "global_domain_epoch", "type": "u64" },
+        { "name": "origin_sequence", "type": "u64" },
+        { "name": "origin_transaction", "type": { "array": ["u8", 32] } },
+        { "name": "from_schema_version", "type": "u16" },
+        { "name": "to_schema_version", "type": "u16" },
+        { "name": "authority", "type": "pubkey" },
+        { "name": "migration_slot", "type": "u64" }
       ] }
     },
     {
@@ -743,7 +772,9 @@
         { "name": "updated_at", "type": "i64" }, { "name": "attested_stake", "type": "u64" },
         { "name": "attested_daily_limit", "type": "u64" }, { "name": "original_registration_amount", "type": "u64" },
         { "name": "current_stake", "type": "u64" },
-        { "name": "origin_transaction", "type": { "defined": { "name": "maivw_registry::state::TransactionReference" } } }
+        { "name": "origin_transaction", "type": { "defined": { "name": "maivw_registry::state::TransactionReference" } } },
+        { "name": "last_migrated_slot", "type": "u64" },
+        { "name": "migration_reserved", "type": { "array": ["u8", 32] } }
       ] }
     },
     {
@@ -1260,6 +1291,9 @@
     { "code": 6069, "name": "UnauthorizedPause", "msg": "signer is not authorized to pause the registry" },
     { "code": 6070, "name": "UnauthorizedUnpause", "msg": "only the registry authority can unpause" },
     { "code": 6071, "name": "RegistryAlreadyPaused", "msg": "registry is already paused" },
-    { "code": 6072, "name": "RegistryAlreadyActive", "msg": "registry is already active" }
+    { "code": 6072, "name": "RegistryAlreadyActive", "msg": "registry is already active" },
+    { "code": 6073, "name": "UnauthorizedAccountMigration", "msg": "only the registry authority can migrate program accounts" },
+    { "code": 6074, "name": "InvalidAccountMigration", "msg": "account discriminator or serialized layout is invalid for migration" },
+    { "code": 6075, "name": "UnsupportedAccountMigration", "msg": "account schema has no supported migration path" }
   ]
 }

@@ -15,6 +15,7 @@ pub mod error;
 pub mod governance;
 pub mod intent_batch;
 pub mod mirror;
+pub mod migration;
 pub mod provider;
 pub mod reclaim;
 pub mod recovery;
@@ -52,6 +53,10 @@ use mirror::{
     mirror_state_payload_hash, revoke_mirror_payload_hash, sync_mirror_payload_hash,
     validate_register_mirror, validate_revoke_mirror, validate_sync_mirror,
     validate_sync_version, RegisterMirrorArgs, RevokeMirrorArgs, SyncMirrorArgs,
+};
+use migration::{
+    migrate_domain_record_v1_to_v2 as migrate_domain_record_layout, DomainRecordV1,
+    DOMAIN_RECORD_V1_SPACE,
 };
 use provider::{top_up_transition, warning_transition, IssueWarningArgs, TopUpStakeArgs};
 use reclaim::{close_pending_processes, reclaim_payload_hash, ReclaimDomainArgs};
@@ -149,6 +154,78 @@ pub mod maivw_registry {
         emit!(RegistryUnpaused {
             unpaused_by: ctx.accounts.governance.key(),
             timestamp: now,
+        });
+        Ok(())
+    }
+
+    pub fn migrate_domain_record_v1_to_v2(
+        ctx: Context<MigrateDomainRecordV1ToV2>,
+        domain_hash: [u8; 32],
+    ) -> Result<()> {
+        let config = &ctx.accounts.config;
+        config.validate()?;
+        require_keys_eq!(
+            ctx.accounts.authority.key(),
+            config.authority,
+            MaivwError::UnauthorizedAccountMigration
+        );
+
+        let account_info = ctx.accounts.domain_record.to_account_info();
+        let legacy = {
+            let data = account_info.try_borrow_data()?;
+            require!(
+                data.len() == DOMAIN_RECORD_V1_SPACE
+                    && data.starts_with(DomainRecord::DISCRIMINATOR),
+                MaivwError::InvalidAccountMigration
+            );
+            let mut payload = &data[DomainRecord::DISCRIMINATOR.len()..];
+            DomainRecordV1::deserialize(&mut payload)
+                .map_err(|_| error!(MaivwError::InvalidAccountMigration))?
+        };
+        require!(
+            legacy.domain_hash == domain_hash && legacy.bump == ctx.bumps.domain_record,
+            MaivwError::InvalidAccountMigration
+        );
+
+        let migration_slot = Clock::get()?.slot;
+        let migrated = migrate_domain_record_layout(legacy, migration_slot)?;
+        migrated.validate(config.network_hash, ID.to_bytes())?;
+
+        let minimum_balance = Rent::get()?.minimum_balance(DomainRecord::SPACE);
+        let rent_top_up = minimum_balance.saturating_sub(account_info.lamports());
+        if rent_top_up > 0 {
+            anchor_lang::system_program::transfer(
+                CpiContext::new(
+                    ctx.accounts.system_program.key(),
+                    anchor_lang::system_program::Transfer {
+                        from: ctx.accounts.authority.to_account_info(),
+                        to: account_info.clone(),
+                    },
+                ),
+                rent_top_up,
+            )?;
+        }
+        account_info.resize(DomainRecord::SPACE)?;
+        {
+            let mut data = account_info.try_borrow_mut_data()?;
+            data.fill(0);
+            let mut writer = &mut data[..];
+            migrated.try_serialize(&mut writer)?;
+        }
+
+        emit!(DomainRecordMigrated {
+            domain_hash,
+            record_kind: migrated.kind,
+            origin_family: migrated.origin.family,
+            origin_network_hash: migrated.origin.network_hash,
+            origin_registry: migrated.origin_registry,
+            global_domain_epoch: migrated.global_domain_epoch,
+            origin_sequence: migrated.origin_sequence,
+            origin_transaction: migrated.origin_transaction.hash,
+            from_schema_version: constants::DOMAIN_SCHEMA_VERSION_V1,
+            to_schema_version: constants::DOMAIN_SCHEMA_VERSION,
+            authority: ctx.accounts.authority.key(),
+            migration_slot,
         });
         Ok(())
     }
@@ -360,6 +437,8 @@ pub mod maivw_registry {
                 family: args.origin_family,
                 hash: attestation.evidence_hash,
             },
+            last_migrated_slot: 0,
+            migration_reserved: [0; constants::DOMAIN_MIGRATION_RESERVED_LEN],
         };
         ctx.accounts
             .domain_record
@@ -1810,6 +1889,27 @@ pub struct ManageRegistryPause<'info> {
 }
 
 #[derive(Accounts)]
+#[instruction(domain_hash: [u8; 32])]
+pub struct MigrateDomainRecordV1ToV2<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    #[account(
+        seeds = [REGISTRY_CONFIG_SEED],
+        bump = config.bump
+    )]
+    pub config: Box<Account<'info, RegistryConfig>>,
+    /// CHECK: owner, canonical PDA, discriminator and legacy bytes are checked before migration.
+    #[account(
+        mut,
+        seeds = [DOMAIN_RECORD_SEED, domain_hash.as_ref()],
+        bump,
+        owner = ID @ MaivwError::InvalidAccountMigration
+    )]
+    pub domain_record: UncheckedAccount<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
 #[instruction(args: RegisterDomainArgs)]
 pub struct RegisterDomain<'info> {
     #[account(mut)]
@@ -2791,6 +2891,22 @@ pub struct RegistryUnpaused {
 }
 
 #[event]
+pub struct DomainRecordMigrated {
+    pub domain_hash: [u8; 32],
+    pub record_kind: RecordKind,
+    pub origin_family: NetworkFamily,
+    pub origin_network_hash: [u8; 32],
+    pub origin_registry: [u8; 32],
+    pub global_domain_epoch: u64,
+    pub origin_sequence: u64,
+    pub origin_transaction: [u8; 32],
+    pub from_schema_version: u16,
+    pub to_schema_version: u16,
+    pub authority: Pubkey,
+    pub migration_slot: u64,
+}
+
+#[event]
 pub struct MirrorRegistered {
     pub domain_hash: [u8; 32],
     pub origin_family: NetworkFamily,
@@ -3076,6 +3192,8 @@ fn new_origin_record(
             family: NetworkFamily::Solana,
             hash: [0; 32],
         },
+        last_migrated_slot: 0,
+        migration_reserved: [0; constants::DOMAIN_MIGRATION_RESERVED_LEN],
     }
 }
 
