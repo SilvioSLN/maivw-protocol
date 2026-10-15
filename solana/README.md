@@ -45,10 +45,10 @@ o rent mínimo correspondente.
 
 `verify_attestation` recebe exatamente o envelope V1 de 292 bytes e exige:
 
-1. uma instrução nativa Ed25519 imediatamente anterior;
+1. uma instrução nativa secp256k1 imediatamente anterior;
 2. uma única assinatura, com chave e mensagem contidas nessa própria instrução;
-3. signer igual ao `oracle_key` de `RegistryConfig`;
-4. mensagem igual a `keccak256(envelope)`;
+3. endereço recuperado igual ao `attestation_signer` de `RegistryConfig`;
+4. mensagem igual ao envelope canônico (o precompile aplica `keccak256`);
 5. rede e program id de destino iguais a este deployment;
 6. deadline vigente e nonce diferente de zero;
 7. a conta real do instructions sysvar.
@@ -62,6 +62,8 @@ replay de cadastro.
 
 `initialize_registry` cria uma única configuração no PDA global, fixa o SPL
 Token Program clássico, mint e decimals, e valida roles, fees, delays e tiers.
+O schema V2 separa `oracle_key`, a autoridade Ed25519 para ações nativas do
+oráculo, de `attestation_signer`, o endereço secp256k1 do KMS multichain.
 
 `register_domain` exige `OriginClaimV1`, cria domínio/recibo/vault atomicamente e
 transfere exatamente `standardFee`: 10% para o founder vault, 25% para o treasury
@@ -164,6 +166,9 @@ atestados são campos informativos; o stake local permanece zero. O relayer paga
 somente transaction fee e rent. O payload de 448 bytes é compatível com
 `MAIVWMirrorRegistryV2.hashMirrorStateV2` e está especificado em
 [`SOLANA_MIRROR_STATE_V2.md`](../specs/multichain/SOLANA_MIRROR_STATE_V2.md).
+Os builders sem chave privada e a ordem obrigatória precompile→programa estão
+especificados em
+[`TRANSACTION_BUILDERS_V1.md`](../specs/multichain/TRANSACTION_BUILDERS_V1.md).
 
 `sync_mirror` exige a mesma origem imutável do cadastro e aceita apenas uma
 versão lexicograficamente superior em `(globalDomainEpoch, originSequence)`.

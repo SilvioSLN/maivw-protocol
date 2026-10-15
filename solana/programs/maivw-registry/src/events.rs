@@ -29,6 +29,7 @@ pub struct RegistryInitialized {
     pub authority: Pubkey,
     pub guardian: Pubkey,
     pub oracle_key: [u8; 32],
+    pub attestation_signer: [u8; 20],
     pub asset_mint: Pubkey,
     pub schema_version: u16,
     pub timestamp: i64,

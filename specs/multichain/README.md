@@ -44,6 +44,7 @@ The isolated KMS/local signing boundary for both claim kinds is specified in `AT
 The durable finalized-block scanner for Base, Arbitrum and Polygon is specified in `EVM_OBSERVER_V1.md`.
 The finalized slot/signature scanner and deterministic Anchor event decoder are specified in `SOLANA_OBSERVER_V1.md`.
 The block/slot-pinned canonical state readers are specified in `FINALIZED_STATE_READERS_V1.md`.
+The unsigned EVM/Solana mirror builders, shared payload hash and cryptographic checks are specified in `TRANSACTION_BUILDERS_V1.md`.
 
 Solana pause authority and the operations that remain available during an incident are specified in `SOLANA_GOVERNANCE_V1.md`.
 

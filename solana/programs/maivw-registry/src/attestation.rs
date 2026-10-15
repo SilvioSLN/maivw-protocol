@@ -2,27 +2,26 @@ use anchor_lang::prelude::*;
 use maivw_attestation::{AttestationAction, AttestationKind, AttestationV1};
 use solana_instruction::Instruction;
 use solana_instructions_sysvar::{load_current_index_checked, load_instruction_at_checked};
-use solana_sdk_ids::ed25519_program;
+use solana_sdk_ids::secp256k1_program;
 
 use crate::{
     ID,
     constants::{
-        ATTESTATION_DIGEST_SIZE, CURRENT_INSTRUCTION_INDEX, ED25519_OFFSETS_SIZE,
-        ED25519_OFFSETS_START, ED25519_PUBLIC_KEY_SIZE, ED25519_SIGNATURE_SIZE,
+        SECP256K1_ETH_ADDRESS_SIZE, SECP256K1_OFFSETS_SIZE, SECP256K1_SIGNATURE_SIZE,
     },
     error::MaivwError,
     state::RegistryConfig,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct Ed25519Offsets {
+struct Secp256k1Offsets {
     signature_offset: u16,
-    signature_instruction_index: u16,
-    public_key_offset: u16,
-    public_key_instruction_index: u16,
+    signature_instruction_index: u8,
+    eth_address_offset: u16,
+    eth_address_instruction_index: u8,
     message_data_offset: u16,
     message_data_size: u16,
-    message_instruction_index: u16,
+    message_instruction_index: u8,
 }
 
 pub fn verify(
@@ -34,15 +33,16 @@ pub fn verify(
     let attestation = validate_envelope(config, envelope, now)?;
 
     let current_index = load_current_index_checked(instructions_sysvar)?;
-    require!(current_index > 0, MaivwError::MissingEd25519Instruction);
-    let ed25519_instruction =
+    require!(current_index > 0, MaivwError::MissingSecp256k1Instruction);
+    let secp256k1_instruction =
         load_instruction_at_checked(usize::from(current_index - 1), instructions_sysvar)?;
-    verify_ed25519_instruction(
-        &ed25519_instruction,
-        config.oracle_key,
-        attestation
-            .digest()
-            .map_err(|_| error!(MaivwError::InvalidAttestation))?,
+    let verification_index = u8::try_from(current_index - 1)
+        .map_err(|_| error!(MaivwError::InvalidSecp256k1Instruction))?;
+    verify_secp256k1_instruction(
+        &secp256k1_instruction,
+        verification_index,
+        config.attestation_signer,
+        envelope,
     )?;
     Ok(attestation)
 }
@@ -380,65 +380,83 @@ fn validate_envelope(
     Ok(attestation)
 }
 
-fn verify_ed25519_instruction(
+fn verify_secp256k1_instruction(
     instruction: &Instruction,
-    expected_oracle: [u8; 32],
-    expected_digest: [u8; 32],
+    verification_index: u8,
+    expected_oracle: [u8; 20],
+    expected_envelope: &[u8],
 ) -> Result<()> {
     require_keys_eq!(
         instruction.program_id,
-        ed25519_program::ID,
-        MaivwError::MissingEd25519Instruction
+        secp256k1_program::ID,
+        MaivwError::MissingSecp256k1Instruction
     );
     require!(
         instruction.accounts.is_empty(),
-        MaivwError::InvalidEd25519Instruction
+        MaivwError::InvalidSecp256k1Instruction
     );
     let data = &instruction.data;
     require!(
-        data.len() >= ED25519_OFFSETS_START + ED25519_OFFSETS_SIZE && data[0] == 1 && data[1] == 0,
-        MaivwError::InvalidEd25519Instruction
+        data.len() >= 1 + SECP256K1_OFFSETS_SIZE && data[0] == 1,
+        MaivwError::InvalidSecp256k1Instruction
     );
     let offsets = parse_offsets(data)?;
     require!(
-        offsets.signature_instruction_index == CURRENT_INSTRUCTION_INDEX
-            && offsets.public_key_instruction_index == CURRENT_INSTRUCTION_INDEX
-            && offsets.message_instruction_index == CURRENT_INSTRUCTION_INDEX
-            && usize::from(offsets.message_data_size) == ATTESTATION_DIGEST_SIZE,
-        MaivwError::InvalidEd25519Instruction
+        offsets.signature_instruction_index == verification_index
+            && offsets.eth_address_instruction_index == verification_index
+            && offsets.message_instruction_index == verification_index
+            && usize::from(offsets.message_data_size) == expected_envelope.len(),
+        MaivwError::InvalidSecp256k1Instruction
     );
 
-    let signature = checked_slice(data, offsets.signature_offset, ED25519_SIGNATURE_SIZE)?;
+    let signature = checked_slice(data, offsets.signature_offset, SECP256K1_SIGNATURE_SIZE)?;
     require!(
         signature.iter().any(|byte| *byte != 0),
-        MaivwError::InvalidEd25519Instruction
+        MaivwError::InvalidSecp256k1Instruction
     );
-    let public_key = checked_slice(data, offsets.public_key_offset, ED25519_PUBLIC_KEY_SIZE)?;
+    let recovery_id = checked_slice(
+        data,
+        offsets
+            .signature_offset
+            .checked_add(SECP256K1_SIGNATURE_SIZE as u16)
+            .ok_or_else(|| error!(MaivwError::InvalidSecp256k1Instruction))?,
+        1,
+    )?[0];
+    require!(recovery_id <= 1, MaivwError::InvalidSecp256k1Instruction);
+    let public_key = checked_slice(
+        data,
+        offsets.eth_address_offset,
+        SECP256K1_ETH_ADDRESS_SIZE,
+    )?;
     require!(
         public_key == expected_oracle,
         MaivwError::InvalidOracleSigner
     );
-    let message = checked_slice(data, offsets.message_data_offset, ATTESTATION_DIGEST_SIZE)?;
-    require!(message == expected_digest, MaivwError::InvalidSignedMessage);
+    let message = checked_slice(
+        data,
+        offsets.message_data_offset,
+        usize::from(offsets.message_data_size),
+    )?;
+    require!(message == expected_envelope, MaivwError::InvalidSignedMessage);
     Ok(())
 }
 
-fn parse_offsets(data: &[u8]) -> Result<Ed25519Offsets> {
-    let value = |position| {
+fn parse_offsets(data: &[u8]) -> Result<Secp256k1Offsets> {
+    let u16_at = |position| {
         u16::from_le_bytes(
             data[position..position + 2]
                 .try_into()
                 .expect("bounds checked by caller"),
         )
     };
-    Ok(Ed25519Offsets {
-        signature_offset: value(2),
-        signature_instruction_index: value(4),
-        public_key_offset: value(6),
-        public_key_instruction_index: value(8),
-        message_data_offset: value(10),
-        message_data_size: value(12),
-        message_instruction_index: value(14),
+    Ok(Secp256k1Offsets {
+        signature_offset: u16_at(1),
+        signature_instruction_index: data[3],
+        eth_address_offset: u16_at(4),
+        eth_address_instruction_index: data[6],
+        message_data_offset: u16_at(7),
+        message_data_size: u16_at(9),
+        message_instruction_index: data[11],
     })
 }
 
@@ -446,9 +464,9 @@ fn checked_slice(data: &[u8], offset: u16, size: usize) -> Result<&[u8]> {
     let start = usize::from(offset);
     let end = start
         .checked_add(size)
-        .ok_or_else(|| error!(MaivwError::InvalidEd25519Instruction))?;
+        .ok_or_else(|| error!(MaivwError::InvalidSecp256k1Instruction))?;
     data.get(start..end)
-        .ok_or_else(|| error!(MaivwError::InvalidEd25519Instruction))
+        .ok_or_else(|| error!(MaivwError::InvalidSecp256k1Instruction))
 }
 
 #[cfg(test)]
@@ -456,12 +474,13 @@ mod tests {
     use super::*;
     fn config() -> RegistryConfig {
         RegistryConfig {
-            schema_version: 1,
+            schema_version: crate::constants::REGISTRY_SCHEMA_VERSION,
             bump: 1,
             active: true,
             authority: Pubkey::new_unique(),
             guardian: Pubkey::new_unique(),
             oracle_key: [1; 32],
+            attestation_signer: [9; 20],
             asset_mint: Pubkey::new_unique(),
             token_program: anchor_spl::token::ID,
             asset_decimals: 9,
@@ -516,42 +535,50 @@ mod tests {
         data[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
     }
 
-    fn instruction(oracle: [u8; 32], digest: [u8; 32]) -> Instruction {
-        let mut data = vec![0_u8; 144];
+    fn instruction(oracle: [u8; 20], message: &[u8], instruction_index: u8) -> Instruction {
+        let message_offset = 12 + 20 + 64 + 1;
+        let mut data = vec![0_u8; message_offset + message.len()];
         data[0] = 1;
-        put_u16(&mut data, 2, 48);
-        put_u16(&mut data, 4, CURRENT_INSTRUCTION_INDEX);
-        put_u16(&mut data, 6, 16);
-        put_u16(&mut data, 8, CURRENT_INSTRUCTION_INDEX);
-        put_u16(&mut data, 10, 112);
-        put_u16(&mut data, 12, 32);
-        put_u16(&mut data, 14, CURRENT_INSTRUCTION_INDEX);
-        data[16..48].copy_from_slice(&oracle);
-        data[48..112].fill(7);
-        data[112..144].copy_from_slice(&digest);
+        put_u16(&mut data, 1, 32);
+        data[3] = instruction_index;
+        put_u16(&mut data, 4, 12);
+        data[6] = instruction_index;
+        put_u16(&mut data, 7, message_offset as u16);
+        put_u16(&mut data, 9, message.len() as u16);
+        data[11] = instruction_index;
+        data[12..32].copy_from_slice(&oracle);
+        data[32..96].fill(7);
+        data[96] = 1;
+        data[message_offset..].copy_from_slice(message);
         Instruction {
-            program_id: ed25519_program::ID,
+            program_id: secp256k1_program::ID,
             accounts: vec![],
             data,
         }
     }
 
     #[test]
-    fn accepts_one_local_ed25519_signature_over_exact_digest() {
-        assert!(
-            verify_ed25519_instruction(&instruction([1; 32], [2; 32]), [1; 32], [2; 32]).is_ok()
-        );
+    fn accepts_one_local_secp256k1_signature_over_exact_envelope() {
+        assert!(verify_secp256k1_instruction(
+            &instruction([1; 20], &[2; 292], 4),
+            4,
+            [1; 20],
+            &[2; 292],
+        )
+        .is_ok());
     }
 
     #[test]
     fn rejects_signer_message_and_cross_instruction_references() {
-        let valid = instruction([1; 32], [2; 32]);
-        assert!(verify_ed25519_instruction(&valid, [3; 32], [2; 32]).is_err());
-        assert!(verify_ed25519_instruction(&valid, [1; 32], [3; 32]).is_err());
+        let valid = instruction([1; 20], &[2; 292], 4);
+        assert!(verify_secp256k1_instruction(&valid, 4, [3; 20], &[2; 292]).is_err());
+        assert!(verify_secp256k1_instruction(&valid, 4, [1; 20], &[3; 292]).is_err());
 
         let mut cross_instruction = valid;
-        put_u16(&mut cross_instruction.data, 14, 0);
-        assert!(verify_ed25519_instruction(&cross_instruction, [1; 32], [2; 32]).is_err());
+        cross_instruction.data[11] = 0;
+        assert!(
+            verify_secp256k1_instruction(&cross_instruction, 4, [1; 20], &[2; 292]).is_err()
+        );
     }
 
     #[test]

@@ -126,6 +126,9 @@ pub struct RegistryConfig {
     pub authority: Pubkey,
     pub guardian: Pubkey,
     pub oracle_key: [u8; 32],
+    /// Ethereum address recovered by the secp256k1 precompile for attestations.
+    /// Kept separate from `oracle_key`, the Solana authority for oracle actions.
+    pub attestation_signer: [u8; 20],
     pub asset_mint: Pubkey,
     pub token_program: Pubkey,
     pub asset_decimals: u8,
@@ -142,7 +145,7 @@ pub struct RegistryConfig {
 }
 
 impl RegistryConfig {
-    pub const DATA_LEN: usize = 381;
+    pub const DATA_LEN: usize = 401;
     pub const SPACE: usize = 8 + Self::DATA_LEN;
 
     pub fn pda() -> (Pubkey, u8) {
@@ -168,6 +171,7 @@ impl RegistryConfig {
             self.authority != self.guardian
                 && self.treasury != self.founder
                 && self.oracle_key != [0; 32]
+                && self.attestation_signer != [0; 20]
                 && self.network_hash != [0; 32]
                 && self.token_program == anchor_spl::token::ID
                 && self.standard_fee > 0
@@ -973,12 +977,13 @@ mod tests {
 
     fn config() -> RegistryConfig {
         RegistryConfig {
-            schema_version: 1,
+            schema_version: REGISTRY_SCHEMA_VERSION,
             bump: RegistryConfig::pda().1,
             active: true,
             authority: Pubkey::new_unique(),
             guardian: Pubkey::new_unique(),
             oracle_key: [1; 32],
+            attestation_signer: [9; 20],
             asset_mint: Pubkey::new_unique(),
             token_program: anchor_spl::token::ID,
             asset_decimals: 9,

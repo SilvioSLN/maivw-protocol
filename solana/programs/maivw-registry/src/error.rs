@@ -14,13 +14,13 @@ pub enum MaivwError {
     AttestationExpired,
     #[msg("attestation nonce must not be zero")]
     ZeroNonce,
-    #[msg("the immediately preceding instruction must be Ed25519 verification")]
-    MissingEd25519Instruction,
-    #[msg("only one canonical Ed25519 signature is accepted")]
-    InvalidEd25519Instruction,
-    #[msg("Ed25519 signer does not match the configured oracle")]
+    #[msg("the immediately preceding instruction must be secp256k1 verification")]
+    MissingSecp256k1Instruction,
+    #[msg("only one canonical local secp256k1 signature is accepted")]
+    InvalidSecp256k1Instruction,
+    #[msg("secp256k1 signer does not match the configured attestation signer")]
     InvalidOracleSigner,
-    #[msg("Ed25519 message does not match the attestation digest")]
+    #[msg("secp256k1 message does not match the attestation envelope")]
     InvalidSignedMessage,
     #[msg("registry configuration is invalid")]
     InvalidRegistryConfig,

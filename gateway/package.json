@@ -15,6 +15,7 @@
     "@fastify/cors": "^11.0.1",
     "@google-cloud/kms": "^6.2.1",
     "@prisma/client": "^5.22.0",
+    "@solana/web3.js": "^1.98.4",
     "asn1.js": "^5.4.1",
     "bullmq": "^5.52.3",
     "fastify": "^5.3.3",

@@ -102,6 +102,7 @@ pub mod maivw_registry {
         config.authority = ctx.accounts.authority.key();
         config.guardian = args.guardian;
         config.oracle_key = args.oracle_key;
+        config.attestation_signer = args.attestation_signer;
         config.asset_mint = ctx.accounts.mint.key();
         config.token_program = ctx.accounts.token_program.key();
         config.asset_decimals = ctx.accounts.mint.decimals;
@@ -122,6 +123,7 @@ pub mod maivw_registry {
             authority: config.authority,
             guardian: config.guardian,
             oracle_key: config.oracle_key,
+            attestation_signer: config.attestation_signer,
             asset_mint: config.asset_mint,
             schema_version: config.schema_version,
             timestamp: config.created_at,

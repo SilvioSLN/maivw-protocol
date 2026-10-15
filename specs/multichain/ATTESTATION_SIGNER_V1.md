@@ -5,6 +5,12 @@ The Gateway uses one secp256k1 signing boundary for both `OriginClaimV1` and
 The private key, KMS client and credentials never appear in the returned value,
 logs, reservation rows or relay jobs.
 
+On Solana, the same signature is supplied to the native secp256k1 precompile
+with the canonical envelope as its message. The program binds the precompile's
+20-byte recovered address to `RegistryConfig.attestation_signer`; the separate
+Ed25519 `oracle_key` remains the signer authority for Solana-native oracle
+operations.
+
 Production uses a versioned Google Cloud KMS resource. Each result stores:
 
 - `signature`: recoverable 65-byte, low-S secp256k1 signature;

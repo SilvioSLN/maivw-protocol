@@ -9,6 +9,7 @@ use crate::{
 pub struct InitializeRegistryArgs {
     pub guardian: Pubkey,
     pub oracle_key: [u8; 32],
+    pub attestation_signer: [u8; 20],
     pub treasury: Pubkey,
     pub founder: Pubkey,
     pub network_hash: [u8; 32],
