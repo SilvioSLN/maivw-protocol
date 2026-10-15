@@ -120,6 +120,10 @@ describe("Google Cloud KMS Signer & Account", () => {
 
       const address = await signer.getAddress();
       assert.equal(address.toLowerCase(), EXPECTED_ADDRESS.toLowerCase());
+      assert.deepEqual(signer.getKeyMetadata(), {
+        keyId: "projects/maivw-test/locations/global/keyRings/kr/cryptoKeys/k",
+        keyVersion: "1",
+      });
 
       // Segunda chamada deve usar o cache sem consultar o client
       const cached = await signer.getAddress();

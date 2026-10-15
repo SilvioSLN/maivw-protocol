@@ -21,6 +21,11 @@ export interface GcpKmsAccountOptions {
   client?: KeyManagementServiceClient;
 }
 
+export interface KmsKeyMetadata {
+  keyId: string;
+  keyVersion: string;
+}
+
 /**
  * Decodifica uma assinatura ASN.1 DER ECDSA em (r, s).
  * O Cloud KMS retorna assinaturas codificadas em ASN.1 DER (RFC 3279 / ANSI X9.62):
@@ -79,6 +84,9 @@ export class GcpKmsOracleSigner {
   private cachedAddress: Address | null = null;
 
   constructor(options: GcpKmsAccountOptions) {
+    if (!options.keyVersionName.includes("/cryptoKeyVersions/")) {
+      throw new Error("GCP KMS key version deve terminar em /cryptoKeyVersions/{version}");
+    }
     this.keyVersionName = options.keyVersionName;
 
     if (options.client) {
@@ -95,6 +103,18 @@ export class GcpKmsOracleSigner {
       // Usa Application Default Credentials (ADC) nativo do Google Cloud (Workload Identity, etc.)
       this.client = new KeyManagementServiceClient();
     }
+  }
+
+  /** Identifica a chave auditável sem retornar credenciais ou material criptográfico privado. */
+  getKeyMetadata(): KmsKeyMetadata {
+    const marker = "/cryptoKeyVersions/";
+    const markerOffset = this.keyVersionName.lastIndexOf(marker);
+    const keyId = this.keyVersionName.slice(0, markerOffset);
+    const keyVersion = this.keyVersionName.slice(markerOffset + marker.length);
+    if (!keyId || !keyVersion || keyVersion.includes("/")) {
+      throw new Error("GCP KMS key version possui resource name inválido");
+    }
+    return { keyId, keyVersion };
   }
 
   /**
