@@ -127,6 +127,56 @@ model EvmSourceEvent {
   @@index([domainHash, status])
 }
 
+/// Cursor Solana ancorado exclusivamente em commitment finalized.
+model SolanaObserverCursor {
+  networkId     String   @id
+  programId     String   @unique
+  commitment    String
+  startSlot     BigInt
+  lastSlot      BigInt?
+  lastSignature String?
+  observedSlot  BigInt?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  transactions SolanaObservedTransaction[]
+  events       SolanaSourceEvent[]
+}
+
+model SolanaObservedTransaction {
+  id          String   @id @default(uuid())
+  networkId   String
+  slot        BigInt
+  signature   String
+  blockTime   DateTime?
+  observedAt  DateTime @default(now())
+
+  cursor SolanaObserverCursor @relation(fields: [networkId], references: [networkId], onDelete: Restrict)
+
+  @@unique([networkId, signature])
+  @@index([networkId, slot])
+}
+
+model SolanaSourceEvent {
+  id               String   @id @default(uuid())
+  networkId        String
+  programId        String
+  slot             BigInt
+  signature        String
+  instructionIndex Int
+  logIndex         Int
+  eventName        String
+  domainHash       String?  @db.Char(66)
+  payload          Json
+  observedAt       DateTime @default(now())
+
+  cursor SolanaObserverCursor @relation(fields: [networkId], references: [networkId], onDelete: Restrict)
+
+  @@unique([networkId, signature, instructionIndex, logIndex])
+  @@index([networkId, slot, signature])
+  @@index([domainHash, slot])
+}
+
 /// Fonte transacional para a rede de origem imutável de cada domainHash.
 /// A unicidade global é deliberadamente independente da tabela Domain de produto.
 model OriginRecord {
