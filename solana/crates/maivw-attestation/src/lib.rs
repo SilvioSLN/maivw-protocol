@@ -7,6 +7,9 @@ use tiny_keccak::{Hasher, Keccak};
 pub const MAGIC: [u8; 8] = *b"MAIVWATT";
 pub const VERSION: u8 = 1;
 pub const ENCODED_SIZE: usize = 292;
+pub const REGISTRATION_MAGIC: [u8; 8] = *b"MAIVWREG";
+pub const REGISTRATION_VERSION: u8 = 1;
+pub const REGISTRATION_ENCODED_SIZE: usize = 245;
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -24,6 +27,29 @@ pub enum AttestationAction {
     RevokeMirror = 4,
     RecoverOrigin = 5,
     ReclaimOrigin = 6,
+}
+
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum KeyAlgorithm {
+    Secp256k1 = 1,
+    Ed25519 = 2,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RegistrationPayloadV1 {
+    pub domain_hash: [u8; 32],
+    pub registrant: [u8; 32],
+    pub operational_key_algorithm: KeyAlgorithm,
+    pub operational_key: [u8; 32],
+    pub admin_key_algorithm: KeyAlgorithm,
+    pub admin_key: [u8; 32],
+    pub endpoint_hash: [u8; 32],
+    pub tls_fingerprint: [u8; 32],
+    pub is_provider: bool,
+    pub provider_tier: u8,
+    pub payment: u64,
+    pub mint: [u8; 32],
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -57,6 +83,67 @@ pub enum AttestationError {
         kind: AttestationKind,
         action: AttestationAction,
     },
+    ZeroRegistrationField(&'static str),
+    InvalidProviderTier(u8),
+    InconsistentProviderTier,
+}
+
+impl RegistrationPayloadV1 {
+    pub fn encode(&self) -> Result<[u8; REGISTRATION_ENCODED_SIZE], AttestationError> {
+        self.validate()?;
+        let mut output = [0_u8; REGISTRATION_ENCODED_SIZE];
+        let mut offset = 0;
+        write_registration(&mut output, &mut offset, &REGISTRATION_MAGIC);
+        write_registration(&mut output, &mut offset, &[REGISTRATION_VERSION]);
+        write_registration(&mut output, &mut offset, &self.domain_hash);
+        write_registration(&mut output, &mut offset, &self.registrant);
+        write_registration(
+            &mut output,
+            &mut offset,
+            &[self.operational_key_algorithm as u8],
+        );
+        write_registration(&mut output, &mut offset, &self.operational_key);
+        write_registration(
+            &mut output,
+            &mut offset,
+            &[self.admin_key_algorithm as u8],
+        );
+        write_registration(&mut output, &mut offset, &self.admin_key);
+        write_registration(&mut output, &mut offset, &self.endpoint_hash);
+        write_registration(&mut output, &mut offset, &self.tls_fingerprint);
+        write_registration(&mut output, &mut offset, &[u8::from(self.is_provider)]);
+        write_registration(&mut output, &mut offset, &[self.provider_tier]);
+        write_registration(&mut output, &mut offset, &self.payment.to_be_bytes());
+        write_registration(&mut output, &mut offset, &self.mint);
+        debug_assert_eq!(offset, REGISTRATION_ENCODED_SIZE);
+        Ok(output)
+    }
+
+    pub fn digest(&self) -> Result<[u8; 32], AttestationError> {
+        Ok(keccak256(&self.encode()?))
+    }
+
+    pub fn validate(&self) -> Result<(), AttestationError> {
+        for (name, value) in [
+            ("domain_hash", self.domain_hash),
+            ("registrant", self.registrant),
+            ("operational_key", self.operational_key),
+            ("admin_key", self.admin_key),
+            ("endpoint_hash", self.endpoint_hash),
+            ("mint", self.mint),
+        ] {
+            if value == [0; 32] {
+                return Err(AttestationError::ZeroRegistrationField(name));
+            }
+        }
+        if self.provider_tier > 3 {
+            return Err(AttestationError::InvalidProviderTier(self.provider_tier));
+        }
+        if self.is_provider == (self.provider_tier == 0) {
+            return Err(AttestationError::InconsistentProviderTier);
+        }
+        Ok(())
+    }
 }
 
 impl AttestationV1 {
@@ -188,6 +275,16 @@ pub fn keccak256(input: &[u8]) -> [u8; 32] {
 }
 
 fn write(output: &mut [u8; ENCODED_SIZE], offset: &mut usize, value: &[u8]) {
+    let end = *offset + value.len();
+    output[*offset..end].copy_from_slice(value);
+    *offset = end;
+}
+
+fn write_registration(
+    output: &mut [u8; REGISTRATION_ENCODED_SIZE],
+    offset: &mut usize,
+    value: &[u8],
+) {
     let end = *offset + value.len();
     output[*offset..end].copy_from_slice(value);
     *offset = end;

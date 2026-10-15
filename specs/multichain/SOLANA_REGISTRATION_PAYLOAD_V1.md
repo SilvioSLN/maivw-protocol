@@ -37,3 +37,8 @@ append-only receipt of an earlier claim.
 For a standard domain, `payment` is `RegistryConfig.standardFee`. For a provider,
 it is the selected tier's `requiredStake`; the `providerFee` fallback is not used
 by `register_provider`.
+
+The normative `OriginClaimV1` vector is
+[`fixtures/origin-claim-v1.json`](fixtures/origin-claim-v1.json). Its 245-byte
+payload and resulting 292-byte claim are asserted by the TypeScript, Rust and
+Solidity test suites so a field-order or endianness change fails before deploy.
