@@ -59,6 +59,74 @@ enum OriginReservationAuditAction {
   RESERVATION_EXPIRED
 }
 
+enum EvmObservationStatus {
+  FINALIZED
+  ORPHANED
+}
+
+/// Cursor durável por Registry EVM. nextBlock só avança na mesma transação que
+/// persiste o bloco e todos os eventos reconhecidos nele.
+model EvmObserverCursor {
+  networkId           String   @id
+  networkName         String
+  chainId             BigInt   @unique
+  registryAddress     String   @db.Char(42)
+  registryId          String   @db.Char(66)
+  confirmations       Int
+  startBlock          BigInt
+  nextBlock           BigInt
+  lastProcessedBlock  BigInt?
+  lastProcessedHash   String?  @db.Char(66)
+  observedHead        BigInt?
+  finalizedHead       BigInt?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  blocks EvmObservedBlock[]
+  events EvmSourceEvent[]
+}
+
+/// Mantém também as ramificações órfãs para auditoria de reorg.
+model EvmObservedBlock {
+  id          String               @id @default(uuid())
+  networkId   String
+  blockNumber BigInt
+  blockHash   String               @db.Char(66)
+  parentHash  String               @db.Char(66)
+  status      EvmObservationStatus @default(FINALIZED)
+  observedAt  DateTime             @default(now())
+  orphanedAt  DateTime?
+
+  cursor EvmObserverCursor @relation(fields: [networkId], references: [networkId], onDelete: Restrict)
+
+  @@unique([networkId, blockNumber, blockHash])
+  @@index([networkId, status, blockNumber])
+}
+
+/// Evento de origem EVM finalizado e idempotente por posição canônica no bloco.
+model EvmSourceEvent {
+  id               String               @id @default(uuid())
+  networkId        String
+  registryId       String               @db.Char(66)
+  blockNumber      BigInt
+  blockHash        String               @db.Char(66)
+  transactionHash  String               @db.Char(66)
+  transactionIndex Int
+  logIndex          Int
+  eventName         String
+  domainHash        String?              @db.Char(66)
+  payload           Json
+  status            EvmObservationStatus @default(FINALIZED)
+  observedAt        DateTime             @default(now())
+  orphanedAt        DateTime?
+
+  cursor EvmObserverCursor @relation(fields: [networkId], references: [networkId], onDelete: Restrict)
+
+  @@unique([networkId, blockHash, transactionHash, logIndex])
+  @@index([networkId, status, blockNumber, transactionIndex, logIndex])
+  @@index([domainHash, status])
+}
+
 /// Fonte transacional para a rede de origem imutável de cada domainHash.
 /// A unicidade global é deliberadamente independente da tabela Domain de produto.
 model OriginRecord {

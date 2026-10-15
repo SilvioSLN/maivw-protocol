@@ -41,6 +41,7 @@ The JSON files under `fixtures/` are normative test vectors. Implementations mus
 
 The EVM projection contract, ordering rules, typed-key behavior and legacy migration are specified in `EVM_MIRROR_REGISTRY_V2.md`. Solana mirror registration and its EVM-compatible state hash are specified in `SOLANA_MIRROR_STATE_V2.md`.
 The isolated KMS/local signing boundary for both claim kinds is specified in `ATTESTATION_SIGNER_V1.md`.
+The durable finalized-block scanner for Base, Arbitrum and Polygon is specified in `EVM_OBSERVER_V1.md`.
 
 Solana pause authority and the operations that remain available during an incident are specified in `SOLANA_GOVERNANCE_V1.md`.
 

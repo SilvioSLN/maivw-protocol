@@ -167,10 +167,12 @@ Se o epoch aumentar, estados pendentes do epoch anterior são inválidos. Se epo
 - Solana: commitment `finalized`, seguido de releitura da conta e da transação.
 
 Os valores operacionais ficam em configuração, não no protocolo de atestação. O relayer grava o ponto exato de origem usado.
+O observer EVM persiste bloco, eventos e cursor atomicamente, limita a leitura a `head - confirmations` e retoma do mesmo bloco após falha ou reinício.
 
 ### Reorg
 
 Eventos ainda não finalizados não geram atestação. Se um provedor RPC apresentar história incompatível, o observer pausa aquele caminho e reconcilia com outro endpoint. Uma atualização já finalizada só é compensada por nova atestação com sequence superior; mirrors nunca fazem rollback silencioso.
+Ao detectar mudança no hash do último bloco persistido, o observer mantém a ramificação anterior como `ORPHANED`, recua até o ancestral comum e refaz o backfill da nova ramificação.
 
 ## Atestações
 
