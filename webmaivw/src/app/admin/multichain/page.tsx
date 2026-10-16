@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, CheckCircle2, ExternalLink, LoaderCircle, Network, RefreshCw, Send } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Crown, ExternalLink, Layers, LoaderCircle, Network, RefreshCw, Send, TriangleAlert } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
 type NetworkInfo = {
@@ -22,6 +22,16 @@ type MirrorJob = {
   origin: { family: "EVM" | "SOLANA"; networkId: string; transaction: { family: "EVM" | "SOLANA"; id: string } };
   destinations: Destination[];
 };
+type Deployment = {
+  family: "EVM" | "SOLANA"; networkId: string; registryId: string; name: string;
+  role: "ORIGIN" | "MIRROR"; projection: string; errorCode: string | null;
+  identity: null | { status: string; endpointUrl: string; globalDomainEpoch: string; originSequence: string; operationalKey: { algorithm: number; keyData: string } };
+};
+type DomainStatus = {
+  domain: string; domainHash: string; registered: boolean;
+  origin: null | { family: "EVM" | "SOLANA"; networkId: string; registryId: string; transaction: { family: "EVM" | "SOLANA"; id: string }; globalDomainEpoch: string; originSequence: string; activatedAt: string; lastReconciledAt: string | null };
+  deployments: Deployment[];
+};
 
 const phases = ["DETECTED", "FINALIZED", "ATTESTED", "SUBMITTED", "CONFIRMED", "RECONCILE"];
 
@@ -31,6 +41,8 @@ export default function MultichainAdminPage() {
   const [networks, setNetworks] = useState<NetworkInfo[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [job, setJob] = useState<MirrorJob | null>(null);
+  const [status, setStatus] = useState<DomainStatus | null>(null);
+  const [loadingStatus, setLoadingStatus] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const token = user?.token || (typeof window !== "undefined" ? localStorage.getItem("maivw_token") : "") || "";
@@ -41,7 +53,7 @@ export default function MultichainAdminPage() {
       .then((body) => setNetworks(body.networks || [])).catch(() => setError("Falha ao carregar redes"));
   }, [gatewayUrl]);
 
-  const available = useMemo(() => networks.filter((item) => item.capabilities.mirror), [networks]);
+  const available = useMemo(() => networks.filter((item) => item.capabilities.mirror && item.networkId !== status?.origin?.networkId), [networks, status]);
   const byId = useMemo(() => new Map(networks.map((item) => [item.networkId, item])), [networks]);
 
   async function loadJob(jobId: string, selectedDomain = domain) {
@@ -53,6 +65,21 @@ export default function MultichainAdminPage() {
     setJob(body.job);
     return body.job as MirrorJob;
   }
+
+  async function loadStatus(selectedDomain = domain) {
+    if (!selectedDomain) return;
+    setLoadingStatus(true);
+    try {
+      const response = await fetch(`${gatewayUrl}/api/v1/multichain/status/${encodeURIComponent(selectedDomain)}`);
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error?.message || body.error || "Falha ao consultar presença multichain");
+      setStatus(body);
+      setSelected((current) => current.filter((networkId) => networkId !== body.origin?.networkId));
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Falha inesperada"); }
+    finally { setLoadingStatus(false); }
+  }
+
+  useEffect(() => { loadStatus(); }, [domain, gatewayUrl]);
 
   useEffect(() => {
     if (!job || job.destinations.every((item) => ["RECONCILE", "ORPHANED", "COMPENSATION_REQUIRED"].includes(item.status))) return;
@@ -91,7 +118,7 @@ export default function MultichainAdminPage() {
 
       <section className="rounded-2xl border border-white/10 bg-white/[.03] p-5 space-y-5">
         <label className="block text-xs text-neutral-400">Domínio verificado
-          <select value={domain} onChange={(event) => { setDomain(event.target.value); setJob(null); }} className="mt-1 w-full rounded-xl border border-white/10 bg-[#11131a] p-3 text-sm text-white">
+          <select value={domain} onChange={(event) => { setDomain(event.target.value); setJob(null); setStatus(null); }} className="mt-1 w-full rounded-xl border border-white/10 bg-[#11131a] p-3 text-sm text-white">
             {domains.map((item) => <option key={item.id} value={item.domainName}>{item.domainName}</option>)}
           </select>
         </label>
@@ -107,6 +134,21 @@ export default function MultichainAdminPage() {
           {busy ? <LoaderCircle className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Criar job para {selected.length} destino(s)
         </button>
       </section>
+
+      {status?.registered && status.origin && <section className="space-y-4">
+        <div className="flex items-center justify-between"><div><div className="text-xs uppercase tracking-[.16em] text-amber-300 font-bold">Fonte da verdade</div><h2 className="text-xl font-bold mt-1">Uma origem canônica</h2></div><button onClick={() => loadStatus()} disabled={loadingStatus} className="rounded-xl border border-white/10 p-2 text-neutral-400 hover:text-white"><RefreshCw className={`w-4 h-4 ${loadingStatus ? "animate-spin" : ""}`} /></button></div>
+        <article className="rounded-2xl border-2 border-amber-400/40 bg-gradient-to-br from-amber-950/20 to-black/20 p-5">
+          <div className="flex flex-wrap justify-between gap-3"><div className="flex gap-3"><div className="rounded-xl bg-amber-500/15 text-amber-300 p-3"><Crown className="w-5 h-5" /></div><div><div className="font-bold">{byId.get(status.origin.networkId)?.name || status.origin.networkId}</div><div className="text-[10px] font-mono text-neutral-500 break-all">{status.origin.networkId}</div></div></div><span className="h-fit rounded-full bg-amber-500/15 border border-amber-500/30 px-3 py-1 text-[10px] font-bold text-amber-300">ORIGEM · CANÔNICA</span></div>
+          <div className="grid sm:grid-cols-4 gap-3 mt-5 text-xs"><Stat label="Família" value={status.origin.family} /><Stat label="Epoch global" value={status.origin.globalDomainEpoch} /><Stat label="Sequência" value={status.origin.originSequence} /><Stat label="Ativada" value={new Date(status.origin.activatedAt).toLocaleString("pt-BR")} /></div>
+          <TransactionLink network={byId.get(status.origin.networkId)} transaction={status.origin.transaction} />
+          <div className="mt-3 text-[11px] text-neutral-500 font-mono break-all">domainHash {status.domainHash}</div>
+        </article>
+
+        <div><div className="text-xs uppercase tracking-[.16em] text-blue-300 font-bold">Projeções derivadas</div><h2 className="text-xl font-bold mt-1">{status.deployments.filter((item) => item.role === "MIRROR").length} mirrors configurados</h2></div>
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">{status.deployments.filter((item) => item.role === "MIRROR").map((deployment) => <DeploymentCard key={`${deployment.networkId}:${deployment.registryId}`} deployment={deployment} />)}</div>
+      </section>}
+
+      {status && !status.registered && <div className="rounded-2xl border border-amber-500/30 bg-amber-950/10 p-5 text-sm text-amber-200 inline-flex gap-3"><TriangleAlert className="w-5 h-5 shrink-0" />O catálogo ainda não possui uma origem canônica para este domínio.</div>}
 
       {job && <section className="rounded-2xl border border-white/10 bg-white/[.03] p-5 space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-3"><div><div className="text-xs text-neutral-500">Job</div><code className="text-sm">{job.jobId}</code></div><button onClick={() => loadJob(job.jobId)} className="inline-flex gap-2 items-center text-xs border border-white/10 rounded-xl px-3 py-2"><RefreshCw className="w-3 h-3" />Atualizar</button></div>
@@ -130,4 +172,24 @@ export default function MultichainAdminPage() {
 function TransactionLink({ network, transaction }: { network?: NetworkInfo; transaction: { family: "EVM" | "SOLANA"; id: string } }) {
   const href = network ? `${network.explorer.baseUrl}${network.explorer.transactionPath.replace("{id}", transaction.id)}${network.explorer.clusterQuery || ""}` : undefined;
   return <div className="mt-3 rounded-xl bg-black/30 p-3 text-xs"><div className="text-neutral-500">{transaction.family === "SOLANA" ? "Assinatura Solana" : "Hash EVM"}</div>{href ? <a href={href} target="_blank" rel="noreferrer" className="font-mono break-all text-blue-300 inline-flex gap-1 items-center">{transaction.id}<ExternalLink className="w-3 h-3 shrink-0" /></a> : <code className="break-all">{transaction.id}</code>}</div>;
+}
+
+function DeploymentCard({ deployment }: { deployment: Deployment }) {
+  const healthy = deployment.projection === "IN_SYNC";
+  const missing = deployment.projection === "MISSING_MIRROR";
+  return <article className={`rounded-2xl border p-4 ${healthy ? "border-emerald-500/30 bg-emerald-950/10" : missing ? "border-white/10 bg-white/[.02]" : "border-amber-500/30 bg-amber-950/10"}`}>
+    <div className="flex justify-between gap-2"><div className="flex gap-2"><Layers className="w-4 h-4 text-blue-300" /><strong className="text-sm">{deployment.name}</strong></div><span className="text-[9px] px-2 py-1 rounded-full bg-blue-500/15 text-blue-300">MIRROR</span></div>
+    <div className="font-mono text-[10px] text-neutral-500 break-all mt-2">{deployment.networkId}</div>
+    <div className={`mt-4 text-xs font-semibold inline-flex gap-2 items-center ${healthy ? "text-emerald-300" : "text-amber-300"}`}>{healthy ? <CheckCircle2 className="w-4 h-4" /> : <TriangleAlert className="w-4 h-4" />}{projectionLabel(deployment.projection)}</div>
+    {deployment.identity && <div className="grid grid-cols-2 gap-2 mt-3"><Stat label="Epoch" value={deployment.identity.globalDomainEpoch} /><Stat label="Sequência" value={deployment.identity.originSequence} /></div>}
+    {deployment.errorCode && <div className="text-[10px] text-red-300 mt-2">{deployment.errorCode}</div>}
+  </article>;
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return <div className="rounded-xl bg-black/25 border border-white/5 p-3"><div className="text-[10px] text-neutral-500">{label}</div><div className="mt-1 font-medium break-all">{value}</div></div>;
+}
+
+function projectionLabel(value: string) {
+  return ({ IN_SYNC: "Sincronizado com a origem", MISSING_MIRROR: "Ainda não projetado", VERSION_BEHIND: "Atrasado", VERSION_AHEAD: "Versão à frente", ORIGIN_CONFLICT: "Conflito de origem", UNREADABLE: "Rede indisponível", MISSING_ORIGIN: "Origem ausente" } as Record<string, string>)[value] || value;
 }
