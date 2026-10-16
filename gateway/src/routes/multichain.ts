@@ -6,6 +6,13 @@ import { getActiveAdmin } from "./auth.js";
 import { OriginCatalogService } from "../multichain/OriginCatalog.js";
 import { MultichainStatusService } from "../multichain/MultichainStatus.js";
 import type { MultichainMirrorJobCoordinator } from "../multichain/MultichainMirrorJobs.js";
+import {
+  CanonicalDomainSchema,
+  MirrorJobRequestBodySchema,
+  invalidMultichainRequest,
+  multichainApiError,
+  multichainErrorBody,
+} from "../multichain/MultichainApiSchema.js";
 
 interface MultiChainRouteOptions {
   ledger: LedgerService;
@@ -39,12 +46,14 @@ export async function multiChainRoutes(app: FastifyInstance, options: MultiChain
    */
   app.get("/api/v1/multichain/status/:domain", async (request, reply) => {
     const { domain } = request.params as { domain: string };
-    if (!domain) {
-      return reply.status(400).send({ error: "Parâmetro domain obrigatório" });
+    const parsedDomain = CanonicalDomainSchema.safeParse(domain);
+    if (!parsedDomain.success) {
+      const error = invalidMultichainRequest("Domínio inválido");
+      return reply.status(error.statusCode).send(multichainErrorBody(error));
     }
 
     try {
-      const status = await multichainStatus.get(domain);
+      const status = await multichainStatus.get(parsedDomain.data);
       return {
         success: true,
         ...status,
@@ -62,18 +71,12 @@ export async function multiChainRoutes(app: FastifyInstance, options: MultiChain
    * Gera a prova criptográfica do Oráculo para autorizar o registro do espelho on-chain
    */
   app.post("/api/v1/multichain/attest-mirror", async (request, reply) => {
-    const body = request.body as {
-      domain: string;
-      operation?: "REGISTER" | "SYNC" | "REVOKE";
-      destinationNetworkIds?: string[];
-      targetChainId?: number;
-    };
-
-    if (!body || !body.domain) {
-      return reply.status(400).send({
-        error: "Campo obrigatório ausente: domain",
-      });
+    const parsed = MirrorJobRequestBodySchema.safeParse(request.body);
+    if (!parsed.success) {
+      const error = invalidMultichainRequest();
+      return reply.status(error.statusCode).send(multichainErrorBody(error));
     }
+    const body = parsed.data;
 
     const cleanDomain = body.domain.toLowerCase().trim();
     if (!request.headers.authorization?.startsWith("Bearer ")) {
@@ -92,18 +95,16 @@ export async function multiChainRoutes(app: FastifyInstance, options: MultiChain
         ?? (body.targetChainId ? [`evm:${body.targetChainId}`] : undefined);
       const job = await options.mirrorJobs.request({
         domain: cleanDomain,
-        operation: body.operation ?? "REGISTER",
+        operation: body.operation,
         destinationNetworkIds,
       });
       return reply.status(202).send({
         success: true,
         job,
       });
-    } catch (error: any) {
-      return reply.status(400).send({
-        error: "Não foi possível criar o job de espelhamento",
-        code: error?.code ?? "MIRROR_JOB_FAILED",
-      });
+    } catch (cause) {
+      const error = multichainApiError(cause);
+      return reply.status(error.statusCode).send(multichainErrorBody(error));
     }
   });
 
@@ -117,27 +118,24 @@ export async function multiChainRoutes(app: FastifyInstance, options: MultiChain
       return reply.status(403).send({ error: "Operador interno do relayer obrigatório" });
     }
     if (!options.mirrorJobs) return reply.status(503).send({ error: "Pipeline multichain não configurado" });
-    const body = (request.body ?? {}) as {
-      domain?: string;
-      operation?: "REGISTER" | "SYNC" | "REVOKE";
-      destinationNetworkIds?: string[];
-      targetChainId?: number;
-    };
-    if (!body.domain) return reply.status(400).send({ error: "Campo obrigatório ausente: domain" });
+    const parsed = MirrorJobRequestBodySchema.safeParse(request.body);
+    if (!parsed.success) {
+      const error = invalidMultichainRequest();
+      return reply.status(error.statusCode).send(multichainErrorBody(error));
+    }
+    const body = parsed.data;
     try {
       const destinationNetworkIds = body.destinationNetworkIds
         ?? (body.targetChainId ? [`evm:${body.targetChainId}`] : undefined);
       const job = await options.mirrorJobs.request({
         domain: body.domain,
-        operation: body.operation ?? "REGISTER",
+        operation: body.operation,
         destinationNetworkIds,
       });
       return reply.status(202).send({ success: true, job });
-    } catch (error: any) {
-      return reply.status(400).send({
-        error: "Não foi possível criar o job de espelhamento",
-        code: error?.code ?? "MIRROR_JOB_FAILED",
-      });
+    } catch (cause) {
+      const error = multichainApiError(cause);
+      return reply.status(error.statusCode).send(multichainErrorBody(error));
     }
   });
 }

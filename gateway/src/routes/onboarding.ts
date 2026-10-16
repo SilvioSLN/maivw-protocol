@@ -11,15 +11,21 @@ import type { LedgerService } from "../services/LedgerService.js";
 import { isLocalDemoConfig, type EnvConfig } from "../config.js";
 import type { Address } from "viem";
 import type { OriginOnboardingCoordinator } from "../multichain/OriginOnboarding.js";
+import {
+  CanonicalDomainSchema,
+  EvmAddressSchema,
+  EvmTransactionHashSchema,
+  SolanaNetworkIdSchema,
+  SolanaPublicKeySchema,
+} from "../multichain/MultichainApiSchema.js";
 
-const DomainNameSchema = z.string().trim().toLowerCase().max(253).regex(/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/);
-const SolanaPubkeySchema = z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/);
+const DomainNameSchema = CanonicalDomainSchema;
 
 const ChallengeSchema = z.object({
   domainName: DomainNameSchema,
   userId: z.number().int().positive().optional(),
-  networkId: z.string().regex(/^solana:[1-9A-HJ-NP-Za-km-z]+$/).optional(),
-  registrant: SolanaPubkeySchema.optional(),
+  networkId: SolanaNetworkIdSchema.optional(),
+  registrant: SolanaPublicKeySchema.optional(),
 }).superRefine((value, context) => {
   if (Boolean(value.networkId) !== Boolean(value.registrant)) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "networkId e registrant devem ser informados juntos" });
@@ -38,7 +44,7 @@ const VerifyAndRegisterSchema = z.object({
   domainName: z.string().min(3),
   userId: z.number().int().positive(),
   token: z.string().min(8),
-  publicKey: z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional(),
+  publicKey: EvmAddressSchema.optional(),
   endpointUrl: EndpointUrlSchema.optional(),
   simulateDns: z.literal(false).optional(),
   targetChainId: z.number().int().optional(),
@@ -48,8 +54,8 @@ const ClaimProofSchema = z.object({
   domainName: z.string().min(3),
   userId: z.number().int().positive(),
   token: z.string().min(8),
-  callerAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/),
-  publicKey: z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional(),
+  callerAddress: EvmAddressSchema,
+  publicKey: EvmAddressSchema.optional(),
   endpointUrl: EndpointUrlSchema.optional(),
   targetChainId: z.number().int().optional(),
   simulateDns: z.literal(false).optional(),
@@ -57,7 +63,7 @@ const ClaimProofSchema = z.object({
 
 const FinalizeWeb3RegistrationSchema = z.object({
   domainId: z.number().int().positive(),
-  txHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
+  txHash: EvmTransactionHashSchema,
   endpointUrl: EndpointUrlSchema.optional(),
   targetChainId: z.number().int().optional(),
 });
@@ -66,10 +72,10 @@ const SolanaOriginClaimSchema = z.object({
   challengeId: z.string().uuid(),
   token: z.string().min(32),
   endpointUrl: EndpointUrlSchema,
-  registrant: SolanaPubkeySchema,
-  registrantTokenAccount: SolanaPubkeySchema,
-  operationalKey: SolanaPubkeySchema,
-  adminKey: SolanaPubkeySchema,
+  registrant: SolanaPublicKeySchema,
+  registrantTokenAccount: SolanaPublicKeySchema,
+  operationalKey: SolanaPublicKeySchema,
+  adminKey: SolanaPublicKeySchema,
   tlsFingerprint: z.string().regex(/^0x[a-fA-F0-9]{64}$/).optional(),
   idempotencyKey: z.string().min(8).max(256),
   requestId: z.string().min(8).max(128),
