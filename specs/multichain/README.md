@@ -55,6 +55,7 @@ The typed chain-agnostic deployment, explorer, asset and finality model is speci
 The common Ledger facade and its family adapter boundary are specified in `LEDGER_ADAPTERS_V1.md`.
 Finalized Solana PDA reads and origin/mirror/provider projection are specified in `SOLANA_LEDGER_ADAPTER_V1.md`.
 DNS-bound Solana origin selection, OriginClaim issuance and registration transaction drafts are specified in `SOLANA_ORIGIN_ONBOARDING_V1.md`.
+The deployment-backed public network catalog and isolated adapter health semantics are specified in `MULTICHAIN_NETWORKS_API_V1.md`.
 
 Solana pause authority and the operations that remain available during an incident are specified in `SOLANA_GOVERNANCE_V1.md`.
 

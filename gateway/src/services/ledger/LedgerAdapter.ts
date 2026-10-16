@@ -1,5 +1,5 @@
 import type { Hex } from "viem";
-import type { NetworkFamily, NetworkId, RegistryId } from "../../multichain/NetworkModel.js";
+import type { NetworkDefinition, NetworkFamily, NetworkId, RegistryId } from "../../multichain/NetworkModel.js";
 
 export interface LedgerKeyDescriptor {
   algorithm: number;
@@ -36,6 +36,7 @@ export interface LedgerProviderState {
 
 /** Family adapter contract used by the chain-agnostic LedgerService facade. */
 export interface LedgerAdapter {
+  readonly network: NetworkDefinition;
   readonly family: NetworkFamily;
   readonly networkId: NetworkId;
   readonly registryId: RegistryId;

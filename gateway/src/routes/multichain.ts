@@ -20,7 +20,7 @@ export async function multiChainRoutes(app: FastifyInstance, options: MultiChain
    * Retorna a lista de redes suportadas pelo protocolo MAIVW e parâmetros de espelhamento
    */
   app.get("/api/v1/multichain/networks", async () => {
-    const networks = ledger.getSupportedNetworks();
+    const networks = await ledger.getMultichainNetworks();
     return {
       success: true,
       networks,

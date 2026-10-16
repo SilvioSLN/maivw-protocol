@@ -5,8 +5,14 @@ import { MIRROR_REGISTRY_V2_ABI, REGISTRY_ABI, type EnvConfig } from "../config.
 import { hashNetworkId } from "../multichain/AttestationCodec.js";
 import {
   evmRegistryId,
+  defineEvmNetwork,
   parseNetworkId,
+  type EvmNetworkDefinition,
+  type NetworkCapabilities,
+  type NetworkExplorer,
+  type NetworkFinalityPolicy,
   type NetworkId,
+  type NetworkSettlementAsset,
   type RegistryId,
 } from "../multichain/NetworkModel.js";
 import {
@@ -36,11 +42,29 @@ export interface TypedDomainIdentity {
   revoked: boolean;
 }
 
+export interface MultichainNetworkDescriptor {
+  family: "EVM" | "SOLANA";
+  networkId: string;
+  registryId: string;
+  registryVersion: number;
+  name: string;
+  capabilities: NetworkCapabilities;
+  asset: NetworkSettlementAsset;
+  finality: NetworkFinalityPolicy;
+  explorer: NetworkExplorer;
+  state: {
+    status: "AVAILABLE" | "UNAVAILABLE";
+    checkedAt: string;
+    errorCode: string | null;
+  };
+}
+
 /**
  * LedgerService — Serviço de leitura e interação com o Smart Contract MAIVWRegistry
  */
 export class EvmLedgerAdapter implements LedgerAdapter {
   readonly family = "EVM" as const;
+  readonly network: EvmNetworkDefinition;
   readonly networkId: NetworkId<"EVM">;
   readonly registryId: RegistryId;
   private client: PublicClient;
@@ -66,6 +90,23 @@ export class EvmLedgerAdapter implements LedgerAdapter {
       throw new LedgerAdapterError("LEDGER_ADAPTER_INVALID", "EVM Registry não configurado");
     }
     this.registryId = evmRegistryId(configuredRegistry as Address);
+    const metadata = config.CHAIN_ID === 421614
+      ? { name: "Arbitrum Sepolia", symbol: "ETH", explorer: "https://sepolia.arbiscan.io", confirmations: 12 }
+      : config.CHAIN_ID === 80002
+        ? { name: "Polygon Amoy", symbol: "POL", explorer: "https://amoy.polygonscan.com", confirmations: 64 }
+        : config.CHAIN_ID === 31337
+          ? { name: "Anvil Local", symbol: "ETH", explorer: config.RPC_URL, confirmations: 1 }
+          : { name: "Base Sepolia", symbol: "ETH", explorer: "https://sepolia.basescan.org", confirmations: 12 };
+    this.network = defineEvmNetwork({
+      chainId: config.CHAIN_ID,
+      name: metadata.name,
+      rpcUrl: config.RPC_URL,
+      registryAddress: configuredRegistry as Address,
+      explorerUrl: metadata.explorer,
+      asset: { kind: "NATIVE", symbol: metadata.symbol, decimals: 18, address: null },
+      finality: { confirmations: metadata.confirmations, reorgMarginBlocks: config.CHAIN_ID === 31337 ? 0 : 32 },
+      capabilities: { origin: true, mirror: true },
+    });
     // Criar chain customizada para Anvil local
     this.chain = {
       ...foundry,
@@ -1065,6 +1106,32 @@ export class LedgerService {
 
   checkNetworkHealth(networkId: string): Promise<void> {
     return this.getAdapter(networkId).checkHealth();
+  }
+
+  async getMultichainNetworks(): Promise<MultichainNetworkDescriptor[]> {
+    return Promise.all(this.listAdapters().map(async (adapter) => {
+      let status: "AVAILABLE" | "UNAVAILABLE" = "AVAILABLE";
+      let errorCode: string | null = null;
+      try {
+        await adapter.checkHealth();
+      } catch (error: any) {
+        status = "UNAVAILABLE";
+        errorCode = typeof error?.code === "string" ? error.code : "HEALTH_CHECK_FAILED";
+      }
+      const network = adapter.network;
+      return {
+        family: network.family,
+        networkId: network.networkId,
+        registryId: network.registryId,
+        registryVersion: network.registryVersion,
+        name: network.name,
+        capabilities: network.capabilities,
+        asset: network.asset,
+        finality: network.finality,
+        explorer: network.explorer,
+        state: { status, checkedAt: new Date().toISOString(), errorCode },
+      };
+    }));
   }
 
   verifyRegistration(...args: Parameters<EvmLedgerAdapter["verifyRegistration"]>): ReturnType<EvmLedgerAdapter["verifyRegistration"]> { return this.primary.verifyRegistration(...args); }
