@@ -10,6 +10,9 @@ skip-lint = false
 [programs.localnet]
 maivw_registry = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
 
+[programs.devnet]
+maivw_registry = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
+
 [provider]
 cluster = "Localnet"
 wallet = "tests/fixtures/local-authority.json"

@@ -15,6 +15,21 @@ de mirrors externos somente leitura.
 - Solana/Agave `3.1.10`
 - dependências Rust fechadas em `Cargo.lock`
 
+## Devnet
+
+O deployment público corrente está registrado em `deployments/devnet.json`. O
+manifesto contém somente endereços, parâmetros econômicos e assinaturas públicas;
+RPCs autenticados e keypairs permanecem nos arquivos locais ignorados pelo Git.
+
+Depois do deploy do programa e do mint SPL, inicialize ou audite o PDA canônico
+com `npm run solana:init:registry` no diretório `gateway`. O comando carrega
+`../.env.testnet` quando presente e exige as variáveis `SOLANA_RPC_URL`,
+`SOLANA_PROGRAM_ID`, `SOLANA_GENESIS_HASH`,
+`SOLANA_ASSET_MINT`, `SOLANA_RELAYER_KEYPAIR_PATH`, os três caminhos de keypair
+dos papéis (`SOLANA_GUARDIAN_KEYPAIR_PATH`, `SOLANA_TREASURY_KEYPAIR_PATH` e
+`SOLANA_FOUNDER_KEYPAIR_PATH`) e `ORACLE_PRIVATE_KEY`. Ele é idempotente: se o
+Registry já existir, apenas decodifica e exibe a configuração on-chain.
+
 Use `./scripts/check-toolchain.sh` para validar os binários locais e
 `./scripts/test.sh` para executar os testes sem alterar o lockfile. Para comandos
 Anchor locais, gere uma carteira descartável com `./scripts/prepare-local-wallet.sh`.
