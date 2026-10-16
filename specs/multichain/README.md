@@ -49,6 +49,7 @@ The durable origin-to-N-destinations relay state machine is specified in `RELAY_
 Idempotent signed-transaction submission, leases, retry and finality are specified in `RELAY_SUBMISSION_RETRY_V1.md`.
 Bidirectional origin fan-out and per-destination failure isolation are specified in `RELAY_FANOUT_V1.md`.
 N×N drift classification, repair plans and reconciliation audit hashes are specified in `RECONCILIATION_NXN_V1.md`.
+Logical orphan handling, terminal relay states and per-destination compensation are specified in `REORG_COMPENSATION_V1.md`.
 
 Solana pause authority and the operations that remain available during an incident are specified in `SOLANA_GOVERNANCE_V1.md`.
 

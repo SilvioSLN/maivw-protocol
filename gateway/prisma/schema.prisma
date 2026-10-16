@@ -71,6 +71,8 @@ enum MultichainRelayStatus {
   SUBMITTED
   CONFIRMED
   RECONCILE
+  ORPHANED
+  COMPENSATION_REQUIRED
 }
 
 enum MultichainRelayOperation {
@@ -115,23 +117,33 @@ enum ReconciliationRepairAction {
   MANUAL_REVIEW
 }
 
+enum RelayReorgOutcome {
+  ORPHANED
+  COMPENSATION_REQUIRED
+}
+
+enum RelayCompensationStatus {
+  PENDING
+  RESOLVED
+}
+
 /// Cursor durável por Registry EVM. nextBlock só avança na mesma transação que
 /// persiste o bloco e todos os eventos reconhecidos nele.
 model EvmObserverCursor {
-  networkId           String   @id
-  networkName         String
-  chainId             BigInt   @unique
-  registryAddress     String   @db.Char(42)
-  registryId          String   @db.Char(66)
-  confirmations       Int
-  startBlock          BigInt
-  nextBlock           BigInt
-  lastProcessedBlock  BigInt?
-  lastProcessedHash   String?  @db.Char(66)
-  observedHead        BigInt?
-  finalizedHead       BigInt?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  networkId          String   @id
+  networkName        String
+  chainId            BigInt   @unique
+  registryAddress    String   @db.Char(42)
+  registryId         String   @db.Char(66)
+  confirmations      Int
+  startBlock         BigInt
+  nextBlock          BigInt
+  lastProcessedBlock BigInt?
+  lastProcessedHash  String?  @db.Char(66)
+  observedHead       BigInt?
+  finalizedHead      BigInt?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   blocks EvmObservedBlock[]
   events EvmSourceEvent[]
@@ -163,13 +175,13 @@ model EvmSourceEvent {
   blockHash        String               @db.Char(66)
   transactionHash  String               @db.Char(66)
   transactionIndex Int
-  logIndex          Int
-  eventName         String
-  domainHash        String?              @db.Char(66)
-  payload           Json
-  status            EvmObservationStatus @default(FINALIZED)
-  observedAt        DateTime             @default(now())
-  orphanedAt        DateTime?
+  logIndex         Int
+  eventName        String
+  domainHash       String?              @db.Char(66)
+  payload          Json
+  status           EvmObservationStatus @default(FINALIZED)
+  observedAt       DateTime             @default(now())
+  orphanedAt       DateTime?
 
   cursor EvmObserverCursor @relation(fields: [networkId], references: [networkId], onDelete: Restrict)
 
@@ -195,12 +207,12 @@ model SolanaObserverCursor {
 }
 
 model SolanaObservedTransaction {
-  id          String   @id @default(uuid())
-  networkId   String
-  slot        BigInt
-  signature   String
-  blockTime   DateTime?
-  observedAt  DateTime @default(now())
+  id         String    @id @default(uuid())
+  networkId  String
+  slot       BigInt
+  signature  String
+  blockTime  DateTime?
+  observedAt DateTime  @default(now())
 
   cursor SolanaObserverCursor @relation(fields: [networkId], references: [networkId], onDelete: Restrict)
 
@@ -231,29 +243,69 @@ model SolanaSourceEvent {
 /// Unidade durável de trabalho produzida por um evento de origem. Cada job
 /// possui um destino independente por deployment de mirror.
 model MultichainRelayJob {
-  id                    String                    @id @default(uuid())
-  sourceEventKey        String                    @unique
-  domainHash            String                    @db.Char(66)
-  operation             MultichainRelayOperation
-  originNetworkFamily   OriginNetworkFamily
-  originNetworkId       String
-  originRegistryId      String                    @db.Char(66)
-  sourceTransactionId   String
-  sourcePosition        String
-  globalDomainEpoch     BigInt
-  originSequence        BigInt
-  status                MultichainRelayStatus     @default(DETECTED)
-  sourceStateHash       String?                   @db.Char(66)
-  detectedAt            DateTime
-  finalizedAt           DateTime?
-  createdAt             DateTime                  @default(now())
-  updatedAt             DateTime                  @updatedAt
+  id                  String                   @id @default(uuid())
+  sourceEventKey      String                   @unique
+  domainHash          String                   @db.Char(66)
+  operation           MultichainRelayOperation
+  originNetworkFamily OriginNetworkFamily
+  originNetworkId     String
+  originRegistryId    String                   @db.Char(66)
+  sourceTransactionId String
+  sourcePosition      String
+  globalDomainEpoch   BigInt
+  originSequence      BigInt
+  status              MultichainRelayStatus    @default(DETECTED)
+  sourceStateHash     String?                  @db.Char(66)
+  detectedAt          DateTime
+  finalizedAt         DateTime?
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
 
   destinations MultichainRelayDestination[]
   transitions  MultichainRelayTransition[]
+  reorg        MultichainRelayReorg?
 
   @@index([domainHash, globalDomainEpoch, originSequence])
   @@index([status, updatedAt])
+}
+
+model MultichainRelayReorg {
+  id                      String            @id @default(uuid())
+  jobId                   String            @unique
+  sourceEventKey          String            @unique
+  requestHash             String            @db.Char(66)
+  orphanedSourceReference String
+  reason                  String
+  outcome                 RelayReorgOutcome
+  previousAuditHash       String?           @db.Char(66)
+  auditHash               String            @unique @db.Char(66)
+  detectedAt              DateTime
+  createdAt               DateTime          @default(now())
+
+  job           MultichainRelayJob            @relation(fields: [jobId], references: [id], onDelete: Restrict)
+  compensations MultichainRelayCompensation[]
+
+  @@index([outcome, detectedAt])
+}
+
+model MultichainRelayCompensation {
+  id                     String                  @id @default(uuid())
+  reorgId                String
+  destinationId          String                  @unique
+  destinationNetworkId   String
+  destinationRegistryId  String                  @db.Char(66)
+  submittedTransactionId String?
+  action                 String
+  status                 RelayCompensationStatus @default(PENDING)
+  resolutionReference    String?
+  auditHash              String                  @unique @db.Char(66)
+  createdAt              DateTime                @default(now())
+  resolvedAt             DateTime?
+
+  reorg       MultichainRelayReorg       @relation(fields: [reorgId], references: [id], onDelete: Restrict)
+  destination MultichainRelayDestination @relation(fields: [destinationId], references: [id], onDelete: Restrict)
+
+  @@index([status, createdAt])
 }
 
 model MultichainRelayDestination {
@@ -270,9 +322,10 @@ model MultichainRelayDestination {
   createdAt                DateTime              @default(now())
   updatedAt                DateTime              @updatedAt
 
-  job         MultichainRelayJob          @relation(fields: [jobId], references: [id], onDelete: Restrict)
-  transitions MultichainRelayTransition[]
-  submission  MultichainRelaySubmission?
+  job          MultichainRelayJob           @relation(fields: [jobId], references: [id], onDelete: Restrict)
+  transitions  MultichainRelayTransition[]
+  submission   MultichainRelaySubmission?
+  compensation MultichainRelayCompensation?
 
   @@unique([jobId, destinationNetworkId, destinationRegistryId])
   @@index([status, updatedAt])
@@ -300,7 +353,7 @@ model MultichainRelaySubmission {
   createdAt             DateTime              @default(now())
   updatedAt             DateTime              @updatedAt
 
-  destination MultichainRelayDestination        @relation(fields: [destinationId], references: [id], onDelete: Restrict)
+  destination MultichainRelayDestination         @relation(fields: [destinationId], references: [id], onDelete: Restrict)
   attemptsLog MultichainRelaySubmissionAttempt[]
 
   @@index([status, nextAttemptAt])
@@ -308,15 +361,15 @@ model MultichainRelaySubmission {
 }
 
 model MultichainRelaySubmissionAttempt {
-  id             String                        @id @default(uuid())
-  submissionId   String
-  attempt        Int
-  workerId       String
-  outcome        RelaySubmissionAttemptOutcome
-  transactionId  String?
-  finalityRef    String?
-  error          String?
-  createdAt      DateTime                      @default(now())
+  id            String                        @id @default(uuid())
+  submissionId  String
+  attempt       Int
+  workerId      String
+  outcome       RelaySubmissionAttemptOutcome
+  transactionId String?
+  finalityRef   String?
+  error         String?
+  createdAt     DateTime                      @default(now())
 
   submission MultichainRelaySubmission @relation(fields: [submissionId], references: [id], onDelete: Restrict)
 
@@ -325,22 +378,22 @@ model MultichainRelaySubmissionAttempt {
 }
 
 model MultichainReconciliationRun {
-  id                    String                  @id @default(uuid())
-  requestId             String                  @unique
-  requestHash           String                  @db.Char(66)
-  domainHash            String                  @db.Char(66)
-  originNetworkFamily   OriginNetworkFamily
-  originNetworkId       String
-  originRegistryId      String                  @db.Char(66)
-  globalDomainEpoch     BigInt
-  originSequence        BigInt
-  originStateHash       String                  @db.Char(66)
-  status                ReconciliationRunStatus
-  previousAuditHash     String?                 @db.Char(66)
-  auditHash             String                  @unique @db.Char(66)
-  startedAt             DateTime
-  completedAt           DateTime
-  createdAt             DateTime                @default(now())
+  id                  String                  @id @default(uuid())
+  requestId           String                  @unique
+  requestHash         String                  @db.Char(66)
+  domainHash          String                  @db.Char(66)
+  originNetworkFamily OriginNetworkFamily
+  originNetworkId     String
+  originRegistryId    String                  @db.Char(66)
+  globalDomainEpoch   BigInt
+  originSequence      BigInt
+  originStateHash     String                  @db.Char(66)
+  status              ReconciliationRunStatus
+  previousAuditHash   String?                 @db.Char(66)
+  auditHash           String                  @unique @db.Char(66)
+  startedAt           DateTime
+  completedAt         DateTime
+  createdAt           DateTime                @default(now())
 
   findings MultichainReconciliationFinding[]
 
@@ -349,20 +402,20 @@ model MultichainReconciliationRun {
 }
 
 model MultichainReconciliationFinding {
-  id                       String                       @id @default(uuid())
+  id                       String                     @id @default(uuid())
   runId                    String
   destinationNetworkFamily OriginNetworkFamily
   destinationNetworkId     String
-  destinationRegistryId    String                       @db.Char(66)
+  destinationRegistryId    String                     @db.Char(66)
   kind                     ReconciliationFindingKind
   repairAction             ReconciliationRepairAction
-  mirrorStateHash          String?                      @db.Char(66)
+  mirrorStateHash          String?                    @db.Char(66)
   mirrorGlobalDomainEpoch  BigInt?
   mirrorOriginSequence     BigInt?
   details                  Json
   repair                   Json
-  auditHash                String                       @unique @db.Char(66)
-  createdAt                DateTime                     @default(now())
+  auditHash                String                     @unique @db.Char(66)
+  createdAt                DateTime                   @default(now())
 
   run MultichainReconciliationRun @relation(fields: [runId], references: [id], onDelete: Restrict)
 
@@ -374,15 +427,15 @@ model MultichainReconciliationFinding {
 /// Histórico append-only das transições; o estado materializado nunca é a
 /// única evidência de avanço do relayer.
 model MultichainRelayTransition {
-  id            String                @id @default(uuid())
+  id            String                 @id @default(uuid())
   jobId         String
   destinationId String?
   fromStatus    MultichainRelayStatus?
   toStatus      MultichainRelayStatus
-  artifactHash  String?               @db.Char(66)
+  artifactHash  String?                @db.Char(66)
   reference     String?
   reason        String?
-  createdAt     DateTime              @default(now())
+  createdAt     DateTime               @default(now())
 
   job         MultichainRelayJob          @relation(fields: [jobId], references: [id], onDelete: Restrict)
   destination MultichainRelayDestination? @relation(fields: [destinationId], references: [id], onDelete: Restrict)
@@ -465,23 +518,23 @@ model OriginOutboxEvent {
 
 /// Desafio de posse que não bloqueia o domínio. Segredos são persistidos somente como hash.
 model OriginDnsChallenge {
-  id                  String                   @id @default(uuid())
-  domainHash          String                   @db.Char(66)
+  id                  String                    @id @default(uuid())
+  domainHash          String                    @db.Char(66)
   domain              String
   requesterId         Int
   originNetworkFamily OriginNetworkFamily
   originNetworkId     String
-  originNetworkHash   String                   @db.Char(66)
-  originRegistryId    String                   @db.Char(66)
+  originNetworkHash   String                    @db.Char(66)
+  originRegistryId    String                    @db.Char(66)
   registrantAlgorithm OriginRegistrantAlgorithm
-  registrantKey       String                   @db.Char(66)
-  tokenHash           String                   @db.Char(66)
-  contextHash         String                   @db.Char(66)
-  dnsValueHash        String                   @db.Char(66)
-  status              OriginDnsChallengeStatus @default(PENDING)
+  registrantKey       String                    @db.Char(66)
+  tokenHash           String                    @db.Char(66)
+  contextHash         String                    @db.Char(66)
+  dnsValueHash        String                    @db.Char(66)
+  status              OriginDnsChallengeStatus  @default(PENDING)
   expiresAt           DateTime
   verifiedAt          DateTime?
-  createdAt           DateTime                 @default(now())
+  createdAt           DateTime                  @default(now())
 
   reservation OriginReservation?
 
@@ -517,7 +570,7 @@ model OriginReservation {
   createdAt           DateTime                  @default(now())
   updatedAt           DateTime                  @updatedAt
 
-  dnsChallenge OriginDnsChallenge              @relation(fields: [dnsChallengeId], references: [id], onDelete: Restrict)
+  dnsChallenge OriginDnsChallenge            @relation(fields: [dnsChallengeId], references: [id], onDelete: Restrict)
   claim        OriginClaimIssuance?
   auditEvents  OriginReservationAuditEvent[]
 
@@ -527,29 +580,29 @@ model OriginReservation {
 
 /// OriginClaimV1 assinado. Um reservationId e um nonce só podem produzir uma emissão.
 model OriginClaimIssuance {
-  id                 String            @id @default(uuid())
-  reservationId      String            @unique
-  domainHash         String            @db.Char(66)
-  codecVersion       Int               @default(1)
-  encoded            String            @db.VarChar(586)
-  digest             String            @unique @db.Char(66)
-  signedBytesHash    String            @db.Char(66)
+  id                 String               @id @default(uuid())
+  reservationId      String               @unique
+  domainHash         String               @db.Char(66)
+  codecVersion       Int                  @default(1)
+  encoded            String               @db.VarChar(586)
+  digest             String               @unique @db.Char(66)
+  signedBytesHash    String               @db.Char(66)
   signature          String
   signerKeyId        String
   signerKeyVersion   String
-  nonce              String            @unique @db.Char(66)
+  nonce              String               @unique @db.Char(66)
   deadline           DateTime
-  payloadHash        String            @db.Char(66)
-  evidenceHash       String            @db.Char(66)
-  idempotencyKeyHash String            @unique @db.Char(66)
-  requestHash        String            @db.Char(66)
-  status             OriginClaimStatus @default(ISSUED)
+  payloadHash        String               @db.Char(66)
+  evidenceHash       String               @db.Char(66)
+  idempotencyKeyHash String               @unique @db.Char(66)
+  requestHash        String               @db.Char(66)
+  status             OriginClaimStatus    @default(ISSUED)
   submittedAt        DateTime?
   consumedAt         DateTime?
   onChainTxFamily    OriginNetworkFamily?
   onChainTxId        String?
-  createdAt          DateTime          @default(now())
-  updatedAt          DateTime          @updatedAt
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
 
   reservation OriginReservation @relation(fields: [reservationId], references: [id], onDelete: Restrict)
 
@@ -572,7 +625,7 @@ model OriginReservationAuditEvent {
   eventHash         String                       @unique @db.Char(66)
   createdAt         DateTime                     @default(now())
 
-  reservation OriginReservation               @relation(fields: [reservationId], references: [id], onDelete: Restrict)
+  reservation OriginReservation             @relation(fields: [reservationId], references: [id], onDelete: Restrict)
   outboxEvent OriginReservationOutboxEvent?
 
   @@unique([reservationId, requestId])
@@ -615,28 +668,28 @@ model Reputation {
 
 /// Usuário cadastrado no ecossistema MAIVW (Fase 10)
 model User {
-  id               Int       @id @default(autoincrement())
-  email            String    @unique
+  id               Int      @id @default(autoincrement())
+  email            String   @unique
   passwordHash     String
   displayName      String?
-  role             String    @default("user") // "admin" | "user"
+  role             String   @default("user") // "admin" | "user"
   stripeCustomerId String?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
-  domains          Domain[]
+  domains Domain[]
 }
 
 /// Domínio corporativo de um usuário (Fase 10)
 model Domain {
-  id          Int          @id @default(autoincrement())
-  domainName  String       @unique
-  userId      Int
-  isVerified  Boolean      @default(false)
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  id         Int      @id @default(autoincrement())
+  domainName String   @unique
+  userId     Int
+  isVerified Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   apiKeys     ApiKey[]
   walletVault WalletVault?
   smtpConfig  SmtpConfig?
@@ -653,7 +706,7 @@ model ApiKey {
   createdAt   DateTime  @default(now())
   lastUsedAt  DateTime?
 
-  domain      Domain    @relation(fields: [domainId], references: [id], onDelete: Cascade)
+  domain Domain @relation(fields: [domainId], references: [id], onDelete: Cascade)
 }
 
 /// Cofre de chaves Web3 (KMS Mock com criptografia simétrica AES-256-GCM) (Fase 10)
@@ -666,60 +719,60 @@ model WalletVault {
   authTag             String
   createdAt           DateTime @default(now())
 
-  domain              Domain   @relation(fields: [domainId], references: [id], onDelete: Cascade)
+  domain Domain @relation(fields: [domainId], references: [id], onDelete: Cascade)
 }
 
 /// Configuração SMTP por domínio (provedor externo: Resend, SendGrid, SES)
 model SmtpConfig {
-  id                Int      @id @default(autoincrement())
-  domainId          Int      @unique
-  provider          String   @default("resend") // "resend" | "sendgrid" | "ses"
-  encryptedApiKey   String
-  iv                String
-  authTag           String
-  fromName          String   @default("MAIVW")
-  fromEmail         String?
-  isActive          Boolean  @default(true)
-  lastTestedAt      DateTime?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id              Int       @id @default(autoincrement())
+  domainId        Int       @unique
+  provider        String    @default("resend") // "resend" | "sendgrid" | "ses"
+  encryptedApiKey String
+  iv              String
+  authTag         String
+  fromName        String    @default("MAIVW")
+  fromEmail       String?
+  isActive        Boolean   @default(true)
+  lastTestedAt    DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  domain            Domain   @relation(fields: [domainId], references: [id], onDelete: Cascade)
+  domain Domain @relation(fields: [domainId], references: [id], onDelete: Cascade)
 }
 
 /// Contas de e-mail vinculadas a um domínio (criadas pelo admin)
 model EmailAccount {
   id          Int      @id @default(autoincrement())
-  localPart   String                             // "contato", "suporte", etc.
+  localPart   String // "contato", "suporte", etc.
   domainId    Int
-  userId      Int?                               // Vinculado a um User para login
+  userId      Int? // Vinculado a um User para login
   displayName String?
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  domain      Domain   @relation(fields: [domainId], references: [id], onDelete: Cascade)
+  domain Domain @relation(fields: [domainId], references: [id], onDelete: Cascade)
 
   @@unique([localPart, domainId])
 }
 
 /// Mensagens recebidas na caixa de entrada (Web3 e Legadas) (Fases 10 e 11)
 model Message {
-  id          Int      @id @default(autoincrement())
-  messageId   String   @unique
-  from        String
-  to          String
-  subject     String
-  body        String
-  msgClass    String
-  status      String   @default("received")
-  signature   String?
-  isLegacy    Boolean  @default(false)
-  isRead      Boolean  @default(false)
-  isRevoked   Boolean  @default(false)                   // Sinaliza revogação on-chain pós-entrega
-  revocationReason String?                               // Motivo da revogação (ex: Tag Spoofing ban)
-  domainId    Int?                               // Domínio ao qual a mensagem pertence
-  receivedAt  DateTime @default(now())
+  id               Int      @id @default(autoincrement())
+  messageId        String   @unique
+  from             String
+  to               String
+  subject          String
+  body             String
+  msgClass         String
+  status           String   @default("received")
+  signature        String?
+  isLegacy         Boolean  @default(false)
+  isRead           Boolean  @default(false)
+  isRevoked        Boolean  @default(false) // Sinaliza revogação on-chain pós-entrega
+  revocationReason String? // Motivo da revogação (ex: Tag Spoofing ban)
+  domainId         Int? // Domínio ao qual a mensagem pertence
+  receivedAt       DateTime @default(now())
 }
 
 /// Rota Privada Out-of-Band para envio a Dark Endpoints (Modo Stealth)
@@ -735,26 +788,26 @@ model PrivateRoute {
 
 /// Configuração do Modo de Segurança / Stealth do domínio receptor
 model StealthConfig {
-  id                 Int      @id @default(autoincrement())
-  domainName         String   @unique
-  mode               String   @default("public") // "public" | "hybrid" | "dark"
-  isStealthEnabled   Boolean  @default(false)
-  inboundToken       String?  // Token exigido no header x-maivw-stealth-token
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  id               Int      @id @default(autoincrement())
+  domainName       String   @unique
+  mode             String   @default("public") // "public" | "hybrid" | "dark"
+  isStealthEnabled Boolean  @default(false)
+  inboundToken     String? // Token exigido no header x-maivw-stealth-token
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 }
 
 /// Pool / Cluster Regional de Endpoints P2P (Gestão pela Plataforma MAIVW)
 model EndpointPool {
-  id          Int               @id @default(autoincrement())
-  code        String            @unique // ex: "sa-east-1", "us-east-1", "default", "vip-providers"
-  name        String            // ex: "Cluster América do Sul (São Paulo)"
+  id          Int      @id @default(autoincrement())
+  code        String   @unique // ex: "sa-east-1", "us-east-1", "default", "vip-providers"
+  name        String // ex: "Cluster América do Sul (São Paulo)"
   description String?
-  region      String?           @default("GLOBAL") // "BR", "US", "EU", "GLOBAL"
-  isDefault   Boolean           @default(false)
-  isActive    Boolean           @default(true)
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
+  region      String?  @default("GLOBAL") // "BR", "US", "EU", "GLOBAL"
+  isDefault   Boolean  @default(false)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   nodes       EndpointNode[]
   domainRules DomainRouteRule[]
@@ -762,33 +815,33 @@ model EndpointPool {
 
 /// Nó / Instância de Gateway receptor dentro de um Pool P2P
 model EndpointNode {
-  id             Int          @id @default(autoincrement())
+  id             Int       @id @default(autoincrement())
   poolId         Int
-  name           String       // ex: "Gateway GRU-01 Primário"
-  endpointUrl    String       // ex: "https://node-gru-1.maivw.internal/api/v1/inbox"
-  weight         Int          @default(100) // Peso para Weighted Round-Robin (ex: 70, 30)
-  isActive       Boolean      @default(true) // Toggle administrativo
-  isHealthy      Boolean      @default(true) // Status do Circuit Breaker
-  failureCount   Int          @default(0)    // Falhas consecutivas de entrega/healthcheck
+  name           String // ex: "Gateway GRU-01 Primário"
+  endpointUrl    String // ex: "https://node-gru-1.maivw.internal/api/v1/inbox"
+  weight         Int       @default(100) // Peso para Weighted Round-Robin (ex: 70, 30)
+  isActive       Boolean   @default(true) // Toggle administrativo
+  isHealthy      Boolean   @default(true) // Status do Circuit Breaker
+  failureCount   Int       @default(0) // Falhas consecutivas de entrega/healthcheck
   lastFailure    DateTime?
   lastChecked    DateTime?
-  responseTimeMs Int?         // Métrica de latência observada
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  responseTimeMs Int? // Métrica de latência observada
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-  pool           EndpointPool @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  pool EndpointPool @relation(fields: [poolId], references: [id], onDelete: Cascade)
 }
 
 /// Regra de roteamento atribuída pela plataforma (mapeia padrões de domínio a pools)
 model DomainRouteRule {
-  id            Int          @id @default(autoincrement())
-  domainPattern String       @unique // ex: "itau.com.br", "*.gov.br", ou domínio específico
+  id            Int      @id @default(autoincrement())
+  domainPattern String   @unique // ex: "itau.com.br", "*.gov.br", ou domínio específico
   poolId        Int
-  priority      Int          @default(0) // Maior prioridade avaliada primeiro
-  isActive      Boolean      @default(true)
+  priority      Int      @default(0) // Maior prioridade avaliada primeiro
+  isActive      Boolean  @default(true)
   notes         String?
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  pool          EndpointPool @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  pool EndpointPool @relation(fields: [poolId], references: [id], onDelete: Cascade)
 }

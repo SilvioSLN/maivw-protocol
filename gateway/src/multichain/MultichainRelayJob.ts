@@ -5,7 +5,9 @@ import { hashNetworkId } from "./AttestationCodec.js";
 
 export type RelayNetworkFamily = "EVM" | "SOLANA";
 export type RelayOperation = "REGISTER" | "SYNC" | "REVOKE";
-export type RelayStatus = "DETECTED" | "FINALIZED" | "ATTESTED" | "SUBMITTED" | "CONFIRMED" | "RECONCILE";
+export type RelayStatus =
+  | "DETECTED" | "FINALIZED" | "ATTESTED" | "SUBMITTED" | "CONFIRMED" | "RECONCILE"
+  | "ORPHANED" | "COMPENSATION_REQUIRED";
 
 const STATUS_ORDER: readonly RelayStatus[] = [
   "DETECTED", "FINALIZED", "ATTESTED", "SUBMITTED", "CONFIRMED", "RECONCILE",
