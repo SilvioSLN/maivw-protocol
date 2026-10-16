@@ -2,10 +2,13 @@ import type { FastifyInstance } from "fastify";
 import type { LedgerService } from "../services/LedgerService.js";
 import type { OracleService } from "../services/OracleService.js";
 import type { PrismaClient } from "@prisma/client";
+import { z } from "zod";
 import { getActiveAdmin } from "./auth.js";
 import { OriginCatalogService } from "../multichain/OriginCatalog.js";
 import { MultichainStatusService } from "../multichain/MultichainStatus.js";
 import type { MultichainMirrorJobCoordinator } from "../multichain/MultichainMirrorJobs.js";
+import { MultichainJobQuery } from "../multichain/MultichainJobQuery.js";
+import { catalogDomainHash } from "../multichain/OriginCatalog.js";
 import {
   CanonicalDomainSchema,
   MirrorJobRequestBodySchema,
@@ -21,12 +24,14 @@ interface MultiChainRouteOptions {
   internalServiceKey?: string;
   multichainStatus?: MultichainStatusService;
   mirrorJobs?: MultichainMirrorJobCoordinator;
+  jobQuery?: MultichainJobQuery;
 }
 
 export async function multiChainRoutes(app: FastifyInstance, options: MultiChainRouteOptions) {
   const { ledger, oracle, prisma } = options;
   const multichainStatus = options.multichainStatus
     ?? new MultichainStatusService(new OriginCatalogService(prisma), ledger);
+  const jobQuery = options.jobQuery ?? new MultichainJobQuery(prisma);
 
   /**
    * GET /api/v1/multichain/networks
@@ -106,6 +111,30 @@ export async function multiChainRoutes(app: FastifyInstance, options: MultiChain
       const error = multichainApiError(cause);
       return reply.status(error.statusCode).send(multichainErrorBody(error));
     }
+  });
+
+  app.get("/api/v1/multichain/jobs/:jobId", async (request, reply) => {
+    if (!request.headers.authorization?.startsWith("Bearer ")) {
+      return reply.status(401).send({ error: "Autenticação obrigatória" });
+    }
+    const admin = await getActiveAdmin(request, prisma);
+    if (!admin) return reply.status(403).send({ error: "Administrador existente obrigatório" });
+    const { jobId } = request.params as { jobId: string };
+    const parsed = z.string().uuid().safeParse(jobId);
+    const query = z.object({ domain: CanonicalDomainSchema }).safeParse(request.query);
+    if (!parsed.success || !query.success) {
+      const error = invalidMultichainRequest("Job ou domínio inválido");
+      return reply.status(error.statusCode).send(multichainErrorBody(error));
+    }
+    const ownedDomain = await prisma.domain.findFirst({
+      where: { domainName: query.data.domain, userId: admin.id, isVerified: true },
+    });
+    if (!ownedDomain) return reply.status(404).send({ error: "Domínio verificado não encontrado para esta conta" });
+    const job = await jobQuery.get(parsed.data);
+    if (!job || job.domainHash.toLowerCase() !== catalogDomainHash(query.data.domain).toLowerCase()) {
+      return reply.status(404).send({ error: "Job não encontrado" });
+    }
+    return { success: true, job };
   });
 
   /**

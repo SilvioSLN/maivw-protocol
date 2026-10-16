@@ -40,6 +40,11 @@ The JSON files under `fixtures/` are normative test vectors. Implementations mus
 `fixtures/origin-claim-v1.json` is the normative Solana registration payload plus its complete `OriginClaimV1` envelope. `fixtures/full-lifecycle-v1.json` is the normative transition suite. It covers origin registration and update, provider warning/slash, recovery, reclaim, Solana-origin mirroring into EVM, synchronization and tombstone revocation. Numeric economic values are expressed as decimal strings in the smallest unit of the origin asset; `attestedStake` is informational at a mirror and `spendableLocalStake` must remain zero.
 
 The EVM projection contract, ordering rules, typed-key behavior and legacy migration are specified in `EVM_MIRROR_REGISTRY_V2.md`. Solana mirror registration and its EVM-compatible state hash are specified in `SOLANA_MIRROR_STATE_V2.md`.
+
+The authenticated mirror UI creates origin-to-N jobs using canonical NetworkIds
+and polls `GET /api/v1/multichain/jobs/:jobId?domain=...`. Transaction references
+are returned as `{ family, id }`; clients label Solana ids as signatures and EVM
+ids as hashes instead of assuming an `0x` prefix.
 The isolated KMS/local signing boundary for both claim kinds is specified in `ATTESTATION_SIGNER_V1.md`.
 The durable finalized-block scanner for Base, Arbitrum and Polygon is specified in `EVM_OBSERVER_V1.md`.
 The finalized slot/signature scanner and deterministic Anchor event decoder are specified in `SOLANA_OBSERVER_V1.md`.

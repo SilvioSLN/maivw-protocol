@@ -2692,6 +2692,10 @@ print(res.json())`}
                       </p>
                     </div>
 
+                    <div className="flex gap-2">
+                    <Link href="/admin/multichain" className="px-3.5 py-1.5 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-blue-300 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition">
+                      <Network className="w-3.5 h-3.5" /> Novo painel
+                    </Link>
                     <button
                       type="button"
                       onClick={() => currentDomain && loadMultiChainStatus(currentDomain.domainName)}
@@ -2701,6 +2705,7 @@ print(res.json())`}
                       <RefreshCw className={`w-3.5 h-3.5 ${isLoadingMultiChain ? "animate-spin text-blue-400" : ""}`} />
                       <span>Atualizar Redes</span>
                     </button>
+                    </div>
                   </div>
 
                   {mirrorError && (
