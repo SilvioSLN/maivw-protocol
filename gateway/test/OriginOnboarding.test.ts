@@ -82,6 +82,11 @@ test("coordinator binds Solana choice into DNS challenge, OriginClaim and transa
     },
   };
   const coordinator = new OriginOnboardingCoordinator(reservations as any, [{ network, standardFee: 1_000n }]);
+  assert.deepEqual(coordinator.listOriginDeployments()[0], {
+    family: "SOLANA", networkId: network.networkId, registryId: network.registryId,
+    name: "Solana Local", programId: PROGRAM, asset: network.asset,
+    standardFee: "1000", standardFeeFormatted: "0.001 MAIV", explorer: network.explorer,
+  });
   const challenge = await coordinator.createChallenge({
     domain: DOMAIN, requesterId: 1, networkId: network.networkId, registrant: REGISTRANT,
   });
@@ -104,6 +109,9 @@ test("onboarding API accepts a Solana origin selection and returns family-specif
   const app = Fastify();
   const user = { id: 1, email: "admin@example.com", role: "admin" };
   const originOnboarding = {
+    listOriginDeployments() {
+      return [{ family: "SOLANA", networkId: network.networkId, name: network.name, standardFee: "1000", standardFeeFormatted: "0.001 MAIV", asset: network.asset }];
+    },
     async createChallenge() {
       return {
         challengeId: "11111111-1111-4111-8111-111111111111", token: "t".repeat(43), network,
@@ -133,6 +141,11 @@ test("onboarding API accepts a Solana origin selection and returns family-specif
     } as any,
   });
   const authorization = `Bearer ${jwt.sign(user, SECRET)}`;
+  const networks = await app.inject({
+    method: "GET", url: "/api/v1/onboarding/origin-networks", headers: { authorization },
+  });
+  assert.equal(networks.statusCode, 200);
+  assert.equal(networks.json().networks[0].standardFeeFormatted, "0.001 MAIV");
   const challenge = await app.inject({
     method: "POST", url: "/api/v1/onboarding/challenge", headers: { authorization },
     payload: { domainName: DOMAIN, networkId: network.networkId, registrant: REGISTRANT },
@@ -146,10 +159,12 @@ test("onboarding API accepts a Solana origin selection and returns family-specif
       endpointUrl: "http://gateway:3001/inbox", registrant: REGISTRANT,
       registrantTokenAccount: REGISTRANT, operationalKey: REGISTRANT, adminKey: REGISTRANT,
       idempotencyKey: "idempotency-1", requestId: "request-1",
+      executionMode: "RELAYER",
     },
   });
   assert.equal(claim.statusCode, 200);
   assert.equal(claim.json().origin.networkId, network.networkId);
   assert.equal(claim.json().transaction.family, "SOLANA");
+  assert.equal(claim.json().execution.relayerPaysNetworkFee, true);
   await app.close();
 });

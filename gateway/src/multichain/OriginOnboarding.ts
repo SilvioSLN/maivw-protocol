@@ -75,6 +75,20 @@ export class OriginOnboardingCoordinator {
     }
   }
 
+  listOriginDeployments() {
+    return [...this.deployments.values()].map(({ network, standardFee }) => ({
+      family: network.family,
+      networkId: network.networkId,
+      registryId: network.registryId,
+      name: network.name,
+      programId: network.programId,
+      asset: network.asset,
+      standardFee: standardFee.toString(),
+      standardFeeFormatted: `${formatUnits(standardFee, network.asset.decimals)} ${network.asset.symbol}`,
+      explorer: network.explorer,
+    }));
+  }
+
   async createChallenge(input: CreateOriginOnboardingChallengeInput) {
     const deployment = this.deployments.get(input.networkId);
     if (!deployment) throw new OriginOnboardingError("ORIGIN_NETWORK_NOT_FOUND", "rede de origem não configurada");
@@ -172,4 +186,12 @@ export class OriginOnboardingCoordinator {
       transaction,
     };
   }
+}
+
+function formatUnits(value: bigint, decimals: number): string {
+  if (decimals === 0) return value.toString();
+  const raw = value.toString().padStart(decimals + 1, "0");
+  const integer = raw.slice(0, -decimals);
+  const fraction = raw.slice(-decimals).replace(/0+$/, "");
+  return fraction ? `${integer}.${fraction}` : integer;
 }

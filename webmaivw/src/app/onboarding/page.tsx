@@ -873,6 +873,10 @@ export default function OnboardingPage() {
               </div>
 
               <form onSubmit={handleGenerateChallenge} className="space-y-5">
+                <Link href="/onboarding/solana" className="flex items-center justify-between rounded-2xl border border-violet-500/30 bg-violet-950/20 p-4 hover:bg-violet-950/35 transition">
+                  <span><strong className="block text-sm text-violet-200">Usar Solana como origem</strong><span className="text-xs text-neutral-400">Pubkey Ed25519, pagamento SPL e assinatura via carteira ou relayer.</span></span>
+                  <ArrowRight className="w-4 h-4 text-violet-300" />
+                </Link>
                 <div>
                   <label className="block text-xs font-semibold text-neutral-300 mb-2">
                     Nome do Domínio (FQDN)

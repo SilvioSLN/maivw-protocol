@@ -79,6 +79,7 @@ const SolanaOriginClaimSchema = z.object({
   tlsFingerprint: z.string().regex(/^0x[a-fA-F0-9]{64}$/).optional(),
   idempotencyKey: z.string().min(8).max(256),
   requestId: z.string().min(8).max(128),
+  executionMode: z.enum(["WALLET", "RELAYER"]).default("WALLET"),
 });
 
 const CompleteOnboardingSchema = z.object({
@@ -147,6 +148,13 @@ export async function onboardingRoutes(app: FastifyInstance, options: Onboarding
 
   const MAIVW_CORE_DOMAIN = config?.MAIVW_CORE_DOMAIN || "maivw.org";
   const DEFAULT_P2P_ENDPOINT = config?.DEFAULT_P2P_ENDPOINT || `https://mw.${MAIVW_CORE_DOMAIN}/api/v1/inbox`;
+
+  app.get("/api/v1/onboarding/origin-networks", { preHandler: authorizeOnboarding }, async (_request, reply) => {
+    if (!options.originOnboarding) {
+      return reply.status(503).send({ error: "Onboarding de origem Solana não configurado neste nó" });
+    }
+    return { success: true, networks: options.originOnboarding.listOriginDeployments() };
+  });
 
   /**
    * GET /api/v1/onboarding/node-mode
@@ -332,6 +340,12 @@ export async function onboardingRoutes(app: FastifyInstance, options: Onboarding
         },
         originClaim: result.claim,
         transaction: result.transaction,
+        execution: {
+          mode: parse.data.executionMode,
+          requiredSigner: parse.data.registrant,
+          relayerPaysNetworkFee: parse.data.executionMode === "RELAYER",
+          clientMustAuthorize: true,
+        },
       };
     } catch (error: any) {
       const conflict = error?.code === "ORIGIN_ALREADY_ACTIVE" || error?.code === "ORIGIN_ALREADY_RESERVED"

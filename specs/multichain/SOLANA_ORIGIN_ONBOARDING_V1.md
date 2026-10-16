@@ -22,3 +22,15 @@ registrant. EVM callers that omit `networkId` continue to use the compatible
 legacy onboarding flow. Deployments that have not configured the Solana
 coordinator fail explicitly with HTTP 503 instead of silently choosing EVM.
 
+## Client discovery and execution
+
+Authenticated clients discover eligible origins with
+`GET /api/v1/onboarding/origin-networks`. Each entry includes the canonical
+NetworkId, Program id, explorer, SPL mint, decimals and the exact standard fee
+in both base units and display form. The UI must never infer a Solana fee from
+an EVM chain id.
+
+The claim request selects `WALLET` or `RELAYER`. In wallet mode the registrant
+pays Solana's network fee. In relayer mode the relayer may be the fee payer,
+but the registrant remains a required signer in both modes; relaying never
+turns the origin registration into a custodial operation.
