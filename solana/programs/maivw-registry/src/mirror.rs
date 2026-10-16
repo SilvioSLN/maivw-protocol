@@ -343,6 +343,14 @@ mod tests {
         let mut malformed_evm = args();
         malformed_evm.operational_key.value[0] = 1;
         assert!(validate_register_mirror(&malformed_evm).is_err());
+
+        let mut forged_solana = solana.clone();
+        forged_solana.operational_key.algorithm = KeyAlgorithm::Secp256k1EvmAddress;
+        assert!(validate_register_mirror(&forged_solana).is_err());
+
+        let mut zero_solana = solana;
+        zero_solana.admin_key.value = [0; 32];
+        assert!(validate_register_mirror(&zero_solana).is_err());
     }
 
     #[test]

@@ -139,8 +139,25 @@ mod tests {
         assert_eq!(migrated.domain, legacy.domain);
         assert_eq!(migrated.origin, legacy.origin);
         assert_eq!(migrated.origin_registry, legacy.origin_registry);
+        assert_eq!(migrated.operational_key, legacy.operational_key);
+        assert_eq!(migrated.admin_key, legacy.admin_key);
+        assert_eq!(migrated.endpoint, legacy.endpoint);
+        assert_eq!(migrated.tls_fingerprint, legacy.tls_fingerprint);
+        assert_eq!(migrated.status, legacy.status);
         assert_eq!(migrated.global_domain_epoch, legacy.global_domain_epoch);
         assert_eq!(migrated.origin_sequence, legacy.origin_sequence);
+        assert_eq!(migrated.provider, legacy.provider);
+        assert_eq!(migrated.provider_tier, legacy.provider_tier);
+        assert_eq!(migrated.strikes, legacy.strikes);
+        assert_eq!(migrated.created_at, legacy.created_at);
+        assert_eq!(migrated.updated_at, legacy.updated_at);
+        assert_eq!(migrated.attested_stake, legacy.attested_stake);
+        assert_eq!(migrated.attested_daily_limit, legacy.attested_daily_limit);
+        assert_eq!(
+            migrated.original_registration_amount,
+            legacy.original_registration_amount
+        );
+        assert_eq!(migrated.current_stake, legacy.current_stake);
         assert_eq!(migrated.origin_transaction, legacy.origin_transaction);
         assert_eq!(migrated.last_migrated_slot, 42);
         assert_eq!(migrated.migration_reserved, [0; DOMAIN_MIGRATION_RESERVED_LEN]);

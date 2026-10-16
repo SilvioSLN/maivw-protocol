@@ -177,4 +177,25 @@ mod tests {
             provider_payload_hash(&provider, registrant, mint, 100)
         );
     }
+
+    #[test]
+    fn origin_claim_payload_cannot_be_rebound_to_another_identity() {
+        let args = domain_args();
+        let registrant = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+        let expected = domain_payload_hash(&args, registrant, mint, 100);
+
+        let mut changed = args.clone();
+        changed.domain_hash[0] ^= 1;
+        assert_ne!(expected, domain_payload_hash(&changed, registrant, mint, 100));
+        changed = args.clone();
+        changed.operational_key[0] ^= 1;
+        assert_ne!(expected, domain_payload_hash(&changed, registrant, mint, 100));
+        changed = args.clone();
+        changed.admin_key[0] ^= 1;
+        assert_ne!(expected, domain_payload_hash(&changed, registrant, mint, 100));
+        changed = args;
+        changed.tls_fingerprint[0] ^= 1;
+        assert_ne!(expected, domain_payload_hash(&changed, registrant, mint, 100));
+    }
 }

@@ -1389,4 +1389,22 @@ mod tests {
             MirrorAttestationReceipt::pda(&[1; 32], &[3; 32])
         );
     }
+
+    #[test]
+    fn replay_receipts_are_bound_to_domain_and_nonce() {
+        let domain_a = [1; 32];
+        let domain_b = [2; 32];
+        let nonce_a = [3; 32];
+        let nonce_b = [4; 32];
+
+        let origin = OriginClaimReceipt::pda(&domain_a, &nonce_a);
+        let mirror = MirrorAttestationReceipt::pda(&domain_a, &nonce_a);
+        assert_eq!(origin, OriginClaimReceipt::pda(&domain_a, &nonce_a));
+        assert_eq!(mirror, MirrorAttestationReceipt::pda(&domain_a, &nonce_a));
+        assert_ne!(origin, OriginClaimReceipt::pda(&domain_a, &nonce_b));
+        assert_ne!(origin, OriginClaimReceipt::pda(&domain_b, &nonce_a));
+        assert_ne!(mirror, MirrorAttestationReceipt::pda(&domain_a, &nonce_b));
+        assert_ne!(mirror, MirrorAttestationReceipt::pda(&domain_b, &nonce_a));
+        assert_ne!(origin.0, mirror.0);
+    }
 }
