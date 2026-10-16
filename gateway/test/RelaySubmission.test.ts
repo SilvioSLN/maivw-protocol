@@ -184,3 +184,32 @@ test("respects deadline and only confirms after destination finality", async () 
   assert.deepEqual(await service.confirm(submission.id, adapter), { confirmed: true, reference: "block:100" });
   assert.equal(memory.destination.status, "CONFIRMED");
 });
+
+test("circuit gate blocks prepare and pending broadcast but leaves finality observation available", async () => {
+  const memory = new MemoryStore();
+  let open = true;
+  const gate = {
+    async assertAllowed() {
+      if (open) throw new Error("circuit open");
+    },
+  };
+  const service = new RelaySubmissionCoordinator(
+    memory,
+    new MultichainRelayJobService(memory),
+    { leaseMs: 1_000, baseRetryMs: 100, maxRetryMs: 1_000 },
+    gate,
+  );
+  await assert.rejects(service.prepare(prepareInput()), /circuit open/);
+  open = false;
+  const { submission } = await service.prepare(prepareInput());
+  open = true;
+  const adapter: RelayBroadcastAdapter = {
+    broadcast: async ({ expectedTransactionId }) => ({ transactionId: expectedTransactionId }),
+    checkFinality: async () => ({ status: "FINALIZED", reference: "block:101" }),
+  };
+  await assert.rejects(service.submit(submission.id, "worker", adapter), /circuit open/);
+  open = false;
+  await service.submit(submission.id, "worker", adapter, new Date("2026-10-16T12:00:01Z"));
+  open = true;
+  assert.deepEqual(await service.confirm(submission.id, adapter), { confirmed: true, reference: "block:101" });
+});

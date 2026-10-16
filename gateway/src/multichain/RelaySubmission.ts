@@ -152,6 +152,11 @@ export interface RelaySubmissionPolicy {
   maxRetryMs: number;
 }
 
+/** Blocks preparation/broadcast while a destination's operational circuit is open. */
+export interface RelaySubmissionGate {
+  assertAllowed(destinationId: string): Promise<void>;
+}
+
 export class RelaySubmissionError extends Error {
   constructor(
     readonly code:
@@ -206,6 +211,7 @@ export class RelaySubmissionCoordinator {
     private readonly store: RelaySubmissionStore,
     private readonly jobs: MultichainRelayJobService,
     policy: Partial<RelaySubmissionPolicy> = {},
+    private readonly gate?: RelaySubmissionGate,
   ) {
     this.policy = { ...DEFAULT_POLICY, ...policy };
     if (!Number.isSafeInteger(this.policy.leaseMs) || this.policy.leaseMs < 1
@@ -224,6 +230,7 @@ export class RelaySubmissionCoordinator {
     const deadline = date("deadline", input.deadline);
     if (deadline <= now) fail("SUBMISSION_DEADLINE_EXPIRED", "atestado expirou antes do preparo");
     const destinationId = text("destinationId", input.destinationId, 128);
+    await this.gate?.assertAllowed(destinationId);
     const idempotencyKey = text("idempotencyKey", input.idempotencyKey, 256);
     const signedPayload = text("signedPayload", input.signedPayload);
     const expectedTransactionId = text("expectedTransactionId", input.expectedTransactionId, 256);
@@ -270,6 +277,7 @@ export class RelaySubmissionCoordinator {
       await this.ensureSubmitted(submission.destinationId, submission.expectedTransactionId);
       return { transactionId: submission.expectedTransactionId, broadcast: false };
     }
+    await this.gate?.assertAllowed(submission.destinationId);
     if (now >= submission.deadline) fail("SUBMISSION_DEADLINE_EXPIRED", "deadline expirou antes do broadcast");
     if (now < submission.nextAttemptAt) {
       fail("SUBMISSION_RETRY_NOT_READY", "backoff ainda não terminou", submission.nextAttemptAt);
@@ -388,10 +396,12 @@ export function createPrismaRelaySubmissionCoordinator(
   prisma: PrismaClient,
   jobsRepository: RelayJobRepository,
   policy?: Partial<RelaySubmissionPolicy>,
+  gate?: RelaySubmissionGate,
 ): RelaySubmissionCoordinator {
   return new RelaySubmissionCoordinator(
     new PrismaRelaySubmissionStore(prisma),
     new MultichainRelayJobService(jobsRepository),
     policy,
+    gate,
   );
 }

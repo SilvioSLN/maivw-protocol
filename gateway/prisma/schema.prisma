@@ -127,6 +127,35 @@ enum RelayCompensationStatus {
   RESOLVED
 }
 
+enum RelayCircuitStatus {
+  CLOSED
+  OPEN
+}
+
+enum RelayCircuitScopeKind {
+  GLOBAL
+  DOMAIN
+  DEPLOYMENT
+  DOMAIN_DEPLOYMENT
+}
+
+enum RelayCircuitSignalKind {
+  ORIGIN_CONFLICT
+  STATE_DRIFT
+  RPC_DIVERGENCE
+  LOW_BALANCE
+  RELAY_FAILURE
+  RELAY_SUCCESS
+  MANUAL_RESET
+}
+
+enum RelayCircuitEventAction {
+  SIGNAL_RECORDED
+  TRIPPED
+  FAILURE_COUNTER_RESET
+  MANUAL_RESET
+}
+
 /// Cursor durável por Registry EVM. nextBlock só avança na mesma transação que
 /// persiste o bloco e todos os eventos reconhecidos nele.
 model EvmObserverCursor {
@@ -306,6 +335,58 @@ model MultichainRelayCompensation {
   destination MultichainRelayDestination @relation(fields: [destinationId], references: [id], onDelete: Restrict)
 
   @@index([status, createdAt])
+}
+
+/// Gate operacional persistente. OPEN bloqueia novos prepare/broadcasts no
+/// escopo, mas não impede observar finalização nem executar compensações.
+model MultichainRelayCircuitBreaker {
+  id                  String                  @id @default(uuid())
+  scopeKey            String                  @unique
+  scopeKind           RelayCircuitScopeKind
+  domainHash          String?                 @db.Char(66)
+  networkId           String?
+  registryId          String?                 @db.Char(66)
+  status              RelayCircuitStatus      @default(CLOSED)
+  triggerSignal       RelayCircuitSignalKind?
+  reason              String?
+  consecutiveFailures Int                     @default(0)
+  failureThreshold    Int
+  version             Int                     @default(0)
+  openedAt            DateTime?
+  resetAt             DateTime?
+  lastAuditHash       String?                 @db.Char(66)
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+
+  events MultichainRelayCircuitEvent[]
+
+  @@index([status, updatedAt])
+  @@index([domainHash, status])
+  @@index([networkId, registryId, status])
+}
+
+/// Ledger append-only de sinais e resets do circuit breaker.
+model MultichainRelayCircuitEvent {
+  id                  String                  @id @default(uuid())
+  breakerId           String
+  requestId           String
+  requestHash         String                  @db.Char(66)
+  signalKind          RelayCircuitSignalKind
+  action              RelayCircuitEventAction
+  reason              String
+  details             Json
+  resultingStatus     RelayCircuitStatus
+  consecutiveFailures Int
+  previousAuditHash   String?                 @db.Char(66)
+  auditHash           String                  @unique @db.Char(66)
+  actor               String?
+  createdAt           DateTime                @default(now())
+
+  breaker MultichainRelayCircuitBreaker @relation(fields: [breakerId], references: [id], onDelete: Restrict)
+
+  @@unique([breakerId, requestId])
+  @@index([signalKind, createdAt])
+  @@index([resultingStatus, createdAt])
 }
 
 model MultichainRelayDestination {
