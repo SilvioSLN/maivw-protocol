@@ -48,6 +48,7 @@ The unsigned EVM/Solana mirror builders, shared payload hash and cryptographic c
 The durable origin-to-N-destinations relay state machine is specified in `RELAY_JOB_STATE_MACHINE_V1.md`.
 Idempotent signed-transaction submission, leases, retry and finality are specified in `RELAY_SUBMISSION_RETRY_V1.md`.
 Bidirectional origin fan-out and per-destination failure isolation are specified in `RELAY_FANOUT_V1.md`.
+N×N drift classification, repair plans and reconciliation audit hashes are specified in `RECONCILIATION_NXN_V1.md`.
 
 Solana pause authority and the operations that remain available during an incident are specified in `SOLANA_GOVERNANCE_V1.md`.
 

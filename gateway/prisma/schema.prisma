@@ -91,6 +91,30 @@ enum RelaySubmissionAttemptOutcome {
   CONFIRMED
 }
 
+enum ReconciliationRunStatus {
+  CLEAN
+  DRIFTED
+}
+
+enum ReconciliationFindingKind {
+  IN_SYNC
+  MISSING_MIRROR
+  VERSION_BEHIND
+  VERSION_AHEAD
+  STATE_DRIFT
+  ORIGIN_CONFLICT
+  UNREADABLE
+}
+
+enum ReconciliationRepairAction {
+  NONE
+  REGISTER
+  SYNC
+  REVOKE
+  RETRY_READ
+  MANUAL_REVIEW
+}
+
 /// Cursor durável por Registry EVM. nextBlock só avança na mesma transação que
 /// persiste o bloco e todos os eventos reconhecidos nele.
 model EvmObserverCursor {
@@ -298,6 +322,53 @@ model MultichainRelaySubmissionAttempt {
 
   @@unique([submissionId, attempt, outcome])
   @@index([submissionId, createdAt])
+}
+
+model MultichainReconciliationRun {
+  id                    String                  @id @default(uuid())
+  requestId             String                  @unique
+  requestHash           String                  @db.Char(66)
+  domainHash            String                  @db.Char(66)
+  originNetworkFamily   OriginNetworkFamily
+  originNetworkId       String
+  originRegistryId      String                  @db.Char(66)
+  globalDomainEpoch     BigInt
+  originSequence        BigInt
+  originStateHash       String                  @db.Char(66)
+  status                ReconciliationRunStatus
+  previousAuditHash     String?                 @db.Char(66)
+  auditHash             String                  @unique @db.Char(66)
+  startedAt             DateTime
+  completedAt           DateTime
+  createdAt             DateTime                @default(now())
+
+  findings MultichainReconciliationFinding[]
+
+  @@index([domainHash, completedAt])
+  @@index([status, completedAt])
+}
+
+model MultichainReconciliationFinding {
+  id                       String                       @id @default(uuid())
+  runId                    String
+  destinationNetworkFamily OriginNetworkFamily
+  destinationNetworkId     String
+  destinationRegistryId    String                       @db.Char(66)
+  kind                     ReconciliationFindingKind
+  repairAction             ReconciliationRepairAction
+  mirrorStateHash          String?                      @db.Char(66)
+  mirrorGlobalDomainEpoch  BigInt?
+  mirrorOriginSequence     BigInt?
+  details                  Json
+  repair                   Json
+  auditHash                String                       @unique @db.Char(66)
+  createdAt                DateTime                     @default(now())
+
+  run MultichainReconciliationRun @relation(fields: [runId], references: [id], onDelete: Restrict)
+
+  @@unique([runId, destinationNetworkId, destinationRegistryId])
+  @@index([kind, createdAt])
+  @@index([destinationNetworkId, destinationRegistryId])
 }
 
 /// Histórico append-only das transições; o estado materializado nunca é a
