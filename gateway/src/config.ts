@@ -1,19 +1,55 @@
 import { z } from "zod";
 import { readFileSync } from "node:fs";
+import { Keypair, PublicKey } from "@solana/web3.js";
+
+const optionalEvmAddress = z.string().regex(/^0x[0-9a-fA-F]{40}$/).optional();
+const optionalWsUrl = z.string().url().refine((value) => value.startsWith("ws://") || value.startsWith("wss://"), {
+  message: "deve usar ws:// ou wss://",
+}).optional();
+const booleanFlag = z.preprocess(
+  (value) => value === "true" ? true : value === "false" ? false : value,
+  z.boolean(),
+);
+const solanaPublicKey = z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/).refine((value) => {
+  try {
+    return new PublicKey(value).toBase58() === value;
+  } catch {
+    return false;
+  }
+}, { message: "Pubkey Solana inválida" });
+
+function validSolanaKeypairBase64(value: string): boolean {
+  try {
+    const parsed = JSON.parse(Buffer.from(value, "base64").toString("utf8"));
+    return Array.isArray(parsed) && parsed.length === 64
+      && parsed.every((item) => Number.isInteger(item) && item >= 0 && item <= 255);
+  } catch {
+    return false;
+  }
+}
+
+function solanaKeypairPublicKey(value: string): string | null {
+  try {
+    const parsed = JSON.parse(Buffer.from(value, "base64").toString("utf8"));
+    return Keypair.fromSecretKey(Uint8Array.from(parsed)).publicKey.toBase58();
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Configuração centralizada do Gateway via variáveis de ambiente.
  * Validada com Zod para fail-fast em caso de configuração incorreta.
  */
-export const EnvSchema = z.object({
+const EnvObjectSchema = z.object({
   GATEWAY_PORT: z.coerce.number().default(3001),
   GATEWAY_HOST: z.string().default("0.0.0.0"),
   RPC_URL: z.string().url().default("http://localhost:8545"),
   CHAIN_ID: z.coerce.number().default(31337),
   REDIS_URL: z.string().default("redis://localhost:6379"),
   DATABASE_URL: z.string().default("postgresql://postgres:postgres@localhost:5432/maivw_reputation?schema=public"),
-  REGISTRY_CONTRACT_ADDRESS: z.string().optional(),
-  MIRROR_REGISTRY_V2_ADDRESS: z.string().optional(),
+  REGISTRY_CONTRACT_ADDRESS: optionalEvmAddress,
+  MIRROR_REGISTRY_V2_ADDRESS: optionalEvmAddress,
   // ATENÇÃO: Chaves padrão abaixo são contas de teste públicas do Anvil/Hardhat (Account #0, #1, #2).
   DEPLOYER_PRIVATE_KEY: z.string().optional(),
   ORACLE_PRIVATE_KEY: z.string().optional(),
@@ -27,11 +63,39 @@ export const EnvSchema = z.object({
   ADMIN_REGISTRATION_TOKEN: z.string().min(32).optional(),
   JWT_SECRET: z.string().min(16, "JWT_SECRET deve ser configurado no ambiente"),
   BASE_RPC_URL: z.string().url().default("http://localhost:8545"),
-  BASE_REGISTRY_ADDRESS: z.string().optional(),
+  BASE_WS_URL: optionalWsUrl,
+  BASE_REGISTRY_ADDRESS: optionalEvmAddress,
   ARBITRUM_RPC_URL: z.string().url().default("https://sepolia-rollup.arbitrum.io/rpc"),
-  ARBITRUM_REGISTRY_ADDRESS: z.string().optional(),
+  ARBITRUM_WS_URL: optionalWsUrl,
+  ARBITRUM_REGISTRY_ADDRESS: optionalEvmAddress,
   POLYGON_RPC_URL: z.string().url().default("https://rpc-amoy.polygon.technology"),
-  POLYGON_REGISTRY_ADDRESS: z.string().optional(),
+  POLYGON_WS_URL: optionalWsUrl,
+  POLYGON_REGISTRY_ADDRESS: optionalEvmAddress,
+  MULTICHAIN_RELAY_ENABLED: booleanFlag.default(false),
+  SOLANA_ENABLED: booleanFlag.default(false),
+  SOLANA_RPC_URL: z.string().url().optional(),
+  SOLANA_WS_URL: optionalWsUrl,
+  SOLANA_GENESIS_HASH: solanaPublicKey.optional(),
+  SOLANA_PROGRAM_ID: solanaPublicKey.optional(),
+  SOLANA_EXPLORER_URL: z.string().url().default("https://explorer.solana.com"),
+  SOLANA_EXPLORER_CLUSTER_QUERY: z.string().max(128).optional(),
+  SOLANA_COMMITMENT: z.literal("finalized").default("finalized"),
+  SOLANA_ASSET_KIND: z.enum(["NATIVE", "SPL"]).default("NATIVE"),
+  SOLANA_ASSET_SYMBOL: z.string().regex(/^[A-Z0-9][A-Z0-9._-]{0,15}$/).default("SOL"),
+  SOLANA_ASSET_DECIMALS: z.coerce.number().int().min(0).max(30).default(9),
+  SOLANA_ASSET_MINT: solanaPublicKey.optional(),
+  SOLANA_STANDARD_FEE_BASE_UNITS: z.coerce.bigint().min(0n).default(0n),
+  SOLANA_RELAYER_PUBLIC_KEY: solanaPublicKey.optional(),
+  SOLANA_RELAYER_KEYPAIR_PATH: z.string().min(1).max(1024).optional(),
+  SOLANA_RELAYER_KEYPAIR_BASE64: z.string().refine(validSolanaKeypairBase64, {
+    message: "deve codificar um array JSON de 64 bytes",
+  }).optional(),
+  SOLANA_REORG_MARGIN_SLOTS: z.coerce.number().int().min(0).max(1_000_000).default(64),
+  SOLANA_OBSERVER_PAGE_SIZE: z.coerce.number().int().min(1).max(1_000).default(100),
+  SOLANA_OBSERVER_MAX_PAGES: z.coerce.number().int().min(1).max(100).default(10),
+  RELAY_ATTESTATION_TTL_SECONDS: z.coerce.number().int().min(60).max(86_400).default(900),
+  RELAY_LEASE_SECONDS: z.coerce.number().int().min(5).max(3_600).default(60),
+  RELAY_FAILURE_THRESHOLD: z.coerce.number().int().min(1).max(100).default(3),
   INTERNAL_SERVICE_KEY: z.string().min(16, "INTERNAL_SERVICE_KEY deve ser configurada no ambiente"),
   ORACLE_SIGNER_TYPE: z.enum(["local", "gcp-kms"]).default("local"),
   GCP_KMS_KEY_VERSION: z.string().optional(),
@@ -42,21 +106,64 @@ export const EnvSchema = z.object({
   MAIVW_CORE_DOMAIN: z.string().default("maivw.org"),
   PLATFORM_INGRESS_HOSTS: z.string().default(""),
   MAIVW_ORACLE_URL: z.string().url().default("https://api-test.maivw.com"),
-  IS_CLOUD: z.preprocess(
-    (value) => value === "true" ? true : value === "false" ? false : value,
-    z.boolean().default(false),
-  ),
+  IS_CLOUD: booleanFlag.default(false),
   DEFAULT_P2P_ENDPOINT: z.string().url().optional(),
   TLS_CERT_PATH: z.string().optional(),
   TLS_KEY_PATH: z.string().optional(),
-  MTLS_STRICT_MODE: z.preprocess(
-    (value) => value === "true" ? true : value === "false" ? false : value,
-    z.boolean().default(false),
-  ),
-  TRUST_PROXY: z.preprocess(
-    (value) => value === "true" ? true : value === "false" ? false : value,
-    z.boolean().default(false),
-  ),
+  MTLS_STRICT_MODE: booleanFlag.default(false),
+  TRUST_PROXY: booleanFlag.default(false),
+});
+
+export const EnvSchema = EnvObjectSchema.superRefine((config, context) => {
+  const add = (path: string, message: string) => context.addIssue({ code: "custom", path: [path], message });
+  if (config.SOLANA_ENABLED) {
+    for (const field of ["SOLANA_RPC_URL", "SOLANA_WS_URL", "SOLANA_GENESIS_HASH", "SOLANA_PROGRAM_ID", "SOLANA_RELAYER_PUBLIC_KEY"] as const) {
+      if (!config[field]) add(field, `${field} é obrigatório quando SOLANA_ENABLED=true`);
+    }
+    if (!config.SOLANA_RELAYER_KEYPAIR_PATH && !config.SOLANA_RELAYER_KEYPAIR_BASE64) {
+      add("SOLANA_RELAYER_KEYPAIR_PATH", "signer do relayer Solana é obrigatório");
+    }
+    if (config.SOLANA_RELAYER_KEYPAIR_BASE64 && config.SOLANA_RELAYER_PUBLIC_KEY
+      && solanaKeypairPublicKey(config.SOLANA_RELAYER_KEYPAIR_BASE64) !== config.SOLANA_RELAYER_PUBLIC_KEY) {
+      add("SOLANA_RELAYER_PUBLIC_KEY", "Pubkey não corresponde ao keypair do relayer");
+    }
+    if (config.SOLANA_ASSET_KIND === "NATIVE"
+      && (config.SOLANA_ASSET_SYMBOL !== "SOL" || config.SOLANA_ASSET_DECIMALS !== 9 || config.SOLANA_ASSET_MINT)) {
+      add("SOLANA_ASSET_KIND", "ativo nativo Solana deve ser SOL com 9 decimals e sem mint");
+    }
+    if (config.SOLANA_ASSET_KIND === "SPL" && !config.SOLANA_ASSET_MINT) {
+      add("SOLANA_ASSET_MINT", "mint é obrigatório para ativo SPL");
+    }
+    if (config.SOLANA_ASSET_KIND === "SPL" && config.SOLANA_STANDARD_FEE_BASE_UNITS <= 0n) {
+      add("SOLANA_STANDARD_FEE_BASE_UNITS", "taxa positiva é obrigatória para origem Solana");
+    }
+    if (config.SOLANA_ASSET_KIND === "SPL" && config.ORACLE_SIGNER_TYPE === "local" && !config.ORACLE_PRIVATE_KEY) {
+      add("ORACLE_PRIVATE_KEY", "OriginClaim local exige ORACLE_PRIVATE_KEY");
+    }
+    if (config.SOLANA_ASSET_KIND === "SPL" && config.ORACLE_SIGNER_TYPE === "gcp-kms" && !config.GCP_KMS_KEY_VERSION) {
+      add("GCP_KMS_KEY_VERSION", "OriginClaim gcp-kms exige GCP_KMS_KEY_VERSION");
+    }
+  }
+  if (config.MULTICHAIN_RELAY_ENABLED) {
+    const deployments = [config.BASE_REGISTRY_ADDRESS, config.ARBITRUM_REGISTRY_ADDRESS, config.POLYGON_REGISTRY_ADDRESS]
+      .filter(Boolean).length + (config.SOLANA_ENABLED ? 1 : 0);
+    if (deployments < 2) add("MULTICHAIN_RELAY_ENABLED", "relayer exige ao menos dois deployments configurados");
+    if (config.ORACLE_SIGNER_TYPE === "local" && !config.ORACLE_PRIVATE_KEY) {
+      add("ORACLE_PRIVATE_KEY", "signer local do relayer exige ORACLE_PRIVATE_KEY");
+    }
+    if (config.ORACLE_SIGNER_TYPE === "gcp-kms" && !config.GCP_KMS_KEY_VERSION) {
+      add("GCP_KMS_KEY_VERSION", "signer gcp-kms exige GCP_KMS_KEY_VERSION");
+    }
+  }
+  for (const [registry, ws] of [
+    [config.BASE_REGISTRY_ADDRESS, config.BASE_WS_URL],
+    [config.ARBITRUM_REGISTRY_ADDRESS, config.ARBITRUM_WS_URL],
+    [config.POLYGON_REGISTRY_ADDRESS, config.POLYGON_WS_URL],
+  ]) {
+    if (config.MULTICHAIN_RELAY_ENABLED && registry && !ws) {
+      add("MULTICHAIN_RELAY_ENABLED", "cada deployment EVM do relayer exige URL WebSocket");
+    }
+  }
 });
 
 export type EnvConfig = z.infer<typeof EnvSchema>;

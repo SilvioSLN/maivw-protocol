@@ -40,11 +40,27 @@ Não troque `MASTER_SECRET_KEY` em banco existente sem recifrar chaves e credenc
 | `CHAIN_ID` | `31337`; modelo de Testnet usa `84532` | Rede principal |
 | `REGISTRY_CONTRACT_ADDRESS` | Automático no Compose local; obrigatório fora dele | Endereço do proxy; o local lê `/deploy-output/contract-address.txt` |
 | `BASE_RPC_URL` | `http://localhost:8545`; Testnet deve configurar | Caminhos Base/multichain |
+| `BASE_WS_URL` | Exigida quando Base participa do relayer | Observer/finalidade Base |
 | `BASE_REGISTRY_ADDRESS` | Opcional | Registro Base; não substitui globalmente `REGISTRY_CONTRACT_ADDRESS` |
 | `ARBITRUM_RPC_URL` | `https://sepolia-rollup.arbitrum.io/rpc` | Caminhos Arbitrum |
+| `ARBITRUM_WS_URL` | Exigida junto ao Registry quando o relayer está ativo | Observer Arbitrum |
 | `ARBITRUM_REGISTRY_ADDRESS` | Opcional | Registry da rede correspondente |
 | `POLYGON_RPC_URL` | `https://rpc-amoy.polygon.technology` | Caminhos Polygon |
+| `POLYGON_WS_URL` | Exigida junto ao Registry quando o relayer está ativo | Observer Polygon |
 | `POLYGON_REGISTRY_ADDRESS` | Opcional | Registry da rede correspondente |
+| `MULTICHAIN_RELAY_ENABLED` | `false` | Exige signer e ao menos dois deployments completos |
+| `SOLANA_ENABLED` | `false` | Ativa adapter Solana somente com RPC, WS, genesis, program e relayer completos |
+| `SOLANA_RPC_URL` / `SOLANA_WS_URL` | Obrigatórias com Solana | RPC e stream do cluster configurado |
+| `SOLANA_GENESIS_HASH` / `SOLANA_PROGRAM_ID` | Obrigatórias com Solana | Impedem aceitar RPC ou programa de outro deployment |
+| `SOLANA_COMMITMENT` | Somente `finalized` | Leituras e observers não aceitam estado não finalizado |
+| `SOLANA_ASSET_*` | Nativo `SOL/9` ou SPL completo | Mint, símbolo, decimals e taxa de cadastro |
+| `SOLANA_RELAYER_PUBLIC_KEY` | Obrigatória com Solana | Fee payer/assinante público do relayer |
+| `SOLANA_RELAYER_KEYPAIR_PATH` | Alternativa recomendada | Caminho de segredo montado; nunca versionar o keypair |
+| `SOLANA_RELAYER_KEYPAIR_BASE64` | Alternativa para secret manager | Array JSON de 64 bytes codificado em base64 |
+| `SOLANA_REORG_MARGIN_SLOTS` | `64` | Margem operacional do cluster |
+| `SOLANA_OBSERVER_PAGE_SIZE` / `SOLANA_OBSERVER_MAX_PAGES` | `100` / `10` | Limites de backfill por poll |
+| `RELAY_ATTESTATION_TTL_SECONDS` | `900` | Entre 60 e 86400 segundos |
+| `RELAY_LEASE_SECONDS` / `RELAY_FAILURE_THRESHOLD` | `60` / `3` | Lease do worker e limiar do circuit breaker |
 | `ORACLE_SIGNER_TYPE` | `local` | `local` ou `gcp-kms` |
 | `ORACLE_PRIVATE_KEY` | Obrigatória para signer local | Chave EVM, prefixo `0x` e 32 bytes; autoridade depende do contrato |
 | `GCP_KMS_KEY_VERSION` | Obrigatória para `gcp-kms` | Recurso da versão de chave compatível |

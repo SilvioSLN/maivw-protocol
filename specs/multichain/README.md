@@ -59,6 +59,7 @@ The deployment-backed public network catalog and isolated adapter health semanti
 Catalog-backed origin resolution and per-deployment domain projections are specified in `MULTICHAIN_STATUS_API_V1.md`.
 Authenticated origin-to-N mirror job creation is specified in `MIRROR_JOB_API_V1.md`.
 Family-specific API schemas and stable public error codes are specified in `MULTICHAIN_API_SCHEMA_V1.md`.
+Fail-fast deployment, signer, RPC/WS and operational limit configuration is specified in `GATEWAY_MULTICHAIN_CONFIG_V1.md`.
 
 Solana pause authority and the operations that remain available during an incident are specified in `SOLANA_GOVERNANCE_V1.md`.
 

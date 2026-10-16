@@ -33,6 +33,11 @@ import { RoutingPoolService } from "./services/RoutingPoolService.js";
 import { OriginCatalogService } from "./multichain/OriginCatalog.js";
 import { MultichainRelayJobService, PrismaRelayJobRepository } from "./multichain/MultichainRelayJob.js";
 import { MultichainMirrorJobCoordinator } from "./multichain/MultichainMirrorJobs.js";
+import { createConfiguredLedgerAdapters } from "./services/ledger/LedgerAdapterFactory.js";
+import { createAttestationSigner } from "./multichain/AttestationSigner.js";
+import { OriginReservationService, QuorumDnsTxtVerifier } from "./multichain/OriginReservation.js";
+import { OriginOnboardingCoordinator } from "./multichain/OriginOnboarding.js";
+import type { SolanaNetworkDefinition } from "./multichain/NetworkModel.js";
 
 // ============================================
 //  Configuration
@@ -44,7 +49,7 @@ const config = loadConfig();
 // ============================================
 const prisma = new PrismaClient();
 const kms = new KeyManagementService(prisma, config.MASTER_SECRET_KEY);
-const ledger = new LedgerService(config);
+const ledger = new LedgerService(config, createConfiguredLedgerAdapters(config));
 const defaultSignerKey = (config.COMPANY_A_PRIVATE_KEY || generatePrivateKey()) as Hex;
 const signer = new SignatureService(defaultSignerKey);
 const smtp = new SmtpService(config.RESEND_API_KEY, prisma, config.MASTER_SECRET_KEY);
@@ -59,6 +64,19 @@ await routingPool.start();
 const originCatalog = new OriginCatalogService(prisma);
 const relayJobs = new MultichainRelayJobService(new PrismaRelayJobRepository(prisma));
 const mirrorJobs = new MultichainMirrorJobCoordinator(originCatalog, ledger, relayJobs);
+const solanaOriginNetwork = ledger.listAdapters()
+  .map((adapter) => adapter.network)
+  .find((network): network is SolanaNetworkDefinition => network.family === "SOLANA" && network.capabilities.origin);
+const originOnboarding = solanaOriginNetwork && solanaOriginNetwork.asset.kind === "SPL"
+  ? new OriginOnboardingCoordinator(
+      new OriginReservationService(
+        prisma,
+        new QuorumDnsTxtVerifier(),
+        await createAttestationSigner(config),
+      ),
+      [{ network: solanaOriginNetwork, standardFee: config.SOLANA_STANDARD_FEE_BASE_UNITS }],
+    )
+  : undefined;
 
 // ============================================
 //  Fastify App
@@ -247,6 +265,7 @@ await onboardingRoutes(app, {
   oracle,
   ledger,
   config,
+  originOnboarding,
 });
 
 await economicsRoutes(app, {

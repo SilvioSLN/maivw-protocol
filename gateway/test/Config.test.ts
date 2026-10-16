@@ -1,13 +1,60 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EnvSchema, environmentSafetyErrors, isLocalDemoConfig, parseEnvironment } from "../src/config.js";
+import { createConfiguredLedgerAdapters } from "../src/services/ledger/LedgerAdapterFactory.js";
+import { Keypair } from "@solana/web3.js";
+
+const required = { JWT_SECRET: "a".repeat(32), MASTER_SECRET_KEY: "b".repeat(32), INTERNAL_SERVICE_KEY: "c".repeat(32) };
+const solanaRelayer = Keypair.fromSeed(Uint8Array.from(Array(32).fill(1)));
+const solanaConfig = {
+  SOLANA_ENABLED: true,
+  SOLANA_RPC_URL: "https://api.testnet.solana.com",
+  SOLANA_WS_URL: "wss://api.testnet.solana.com",
+  SOLANA_GENESIS_HASH: "11111111111111111111111111111111",
+  SOLANA_PROGRAM_ID: "8MybG5qUxPpe3vVQB47VtMVUEknBuBk9yuQydr8XxRy9",
+  SOLANA_RELAYER_PUBLIC_KEY: solanaRelayer.publicKey.toBase58(),
+  SOLANA_RELAYER_KEYPAIR_BASE64: Buffer.from(JSON.stringify([...solanaRelayer.secretKey])).toString("base64"),
+};
 
 test("IS_CLOUD interprets string false as false and rejects ambiguous flags", () => {
-  const required = { JWT_SECRET: "a".repeat(32), MASTER_SECRET_KEY: "b".repeat(32), INTERNAL_SERVICE_KEY: "c".repeat(32) };
   for (const [input, expected] of [["false", false], ["true", true], [false, false], [true, true], [undefined, false]]) {
     assert.equal(EnvSchema.parse({ ...required, IS_CLOUD: input }).IS_CLOUD, expected);
   }
   assert.equal(EnvSchema.safeParse({ ...required, IS_CLOUD: "no" }).success, false);
+});
+
+test("Solana deployment fails fast on partial RPC, WS, program, signer or commitment configuration", () => {
+  assert.equal(EnvSchema.safeParse({ ...required, SOLANA_ENABLED: true }).success, false);
+  assert.equal(EnvSchema.safeParse({ ...required, ...solanaConfig, SOLANA_COMMITMENT: "confirmed" }).success, false);
+  assert.equal(EnvSchema.safeParse({ ...required, ...solanaConfig, SOLANA_RELAYER_KEYPAIR_BASE64: "invalid" }).success, false);
+  assert.equal(EnvSchema.safeParse({ ...required, ...solanaConfig, SOLANA_OBSERVER_PAGE_SIZE: 1001 }).success, false);
+});
+
+test("validated configuration constructs only explicitly enabled EVM and Solana adapters", () => {
+  const config = EnvSchema.parse({
+    ...required,
+    ...solanaConfig,
+    MULTICHAIN_RELAY_ENABLED: true,
+    ORACLE_PRIVATE_KEY: `0x${"11".repeat(32)}`,
+    BASE_REGISTRY_ADDRESS: "0x1111111111111111111111111111111111111111",
+    BASE_WS_URL: "wss://base.example/ws",
+  });
+  const adapters = createConfiguredLedgerAdapters(config);
+  assert.deepEqual(adapters.map((adapter) => adapter.family).sort(), ["EVM", "SOLANA"]);
+  assert.ok(adapters.some((adapter) => adapter.networkId === "evm:84532"));
+  assert.ok(adapters.some((adapter) => adapter.networkId.startsWith("solana:")));
+});
+
+test("enabled relayer rejects missing EVM WebSocket, signer and unsafe limits", () => {
+  const base = {
+    ...required, ...solanaConfig, MULTICHAIN_RELAY_ENABLED: true,
+    BASE_REGISTRY_ADDRESS: "0x1111111111111111111111111111111111111111",
+  };
+  assert.equal(EnvSchema.safeParse(base).success, false);
+  assert.equal(EnvSchema.safeParse({
+    ...base, BASE_WS_URL: "wss://base.example/ws", ORACLE_PRIVATE_KEY: `0x${"11".repeat(32)}`,
+    RELAY_LEASE_SECONDS: 1,
+  }).success, false);
 });
 
 test("local demo is restricted to chain 31337 on a loopback or Docker Anvil RPC", () => {
