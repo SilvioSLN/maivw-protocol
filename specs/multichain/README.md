@@ -56,6 +56,7 @@ The common Ledger facade and its family adapter boundary are specified in `LEDGE
 Finalized Solana PDA reads and origin/mirror/provider projection are specified in `SOLANA_LEDGER_ADAPTER_V1.md`.
 DNS-bound Solana origin selection, OriginClaim issuance and registration transaction drafts are specified in `SOLANA_ORIGIN_ONBOARDING_V1.md`.
 The deployment-backed public network catalog and isolated adapter health semantics are specified in `MULTICHAIN_NETWORKS_API_V1.md`.
+Catalog-backed origin resolution and per-deployment domain projections are specified in `MULTICHAIN_STATUS_API_V1.md`.
 
 Solana pause authority and the operations that remain available during an incident are specified in `SOLANA_GOVERNANCE_V1.md`.
 

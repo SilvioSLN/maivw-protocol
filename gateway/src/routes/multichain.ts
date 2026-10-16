@@ -4,16 +4,21 @@ import type { LedgerService } from "../services/LedgerService.js";
 import type { OracleService } from "../services/OracleService.js";
 import type { PrismaClient } from "@prisma/client";
 import { getActiveAdmin } from "./auth.js";
+import { OriginCatalogService } from "../multichain/OriginCatalog.js";
+import { MultichainStatusService } from "../multichain/MultichainStatus.js";
 
 interface MultiChainRouteOptions {
   ledger: LedgerService;
   oracle: OracleService;
   prisma: PrismaClient;
   internalServiceKey?: string;
+  multichainStatus?: MultichainStatusService;
 }
 
 export async function multiChainRoutes(app: FastifyInstance, options: MultiChainRouteOptions) {
   const { ledger, oracle, prisma } = options;
+  const multichainStatus = options.multichainStatus
+    ?? new MultichainStatusService(new OriginCatalogService(prisma), ledger);
 
   /**
    * GET /api/v1/multichain/networks
@@ -38,40 +43,10 @@ export async function multiChainRoutes(app: FastifyInstance, options: MultiChain
     }
 
     try {
-      const networks = ledger.getSupportedNetworks();
-      const cleanDomain = domain.toLowerCase().trim();
-
-      // Verificar status do domínio na rede primária
-      const profile = await ledger.getCompanyProfile(cleanDomain);
-      const isPrimaryActive = profile?.isActive ?? false;
-
-      // Verificar espelho
-      const mirrorInfo = await ledger.getMirrorInfo(cleanDomain);
-
-      const networkStatuses = networks.map((net) => {
-        if (net.isPrimary) {
-          return {
-            ...net,
-            status: isPrimaryActive ? (mirrorInfo.isMirror ? "MIRRORED" : "ACTIVE_PRIMARY") : "INACTIVE",
-            isActive: isPrimaryActive,
-            isOrigin: !mirrorInfo.isMirror && isPrimaryActive,
-          };
-        } else {
-          return {
-            ...net,
-            status: mirrorInfo.isMirror ? "MIRRORED" : "NOT_MIRRORED",
-            isActive: mirrorInfo.isMirror,
-            isOrigin: false,
-          };
-        }
-      });
-
+      const status = await multichainStatus.get(domain);
       return {
         success: true,
-        domain: cleanDomain,
-        isPrimaryActive,
-        mirrorInfo,
-        networks: networkStatuses,
+        ...status,
       };
     } catch (error: any) {
       return reply.status(500).send({
