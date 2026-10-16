@@ -9,6 +9,7 @@
     "dev": "node --env-file-if-exists=../.env --import tsx --watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
+    "solana:init:registry": "node --env-file-if-exists=../.env.testnet --import tsx scripts/initialize-solana-registry.ts",
     "test": "node --import tsx --test test/*.test.ts"
   },
   "dependencies": {
