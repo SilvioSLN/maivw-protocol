@@ -53,6 +53,13 @@ and reconciliation; worker payloads and private errors are deliberately absent.
 The isolated KMS/local signing boundary for both claim kinds is specified in `ATTESTATION_SIGNER_V1.md`.
 The durable finalized-block scanner for Base, Arbitrum and Polygon is specified in `EVM_OBSERVER_V1.md`.
 The finalized slot/signature scanner and deterministic Anchor event decoder are specified in `SOLANA_OBSERVER_V1.md`.
+
+The Registry indexer composes that bounded backfill scanner with a finalized
+account validator. Before an event is persisted, it derives the DomainRecord
+PDA from `domainHash`, verifies the account owner and minimum slot, decodes the
+Anchor discriminator/layout, requires schema v2 and rejects epoch/sequence
+regression. Historic events may validate against a newer account version, but
+never against an older one.
 The block/slot-pinned canonical state readers are specified in `FINALIZED_STATE_READERS_V1.md`.
 The unsigned EVM/Solana mirror builders, shared payload hash and cryptographic checks are specified in `TRANSACTION_BUILDERS_V1.md`.
 The durable origin-to-N-destinations relay state machine is specified in `RELAY_JOB_STATE_MACHINE_V1.md`.

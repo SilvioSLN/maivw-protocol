@@ -28,6 +28,7 @@ test("Solana deployment fails fast on partial RPC, WS, program, signer or commit
   assert.equal(EnvSchema.safeParse({ ...required, ...solanaConfig, SOLANA_COMMITMENT: "confirmed" }).success, false);
   assert.equal(EnvSchema.safeParse({ ...required, ...solanaConfig, SOLANA_RELAYER_KEYPAIR_BASE64: "invalid" }).success, false);
   assert.equal(EnvSchema.safeParse({ ...required, ...solanaConfig, SOLANA_OBSERVER_PAGE_SIZE: 1001 }).success, false);
+  assert.equal(EnvSchema.safeParse({ ...required, ...solanaConfig, SOLANA_OBSERVER_POLL_INTERVAL_MS: 999 }).success, false);
 });
 
 test("validated configuration constructs only explicitly enabled EVM and Solana adapters", () => {

@@ -38,6 +38,7 @@ import { createAttestationSigner } from "./multichain/AttestationSigner.js";
 import { OriginReservationService, QuorumDnsTxtVerifier } from "./multichain/OriginReservation.js";
 import { OriginOnboardingCoordinator } from "./multichain/OriginOnboarding.js";
 import type { SolanaNetworkDefinition } from "./multichain/NetworkModel.js";
+import { SolanaRegistryIndexer, Web3SolanaIndexerClient } from "./multichain/SolanaRegistryIndexer.js";
 
 // ============================================
 //  Configuration
@@ -86,6 +87,22 @@ const app = Fastify({
     level: "info",
   },
 });
+let solanaIndexer: SolanaRegistryIndexer | undefined;
+if (config.SOLANA_ENABLED && solanaOriginNetwork && config.SOLANA_RPC_URL && config.SOLANA_PROGRAM_ID) {
+  const indexerClient = new Web3SolanaIndexerClient(config.SOLANA_RPC_URL);
+  solanaIndexer = new SolanaRegistryIndexer(prisma, indexerClient, indexerClient, {
+    networkId: solanaOriginNetwork.networkId,
+    programId: config.SOLANA_PROGRAM_ID,
+    commitment: "finalized",
+    startSlot: config.SOLANA_OBSERVER_START_SLOT,
+    pageSize: config.SOLANA_OBSERVER_PAGE_SIZE,
+    maxPagesPerPoll: config.SOLANA_OBSERVER_MAX_PAGES,
+  });
+  solanaIndexer.start(config.SOLANA_OBSERVER_POLL_INTERVAL_MS, (error) => {
+    app.log.error({ error }, "Solana Registry indexer poll failed");
+  });
+  app.addHook("onClose", async () => solanaIndexer?.stop());
+}
 
 // ============================================
 //  Register CORS

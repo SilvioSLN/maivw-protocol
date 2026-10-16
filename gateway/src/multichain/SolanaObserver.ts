@@ -60,6 +60,10 @@ export interface SolanaEventDecoder {
   decode(logMessages: readonly string[], programId: string): readonly DecodedSolanaSourceEvent[];
 }
 
+export interface SolanaEventValidator {
+  validate(event: DecodedSolanaSourceEvent, context: { signature: string; slot: bigint }): Promise<void>;
+}
+
 interface CursorRow {
   networkId: string;
   programId: string;
@@ -205,6 +209,7 @@ export class SolanaObserver {
     private readonly decoder: SolanaEventDecoder,
     private readonly config: SolanaObserverConfig,
     private readonly clock: () => Date = () => new Date(),
+    private readonly validator?: SolanaEventValidator,
   ) {
     validateConfig(config);
   }
@@ -233,6 +238,9 @@ export class SolanaObserver {
         fail("SOLANA_TRANSACTION_MISSING", `transação finalizada indisponível: ${info.signature}`);
       }
       const events = this.decoder.decode(transaction.meta.logMessages ?? [], this.config.programId);
+      if (this.validator) {
+        for (const event of events) await this.validator.validate(event, { signature: info.signature, slot: info.slot });
+      }
       return { info, transaction, events };
     }));
     const newest = signatures[0] ?? null;
