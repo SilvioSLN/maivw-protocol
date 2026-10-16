@@ -398,6 +398,8 @@ export class MultichainRelayJobService {
       rank(destination.status) < rank(minimum) ? destination.status : minimum, "RECONCILE");
     if (rank(aggregate) <= rank(job.status)) return;
     if (!await repository.compareAndSetJob(job.id, job.status, { status: aggregate, updatedAt: at })) {
+      const concurrent = await repository.findJobById(jobId);
+      if (concurrent && rank(concurrent.status) >= rank(aggregate)) return;
       fail("RELAY_CONFLICT", "estado agregado avançou concorrentemente");
     }
     await repository.appendTransition({

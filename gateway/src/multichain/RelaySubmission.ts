@@ -215,6 +215,10 @@ export class RelaySubmissionCoordinator {
     }
   }
 
+  async getByDestination(destinationId: string): Promise<RelaySubmissionRow | null> {
+    return this.store.findByDestination(text("destinationId", destinationId, 128));
+  }
+
   async prepare(input: PrepareRelaySubmissionInput): Promise<{ submission: RelaySubmissionRow; created: boolean }> {
     const now = input.now ? date("now", input.now) : new Date();
     const deadline = date("deadline", input.deadline);
