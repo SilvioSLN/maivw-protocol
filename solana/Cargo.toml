@@ -5,7 +5,9 @@ resolver = "2"
 [workspace.package]
 edition = "2024"
 license = "MIT"
-rust-version = "1.93"
+# The Agave 3.1.10 SBF toolchain ships rustc 1.89. Host development remains
+# pinned to 1.93.1 in rust-toolchain.toml.
+rust-version = "1.89"
 
 [workspace.dependencies]
 anchor-lang = { version = "=1.0.1", features = ["init-if-needed"] }

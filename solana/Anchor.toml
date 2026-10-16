@@ -8,7 +8,7 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-maivw_registry = "8MybG5qUxPpe3vVQB47VtMVUEknBuBk9yuQydr8XxRy9"
+maivw_registry = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
 
 [provider]
 cluster = "Localnet"

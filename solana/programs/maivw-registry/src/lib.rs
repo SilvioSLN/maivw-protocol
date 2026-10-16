@@ -85,7 +85,7 @@ use state::{
     SubIdentityStrike, TransactionReference,
 };
 
-declare_id!("8MybG5qUxPpe3vVQB47VtMVUEknBuBk9yuQydr8XxRy9");
+declare_id!("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS");
 
 #[program]
 pub mod maivw_registry {
@@ -734,6 +734,19 @@ pub mod maivw_registry {
     ) -> Result<()> {
         let config = &ctx.accounts.config;
         config.validate()?;
+        require!(
+            ctx.remaining_accounts.len() == 4,
+            MaivwError::InvalidPendingProcess
+        );
+        let pending_admin = &ctx.remaining_accounts[0];
+        let recovery_case = &ctx.remaining_accounts[1];
+        let slash_case = &ctx.remaining_accounts[2];
+        let instructions = &ctx.remaining_accounts[3];
+        require_keys_eq!(
+            *instructions.key,
+            solana_instructions_sysvar::ID,
+            MaivwError::InvalidInstructionsSysvar
+        );
         require_distinct_accounts(&[
             ctx.accounts.registrant_token.key(),
             ctx.accounts.founder_vault.key(),
@@ -786,7 +799,7 @@ pub mod maivw_registry {
         );
         let claim = attestation::verify_reclaim_claim(
             config,
-            &ctx.accounts.instructions.to_account_info(),
+            instructions,
             &envelope,
             args.domain_hash,
             args.current_global_domain_epoch,
@@ -875,12 +888,27 @@ pub mod maivw_registry {
             ctx.accounts.registrant.key(),
             now,
         )?;
+        require_keys_eq!(
+            *pending_admin.key,
+            PendingAdmin::pda(&args.domain_hash, args.current_global_domain_epoch).0,
+            MaivwError::InvalidPendingProcess
+        );
+        require_keys_eq!(
+            *recovery_case.key,
+            RecoveryCase::pda(&args.domain_hash, args.current_global_domain_epoch).0,
+            MaivwError::InvalidPendingProcess
+        );
+        require_keys_eq!(
+            *slash_case.key,
+            SlashCase::pda(&args.domain_hash, args.current_global_domain_epoch).0,
+            MaivwError::InvalidPendingProcess
+        );
         close_pending_processes(
             args.domain_hash,
             args.current_global_domain_epoch,
-            &ctx.accounts.pending_admin.to_account_info(),
-            &ctx.accounts.recovery_case.to_account_info(),
-            &ctx.accounts.slash_case.to_account_info(),
+            pending_admin,
+            recovery_case,
+            slash_case,
             &ctx.accounts.registrant.to_account_info(),
         )?;
 
@@ -2434,42 +2462,10 @@ pub struct ReclaimDomain<'info> {
             @ MaivwError::InvalidStakeVault
     )]
     pub stake_vault_token: Box<Account<'info, TokenAccount>>,
-    /// CHECK: canonical optional PDA; handler closes it only when it contains a pending proposal.
-    #[account(
-        mut,
-        seeds = [
-            PENDING_ADMIN_SEED,
-            args.domain_hash.as_ref(),
-            args.current_global_domain_epoch.to_le_bytes().as_ref()
-        ],
-        bump
-    )]
-    pub pending_admin: UncheckedAccount<'info>,
-    /// CHECK: canonical optional PDA; handler closes it only when recovery is pending.
-    #[account(
-        mut,
-        seeds = [
-            RECOVERY_CASE_SEED,
-            args.domain_hash.as_ref(),
-            args.current_global_domain_epoch.to_le_bytes().as_ref()
-        ],
-        bump
-    )]
-    pub recovery_case: UncheckedAccount<'info>,
-    /// CHECK: canonical optional PDA; handler closes it only when slash is pending.
-    #[account(
-        mut,
-        seeds = [
-            SLASH_CASE_SEED,
-            args.domain_hash.as_ref(),
-            args.current_global_domain_epoch.to_le_bytes().as_ref()
-        ],
-        bump
-    )]
-    pub slash_case: UncheckedAccount<'info>,
-    /// CHECK: constrained to Solana's instructions sysvar address.
-    #[account(address = solana_instructions_sysvar::ID @ MaivwError::InvalidInstructionsSysvar)]
-    pub instructions: UncheckedAccount<'info>,
+    // The optional process PDAs and instructions sysvar are remaining accounts in
+    // this order: pending-admin, recovery-case, slash-case, instructions. The
+    // handler verifies every address; excluding them keeps SBF validation below
+    // its 4 KiB stack limit.
     #[account(address = config.token_program @ MaivwError::InvalidAsset)]
     pub token_program: Program<'info, Token>,
     pub associated_token_program: Program<'info, AssociatedToken>,

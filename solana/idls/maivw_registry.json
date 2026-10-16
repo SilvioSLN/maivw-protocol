@@ -1,5 +1,5 @@
 {
-  "address": "8MybG5qUxPpe3vVQB47VtMVUEknBuBk9yuQydr8XxRy9",
+  "address": "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS",
   "metadata": {
     "name": "maivw_registry",
     "version": "0.1.0",
@@ -70,7 +70,6 @@
         { "name": "treasury_vault_authority" },
         { "name": "treasury_vault", "writable": true },
         { "name": "stake_vault_token", "writable": true },
-        { "name": "instructions" },
         { "name": "token_program" },
         { "name": "associated_token_program" },
         { "name": "system_program" }
@@ -340,9 +339,6 @@
         { "name": "treasury_vault_authority" },
         { "name": "treasury_vault", "writable": true },
         { "name": "stake_vault_token", "writable": true },
-        { "name": "pending_admin", "writable": true },
-        { "name": "recovery_case", "writable": true },
-        { "name": "slash_case", "writable": true },
         { "name": "instructions" },
         { "name": "token_program" },
         { "name": "associated_token_program" },

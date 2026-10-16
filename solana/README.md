@@ -9,7 +9,8 @@ de mirrors externos somente leitura.
 
 ## Toolchain fixada
 
-- Rust `1.93.1` (`rust-toolchain.toml`)
+- Rust host `1.93.1` (`rust-toolchain.toml`), with MSRV `1.89` for the SBF
+  compiler bundled by Agave `3.1.10`
 - Anchor `1.0.1`
 - Solana/Agave `3.1.10`
 - dependências Rust fechadas em `Cargo.lock`
