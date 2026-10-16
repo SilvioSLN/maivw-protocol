@@ -51,6 +51,7 @@ Bidirectional origin fan-out and per-destination failure isolation are specified
 N×N drift classification, repair plans and reconciliation audit hashes are specified in `RECONCILIATION_NXN_V1.md`.
 Logical orphan handling, terminal relay states and per-destination compensation are specified in `REORG_COMPENSATION_V1.md`.
 Persistent safety scopes, automatic trip conditions and audited manual reset are specified in `RELAY_CIRCUIT_BREAKER_V1.md`.
+The typed chain-agnostic deployment, explorer, asset and finality model is specified in `NETWORK_MODEL_V1.md`.
 
 Solana pause authority and the operations that remain available during an incident are specified in `SOLANA_GOVERNANCE_V1.md`.
 
