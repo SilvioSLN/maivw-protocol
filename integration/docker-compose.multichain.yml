@@ -1,0 +1,16 @@
+services:
+  anvil:
+    image: ghcr.io/foundry-rs/foundry@sha256:0c00cb0bda1ab1b91c9a6bf60f4c76c09c1a8870824b6d4718afbabacf6f9a17
+    entrypoint: ["anvil"]
+    command: ["--host", "0.0.0.0", "--port", "8545", "--chain-id", "31337"]
+    ports:
+      - "127.0.0.1:58545:8545"
+
+  solana-validator:
+    image: surfpool/surfpool@sha256:c90961924bc9fb24e752d87910736f6decc16c4128bd2e5bdd2b839355c51260
+    command: ["start", "--offline", "--no-tui", "--no-studio", "--port", "8899", "--ws-port", "8900"]
+    environment:
+      SURFPOOL_PUBLIC_HOST: 127.0.0.1
+    ports:
+      - "127.0.0.1:58999:8899"
+      - "127.0.0.1:59000:8900"
