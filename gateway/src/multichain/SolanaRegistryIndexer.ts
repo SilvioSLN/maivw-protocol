@@ -131,12 +131,12 @@ export class SolanaRegistryIndexer {
     return this.observer.poll();
   }
 
-  start(intervalMs: number, onError: (error: unknown) => void): void {
+  start(intervalMs: number, onError: (error: unknown) => void, onResult?: (result: SolanaPollResult) => void): void {
     if (this.timer || !Number.isSafeInteger(intervalMs) || intervalMs < 1_000) throw new Error("intervalo do indexador inválido");
     const tick = async () => {
       if (this.running) return;
       this.running = true;
-      try { await this.runOnce(); } catch (error) { onError(error); } finally { this.running = false; }
+      try { onResult?.(await this.runOnce()); } catch (error) { onError(error); } finally { this.running = false; }
     };
     void tick();
     this.timer = setInterval(tick, intervalMs);

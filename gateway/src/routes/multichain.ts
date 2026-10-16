@@ -10,6 +10,7 @@ import type { MultichainMirrorJobCoordinator } from "../multichain/MultichainMir
 import { MultichainJobQuery } from "../multichain/MultichainJobQuery.js";
 import { MultichainTimelineService } from "../multichain/MultichainTimeline.js";
 import { catalogDomainHash } from "../multichain/OriginCatalog.js";
+import type { MultichainTelemetry } from "../multichain/MultichainTelemetry.js";
 import {
   CanonicalDomainSchema,
   MirrorJobRequestBodySchema,
@@ -27,6 +28,7 @@ interface MultiChainRouteOptions {
   mirrorJobs?: MultichainMirrorJobCoordinator;
   jobQuery?: MultichainJobQuery;
   timeline?: MultichainTimelineService;
+  telemetry?: MultichainTelemetry;
 }
 
 export async function multiChainRoutes(app: FastifyInstance, options: MultiChainRouteOptions) {
@@ -62,6 +64,11 @@ export async function multiChainRoutes(app: FastifyInstance, options: MultiChain
 
     try {
       const status = await multichainStatus.get(parsedDomain.data);
+      for (const deployment of status.deployments.filter((item) => item.projection !== "IN_SYNC" && item.projection !== "MISSING_MIRROR")) {
+        options.telemetry?.record("projection.drift", {
+          domainHash: status.domainHash, networkId: deployment.networkId, drift: deployment.projection,
+        }, { role: deployment.role, errorCode: deployment.errorCode }, "warn");
+      }
       return {
         success: true,
         ...status,
@@ -106,6 +113,9 @@ export async function multiChainRoutes(app: FastifyInstance, options: MultiChain
         operation: body.operation,
         destinationNetworkIds,
       });
+      options.telemetry?.record("mirror.job.created", {
+        domainHash: job.domainHash, jobId: job.jobId, networkId: job.origin.networkId,
+      }, { operation: job.operation, destinationCount: job.destinations.length });
       return reply.status(202).send({
         success: true,
         job,
@@ -137,7 +147,21 @@ export async function multiChainRoutes(app: FastifyInstance, options: MultiChain
     if (!job || job.domainHash.toLowerCase() !== catalogDomainHash(query.data.domain).toLowerCase()) {
       return reply.status(404).send({ error: "Job não encontrado" });
     }
+    for (const destination of job.destinations) {
+      if (destination.transaction) options.telemetry?.record("mirror.transaction.observed", {
+        domainHash: job.domainHash, jobId: job.jobId, networkId: destination.networkId,
+        transaction: destination.transaction,
+      }, { status: destination.status });
+    }
     return { success: true, job };
+  });
+
+  app.get("/api/v1/multichain/metrics", async (request, reply) => {
+    if (!options.internalServiceKey || request.headers["x-internal-service-key"] !== options.internalServiceKey) {
+      return reply.status(403).send({ error: "Operador interno obrigatório" });
+    }
+    if (!options.telemetry) return reply.status(503).send({ error: "Telemetria não configurada" });
+    return { success: true, ...options.telemetry.snapshot() };
   });
 
   app.get("/api/v1/multichain/timeline/:domain", async (request, reply) => {

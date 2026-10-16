@@ -115,7 +115,8 @@ export class OriginOnboardingCoordinator {
   async issueSolanaClaim(input: IssueSolanaOriginClaimInput): Promise<{
     network: SolanaNetworkDefinition;
     reservationId: string;
-    claim: { encoded: string; digest: string; signature: string; nonce: string; deadline: string };
+    domainHash: string;
+    claim: { id: string; encoded: string; digest: string; signature: string; nonce: string; deadline: string };
     transaction: SolanaRegistrationTransactionDraft;
   }> {
     const reservationResult = await this.reservations.verifyDnsAndReserve({
@@ -179,7 +180,9 @@ export class OriginOnboardingCoordinator {
     return {
       network: deployment.network,
       reservationId: reservation.id,
+      domainHash: reservation.domainHash,
       claim: {
+        id: issued.claim.id,
         encoded: issued.claim.encoded, digest: issued.claim.digest, signature: issued.claim.signature,
         nonce: issued.claim.nonce, deadline: issued.claim.deadline.toISOString(),
       },

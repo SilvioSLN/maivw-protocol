@@ -11,6 +11,7 @@ import type { LedgerService } from "../services/LedgerService.js";
 import { isLocalDemoConfig, type EnvConfig } from "../config.js";
 import type { Address } from "viem";
 import type { OriginOnboardingCoordinator } from "../multichain/OriginOnboarding.js";
+import type { MultichainTelemetry } from "../multichain/MultichainTelemetry.js";
 import {
   CanonicalDomainSchema,
   EvmAddressSchema,
@@ -98,6 +99,7 @@ interface OnboardingRouteOptions {
   config: EnvConfig;
   resolveTxt?: (host: string) => Promise<string[][]>;
   originOnboarding?: OriginOnboardingCoordinator;
+  telemetry?: MultichainTelemetry;
 }
 
 export async function onboardingRoutes(app: FastifyInstance, options: OnboardingRouteOptions) {
@@ -327,6 +329,9 @@ export async function onboardingRoutes(app: FastifyInstance, options: Onboarding
         idempotencyKey: parse.data.idempotencyKey,
         requestId: parse.data.requestId,
       });
+      options.telemetry?.record("origin_claim.issued", {
+        domainHash: result.domainHash, originClaimId: result.claim.id, networkId: result.network.networkId,
+      }, { reservationId: result.reservationId, executionMode: parse.data.executionMode });
       return {
         success: true,
         reservationId: result.reservationId,

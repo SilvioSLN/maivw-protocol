@@ -60,6 +60,13 @@ PDA from `domainHash`, verifies the account owner and minimum slot, decodes the
 Anchor discriminator/layout, requires schema v2 and rejects epoch/sequence
 regression. Historic events may validate against a newer account version, but
 never against an older one.
+
+Structured multichain telemetry uses the same correlation envelope for
+`domainHash`, OriginClaim id, relay job id, canonical NetworkId, family-specific
+transaction reference and drift kind. Metrics use only bounded event/family/
+drift labels; high-cardinality identifiers stay in logs. Authorization,
+cookies, tokens, passwords, private keys, keypairs and signed payloads are
+recursively redacted. The internal metrics snapshot requires the service key.
 The block/slot-pinned canonical state readers are specified in `FINALIZED_STATE_READERS_V1.md`.
 The unsigned EVM/Solana mirror builders, shared payload hash and cryptographic checks are specified in `TRANSACTION_BUILDERS_V1.md`.
 The durable origin-to-N-destinations relay state machine is specified in `RELAY_JOB_STATE_MACHINE_V1.md`.

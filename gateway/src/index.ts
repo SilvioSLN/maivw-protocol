@@ -39,6 +39,7 @@ import { OriginReservationService, QuorumDnsTxtVerifier } from "./multichain/Ori
 import { OriginOnboardingCoordinator } from "./multichain/OriginOnboarding.js";
 import type { SolanaNetworkDefinition } from "./multichain/NetworkModel.js";
 import { SolanaRegistryIndexer, Web3SolanaIndexerClient } from "./multichain/SolanaRegistryIndexer.js";
+import { MultichainTelemetry } from "./multichain/MultichainTelemetry.js";
 
 // ============================================
 //  Configuration
@@ -87,6 +88,7 @@ const app = Fastify({
     level: "info",
   },
 });
+const multichainTelemetry = new MultichainTelemetry(app.log);
 let solanaIndexer: SolanaRegistryIndexer | undefined;
 if (config.SOLANA_ENABLED && solanaOriginNetwork && config.SOLANA_RPC_URL && config.SOLANA_PROGRAM_ID) {
   const indexerClient = new Web3SolanaIndexerClient(config.SOLANA_RPC_URL);
@@ -99,7 +101,12 @@ if (config.SOLANA_ENABLED && solanaOriginNetwork && config.SOLANA_RPC_URL && con
     maxPagesPerPoll: config.SOLANA_OBSERVER_MAX_PAGES,
   });
   solanaIndexer.start(config.SOLANA_OBSERVER_POLL_INTERVAL_MS, (error) => {
+    multichainTelemetry.record("solana.indexer.failed", { networkId: solanaOriginNetwork.networkId }, { error }, "error");
     app.log.error({ error }, "Solana Registry indexer poll failed");
+  }, (result) => {
+    multichainTelemetry.record("solana.indexer.polled", { networkId: solanaOriginNetwork.networkId }, {
+      observedSlot: result.observedSlot, transactions: result.persistedTransactions, events: result.persistedEvents,
+    });
   });
   app.addHook("onClose", async () => solanaIndexer?.stop());
 }
@@ -283,6 +290,7 @@ await onboardingRoutes(app, {
   ledger,
   config,
   originOnboarding,
+  telemetry: multichainTelemetry,
 });
 
 await economicsRoutes(app, {
@@ -321,6 +329,7 @@ await multiChainRoutes(app, {
   prisma,
   internalServiceKey: config.INTERNAL_SERVICE_KEY,
   mirrorJobs,
+  telemetry: multichainTelemetry,
 });
 
 await routingRoutes(app, {
