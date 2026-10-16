@@ -15,5 +15,5 @@ COPY src/ src/
 ENV NODE_ENV=production
 EXPOSE 3001
 
-# Use tsx to run TypeScript directly and ensure DB schema is synced
-CMD ["sh", "-c", "npx prisma db push --skip-generate && npx tsx src/index.ts"]
+# Apply reviewed, versioned migrations before starting the gateway.
+CMD ["sh", "-c", "npx prisma migrate deploy && npx tsx src/index.ts"]
