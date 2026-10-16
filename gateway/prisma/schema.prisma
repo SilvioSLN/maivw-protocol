@@ -79,6 +79,18 @@ enum MultichainRelayOperation {
   REVOKE
 }
 
+enum RelaySubmissionStatus {
+  PREPARED
+  BROADCAST
+  CONFIRMED
+}
+
+enum RelaySubmissionAttemptOutcome {
+  BROADCAST
+  RETRY_SCHEDULED
+  CONFIRMED
+}
+
 /// Cursor durável por Registry EVM. nextBlock só avança na mesma transação que
 /// persiste o bloco e todos os eventos reconhecidos nele.
 model EvmObserverCursor {
@@ -236,9 +248,56 @@ model MultichainRelayDestination {
 
   job         MultichainRelayJob          @relation(fields: [jobId], references: [id], onDelete: Restrict)
   transitions MultichainRelayTransition[]
+  submission  MultichainRelaySubmission?
 
   @@unique([jobId, destinationNetworkId, destinationRegistryId])
   @@index([status, updatedAt])
+}
+
+/// Payload já assinado e imutável. Retries retransmitem estes mesmos bytes,
+/// preservando nonce/signature e portanto o mesmo transaction id.
+model MultichainRelaySubmission {
+  id                    String                @id @default(uuid())
+  destinationId         String                @unique
+  idempotencyKey        String                @unique
+  signedPayload         String
+  signedPayloadHash     String                @db.Char(66)
+  expectedTransactionId String
+  deadline              DateTime
+  status                RelaySubmissionStatus @default(PREPARED)
+  attempts              Int                   @default(0)
+  leaseOwner            String?
+  leaseUntil            DateTime?
+  nextAttemptAt         DateTime
+  lastError             String?
+  submittedAt           DateTime?
+  confirmedAt           DateTime?
+  finalityReference     String?
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+
+  destination MultichainRelayDestination        @relation(fields: [destinationId], references: [id], onDelete: Restrict)
+  attemptsLog MultichainRelaySubmissionAttempt[]
+
+  @@index([status, nextAttemptAt])
+  @@index([leaseUntil])
+}
+
+model MultichainRelaySubmissionAttempt {
+  id             String                        @id @default(uuid())
+  submissionId   String
+  attempt        Int
+  workerId       String
+  outcome        RelaySubmissionAttemptOutcome
+  transactionId  String?
+  finalityRef    String?
+  error          String?
+  createdAt      DateTime                      @default(now())
+
+  submission MultichainRelaySubmission @relation(fields: [submissionId], references: [id], onDelete: Restrict)
+
+  @@unique([submissionId, attempt, outcome])
+  @@index([submissionId, createdAt])
 }
 
 /// Histórico append-only das transições; o estado materializado nunca é a

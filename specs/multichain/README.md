@@ -46,6 +46,7 @@ The finalized slot/signature scanner and deterministic Anchor event decoder are 
 The block/slot-pinned canonical state readers are specified in `FINALIZED_STATE_READERS_V1.md`.
 The unsigned EVM/Solana mirror builders, shared payload hash and cryptographic checks are specified in `TRANSACTION_BUILDERS_V1.md`.
 The durable origin-to-N-destinations relay state machine is specified in `RELAY_JOB_STATE_MACHINE_V1.md`.
+Idempotent signed-transaction submission, leases, retry and finality are specified in `RELAY_SUBMISSION_RETRY_V1.md`.
 
 Solana pause authority and the operations that remain available during an incident are specified in `SOLANA_GOVERNANCE_V1.md`.
 
