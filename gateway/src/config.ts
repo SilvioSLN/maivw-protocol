@@ -95,6 +95,7 @@ const EnvObjectSchema = z.object({
   SOLANA_OBSERVER_MAX_PAGES: z.coerce.number().int().min(1).max(100).default(10),
   SOLANA_OBSERVER_START_SLOT: z.coerce.bigint().min(0n).default(0n),
   SOLANA_OBSERVER_POLL_INTERVAL_MS: z.coerce.number().int().min(1_000).max(300_000).default(5_000),
+  MULTICHAIN_ALERT_INDEXER_LAG_SLOTS: z.coerce.number().int().min(1).max(10_000_000).default(128),
   RELAY_ATTESTATION_TTL_SECONDS: z.coerce.number().int().min(60).max(86_400).default(900),
   RELAY_LEASE_SECONDS: z.coerce.number().int().min(5).max(3_600).default(60),
   RELAY_FAILURE_THRESHOLD: z.coerce.number().int().min(1).max(100).default(3),

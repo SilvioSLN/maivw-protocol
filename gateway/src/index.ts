@@ -40,11 +40,15 @@ import { OriginOnboardingCoordinator } from "./multichain/OriginOnboarding.js";
 import type { SolanaNetworkDefinition } from "./multichain/NetworkModel.js";
 import { SolanaRegistryIndexer, Web3SolanaIndexerClient } from "./multichain/SolanaRegistryIndexer.js";
 import { MultichainTelemetry } from "./multichain/MultichainTelemetry.js";
+import { MultichainAlertCollector, MultichainAlertService } from "./multichain/MultichainAlerts.js";
 
 // ============================================
 //  Configuration
 // ============================================
 const config = loadConfig();
+
+const app = Fastify({ logger: { level: "info" } });
+const multichainTelemetry = new MultichainTelemetry(app.log);
 
 // ============================================
 //  Services & Database
@@ -74,21 +78,23 @@ const originOnboarding = solanaOriginNetwork && solanaOriginNetwork.asset.kind =
       new OriginReservationService(
         prisma,
         new QuorumDnsTxtVerifier(),
-        await createAttestationSigner(config),
+        await createAttestationSigner(config, undefined, (error) => {
+          if (config.ORACLE_SIGNER_TYPE === "gcp-kms") {
+            multichainTelemetry.record("kms.failed", {}, {
+              signerType: config.ORACLE_SIGNER_TYPE,
+              errorType: error instanceof Error ? error.name : "UnknownError",
+            }, "error");
+          }
+        }),
       ),
       [{ network: solanaOriginNetwork, standardFee: config.SOLANA_STANDARD_FEE_BASE_UNITS }],
     )
   : undefined;
 
-// ============================================
-//  Fastify App
-// ============================================
-const app = Fastify({
-  logger: {
-    level: "info",
-  },
-});
-const multichainTelemetry = new MultichainTelemetry(app.log);
+const multichainAlerts = new MultichainAlertService();
+const multichainAlertCollector = new MultichainAlertCollector(
+  prisma, multichainTelemetry, config.MULTICHAIN_ALERT_INDEXER_LAG_SLOTS,
+);
 let solanaIndexer: SolanaRegistryIndexer | undefined;
 if (config.SOLANA_ENABLED && solanaOriginNetwork && config.SOLANA_RPC_URL && config.SOLANA_PROGRAM_ID) {
   const indexerClient = new Web3SolanaIndexerClient(config.SOLANA_RPC_URL);
@@ -330,6 +336,8 @@ await multiChainRoutes(app, {
   internalServiceKey: config.INTERNAL_SERVICE_KEY,
   mirrorJobs,
   telemetry: multichainTelemetry,
+  alertService: multichainAlerts,
+  alertCollector: multichainAlertCollector,
 });
 
 await routingRoutes(app, {

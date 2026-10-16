@@ -61,7 +61,10 @@ class LocalAttestationDigestBackend implements AttestationDigestBackend {
  * o client KMS; recebe assinatura recuperável e identificadores auditáveis.
  */
 export class AttestationSigner implements OriginClaimSigner {
-  constructor(private readonly backend: AttestationDigestBackend) {}
+  constructor(
+    private readonly backend: AttestationDigestBackend,
+    private readonly onBackendFailure?: (error: unknown) => void,
+  ) {}
 
   async signDigest(
     digest: Hex,
@@ -74,12 +77,20 @@ export class AttestationSigner implements OriginClaimSigner {
       throw new Error("origin claim signing context is incomplete");
     }
 
-    const metadata = this.backend.getKeyMetadata();
+    let metadata: KmsKeyMetadata;
+    let signerAddress: Address;
+    let signature: Hex;
+    try {
+      metadata = this.backend.getKeyMetadata();
+      signerAddress = await this.backend.getAddress();
+      signature = await this.backend.signDigest(digest);
+    } catch (error) {
+      this.onBackendFailure?.(error);
+      throw error;
+    }
     if (!metadata.keyId.trim() || !metadata.keyVersion.trim()) {
       throw new Error("attestation signer metadata is incomplete");
     }
-    const signerAddress = await this.backend.getAddress();
-    const signature = await this.backend.signDigest(digest);
     if (!SIGNATURE_PATTERN.test(signature)) {
       throw new Error("attestation signer returned a non-canonical secp256k1 signature");
     }
@@ -122,6 +133,7 @@ export type AttestationSignerConfig = Pick<
 export async function createAttestationSigner(
   config: AttestationSignerConfig,
   kmsClient?: KeyManagementServiceClient,
+  onBackendFailure?: (error: unknown) => void,
 ): Promise<AttestationSigner> {
   if (config.ORACLE_SIGNER_TYPE === "gcp-kms") {
     if (!config.GCP_KMS_KEY_VERSION) {
@@ -131,10 +143,10 @@ export async function createAttestationSigner(
       keyVersionName: config.GCP_KMS_KEY_VERSION,
       credentialsJsonBase64: config.GCP_KMS_CREDENTIALS_BASE64,
       client: kmsClient,
-    }));
+    }), onBackendFailure);
   }
   if (!config.ORACLE_PRIVATE_KEY || !/^0x[0-9a-fA-F]{64}$/.test(config.ORACLE_PRIVATE_KEY)) {
     throw new Error("ORACLE_PRIVATE_KEY must be a 32-byte hex key for the local attestation signer");
   }
-  return new AttestationSigner(new LocalAttestationDigestBackend(config.ORACLE_PRIVATE_KEY as Hex));
+  return new AttestationSigner(new LocalAttestationDigestBackend(config.ORACLE_PRIVATE_KEY as Hex), onBackendFailure);
 }

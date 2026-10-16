@@ -67,6 +67,11 @@ transaction reference and drift kind. Metrics use only bounded event/family/
 drift labels; high-cardinality identifiers stay in logs. Authorization,
 cookies, tokens, passwords, private keys, keypairs and signed payloads are
 recursively redacted. The internal metrics snapshot requires the service key.
+
+The internal alerts endpoint evaluates durable circuit, cursor and reorg state
+plus signer telemetry. Conflict, lag, reorg, low balance, relayer pause, KMS
+failure and state drift each resolve to a stable fingerprint and an operational
+section in `RUNBOOK_MULTICHAIN_ALERTS_V1.md`.
 The block/slot-pinned canonical state readers are specified in `FINALIZED_STATE_READERS_V1.md`.
 The unsigned EVM/Solana mirror builders, shared payload hash and cryptographic checks are specified in `TRANSACTION_BUILDERS_V1.md`.
 The durable origin-to-N-destinations relay state machine is specified in `RELAY_JOB_STATE_MACHINE_V1.md`.

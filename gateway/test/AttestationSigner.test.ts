@@ -7,7 +7,7 @@ import {
   hashNetworkId,
   type AttestationV1,
 } from "../src/multichain/AttestationCodec.js";
-import { createAttestationSigner } from "../src/multichain/AttestationSigner.js";
+import { AttestationSigner, createAttestationSigner } from "../src/multichain/AttestationSigner.js";
 
 const PRIVATE_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 const BYTES_A = `0x${"11".repeat(32)}` as Hex;
@@ -80,4 +80,15 @@ test("signer rejects purpose confusion and invalid local key material", async ()
     }),
     /32-byte hex key/,
   );
+});
+
+test("signer reports backend failures without exposing key material", async () => {
+  const failures: unknown[] = [];
+  const signer = new AttestationSigner({
+    getKeyMetadata: () => ({ keyId: "kms-key", keyVersion: "1" }),
+    getAddress: async () => "0x1111111111111111111111111111111111111111",
+    signDigest: async () => { throw new Error("KMS unavailable"); },
+  }, (error) => failures.push(error));
+  await assert.rejects(signer.signDigest(BYTES_A, { purpose: "STATE_ATTESTATION", operationId: "job-1" }), /KMS unavailable/);
+  assert.equal(failures.length, 1);
 });

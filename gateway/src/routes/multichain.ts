@@ -11,6 +11,7 @@ import { MultichainJobQuery } from "../multichain/MultichainJobQuery.js";
 import { MultichainTimelineService } from "../multichain/MultichainTimeline.js";
 import { catalogDomainHash } from "../multichain/OriginCatalog.js";
 import type { MultichainTelemetry } from "../multichain/MultichainTelemetry.js";
+import type { MultichainAlertCollector, MultichainAlertService } from "../multichain/MultichainAlerts.js";
 import {
   CanonicalDomainSchema,
   MirrorJobRequestBodySchema,
@@ -29,6 +30,8 @@ interface MultiChainRouteOptions {
   jobQuery?: MultichainJobQuery;
   timeline?: MultichainTimelineService;
   telemetry?: MultichainTelemetry;
+  alertService?: MultichainAlertService;
+  alertCollector?: MultichainAlertCollector;
 }
 
 export async function multiChainRoutes(app: FastifyInstance, options: MultiChainRouteOptions) {
@@ -162,6 +165,15 @@ export async function multiChainRoutes(app: FastifyInstance, options: MultiChain
     }
     if (!options.telemetry) return reply.status(503).send({ error: "Telemetria não configurada" });
     return { success: true, ...options.telemetry.snapshot() };
+  });
+
+  app.get("/api/v1/multichain/alerts", async (request, reply) => {
+    if (!options.internalServiceKey || request.headers["x-internal-service-key"] !== options.internalServiceKey) {
+      return reply.status(403).send({ error: "Operador interno obrigatório" });
+    }
+    if (!options.alertService || !options.alertCollector) return reply.status(503).send({ error: "Alertas não configurados" });
+    const signals = await options.alertCollector.collect();
+    return { success: true, alerts: options.alertService.evaluate(signals) };
   });
 
   app.get("/api/v1/multichain/timeline/:domain", async (request, reply) => {
