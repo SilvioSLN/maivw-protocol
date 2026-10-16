@@ -53,6 +53,7 @@ Logical orphan handling, terminal relay states and per-destination compensation 
 Persistent safety scopes, automatic trip conditions and audited manual reset are specified in `RELAY_CIRCUIT_BREAKER_V1.md`.
 The typed chain-agnostic deployment, explorer, asset and finality model is specified in `NETWORK_MODEL_V1.md`.
 The common Ledger facade and its family adapter boundary are specified in `LEDGER_ADAPTERS_V1.md`.
+Finalized Solana PDA reads and origin/mirror/provider projection are specified in `SOLANA_LEDGER_ADAPTER_V1.md`.
 
 Solana pause authority and the operations that remain available during an incident are specified in `SOLANA_GOVERNANCE_V1.md`.
 

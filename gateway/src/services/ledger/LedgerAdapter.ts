@@ -25,7 +25,10 @@ export interface LedgerDomainIdentity {
 export interface LedgerProviderState {
   isProvider: boolean;
   tier: number;
+  /** Spendable/custodied stake on this ledger; always zero for a mirror. */
   stake: bigint;
+  /** Canonical or attested stake shown by this record. */
+  attestedStake: bigint;
   dailyLimit: bigint;
   strikes: number;
   suspended: boolean;

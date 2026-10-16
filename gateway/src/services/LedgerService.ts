@@ -116,16 +116,17 @@ export class EvmLedgerAdapter implements LedgerAdapter {
     const identity = await this.getTypedDomainIdentity(domain);
     if (!identity) return null;
     if (identity.source === "mirror-v2") {
-      return { isProvider: false, tier: 0, stake: 0n, dailyLimit: 0n, strikes: 0, suspended: !identity.isActive };
+      return { isProvider: false, tier: 0, stake: 0n, attestedStake: 0n, dailyLimit: 0n, strikes: 0, suspended: !identity.isActive };
     }
     const [isProvider, provider] = await Promise.all([this.isProvider(domain), this.getProviderInfo(domain)]);
     if (!isProvider || !provider) {
-      return { isProvider: false, tier: 0, stake: 0n, dailyLimit: 0n, strikes: 0, suspended: false };
+      return { isProvider: false, tier: 0, stake: 0n, attestedStake: 0n, dailyLimit: 0n, strikes: 0, suspended: false };
     }
     return {
       isProvider: true,
       tier: provider.tier,
       stake: provider.balance,
+      attestedStake: provider.balance,
       dailyLimit: provider.dailyLimit,
       strikes: provider.strikeCount,
       suspended: !provider.isActive,

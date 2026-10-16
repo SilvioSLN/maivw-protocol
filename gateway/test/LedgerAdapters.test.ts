@@ -24,7 +24,7 @@ function fakeSolanaAdapter(): LedgerAdapter {
       };
     },
     async readProviderState() {
-      return { isProvider: true, tier: 2, stake: 100n, dailyLimit: 1_000n, strikes: 0, suspended: false };
+      return { isProvider: true, tier: 2, stake: 100n, attestedStake: 100n, dailyLimit: 1_000n, strikes: 0, suspended: false };
     },
     async checkHealth() {},
   };
