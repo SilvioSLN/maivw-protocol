@@ -30,6 +30,9 @@ import { EventListenerService } from "./services/EventListenerService.js";
 import { StealthRoutingService } from "./services/StealthRoutingService.js";
 import { OracleReportService } from "./services/OracleReportService.js";
 import { RoutingPoolService } from "./services/RoutingPoolService.js";
+import { OriginCatalogService } from "./multichain/OriginCatalog.js";
+import { MultichainRelayJobService, PrismaRelayJobRepository } from "./multichain/MultichainRelayJob.js";
+import { MultichainMirrorJobCoordinator } from "./multichain/MultichainMirrorJobs.js";
 
 // ============================================
 //  Configuration
@@ -53,6 +56,9 @@ eventListener.start();
 const stealth = new StealthRoutingService(prisma);
 const routingPool = new RoutingPoolService(prisma, config.REDIS_URL);
 await routingPool.start();
+const originCatalog = new OriginCatalogService(prisma);
+const relayJobs = new MultichainRelayJobService(new PrismaRelayJobRepository(prisma));
+const mirrorJobs = new MultichainMirrorJobCoordinator(originCatalog, ledger, relayJobs);
 
 // ============================================
 //  Fastify App
@@ -278,6 +284,7 @@ await multiChainRoutes(app, {
   oracle,
   prisma,
   internalServiceKey: config.INTERNAL_SERVICE_KEY,
+  mirrorJobs,
 });
 
 await routingRoutes(app, {

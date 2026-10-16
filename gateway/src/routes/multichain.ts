@@ -1,11 +1,11 @@
 import type { FastifyInstance } from "fastify";
-import type { Address } from "viem";
 import type { LedgerService } from "../services/LedgerService.js";
 import type { OracleService } from "../services/OracleService.js";
 import type { PrismaClient } from "@prisma/client";
 import { getActiveAdmin } from "./auth.js";
 import { OriginCatalogService } from "../multichain/OriginCatalog.js";
 import { MultichainStatusService } from "../multichain/MultichainStatus.js";
+import type { MultichainMirrorJobCoordinator } from "../multichain/MultichainMirrorJobs.js";
 
 interface MultiChainRouteOptions {
   ledger: LedgerService;
@@ -13,6 +13,7 @@ interface MultiChainRouteOptions {
   prisma: PrismaClient;
   internalServiceKey?: string;
   multichainStatus?: MultichainStatusService;
+  mirrorJobs?: MultichainMirrorJobCoordinator;
 }
 
 export async function multiChainRoutes(app: FastifyInstance, options: MultiChainRouteOptions) {
@@ -63,14 +64,14 @@ export async function multiChainRoutes(app: FastifyInstance, options: MultiChain
   app.post("/api/v1/multichain/attest-mirror", async (request, reply) => {
     const body = request.body as {
       domain: string;
-      targetChainId: number;
-      callerAddress?: Address;
-      executeRelayer?: boolean;
+      operation?: "REGISTER" | "SYNC" | "REVOKE";
+      destinationNetworkIds?: string[];
+      targetChainId?: number;
     };
 
-    if (!body || !body.domain || !body.targetChainId) {
+    if (!body || !body.domain) {
       return reply.status(400).send({
-        error: "Campos obrigatórios ausentes: domain, targetChainId",
+        error: "Campo obrigatório ausente: domain",
       });
     }
 
@@ -84,74 +85,24 @@ export async function multiChainRoutes(app: FastifyInstance, options: MultiChain
       where: { domainName: cleanDomain, userId: admin.id, isVerified: true },
     });
     if (!ownedDomain) return reply.status(404).send({ error: "Domínio verificado não encontrado para esta conta" });
-    if (body.executeRelayer) {
-      return reply.status(503).send({ error: "Relayer de espelhamento suspenso até confirmar a transação real" });
-    }
+    if (!options.mirrorJobs) return reply.status(503).send({ error: "Pipeline multichain não configurado" });
 
     try {
-      // 1. Verificar se o domínio está ativo na rede de origem
-      const profile = await ledger.getCompanyProfile(cleanDomain);
-      if (!profile || !profile.isActive) {
-        return reply.status(400).send({
-          error: `Domínio "${cleanDomain}" não possui registro ativo na rede de origem para espelhamento.`,
-        });
-      }
-
-      // 2. Determinar a rede de destino e origem
-      const networks = ledger.getSupportedNetworks();
-      const targetNet = networks.find((n) => n.id === body.targetChainId);
-      if (!targetNet) {
-        return reply.status(400).send({
-          error: `Rede de destino chainId ${body.targetChainId} não suportada.`,
-        });
-      }
-
-      const primaryNet = networks.find((n) => n.isPrimary) || networks[0];
-      const originChainId = primaryNet.id;
-
-      if (originChainId === body.targetChainId) {
-        return reply.status(400).send({
-          error: "A rede de destino não pode ser a mesma rede de origem.",
-        });
-      }
-
-      const effectiveCallerAddress = (body.callerAddress || profile.publicKey || oracle.getOracleAddress()) as Address;
-      const adminKey = ((profile as any).adminKey || profile.publicKey) as Address;
-      const deadline = BigInt(Math.floor(Date.now() / 1000) + 86400);
-
-      // 3. Gerar a Prova Criptográfica do Oráculo (ECDSA)
-      const oracleProof = await oracle.generateMirrorProof(
-        cleanDomain,
-        profile.publicKey,
-        originChainId,
-        body.targetChainId,
-        effectiveCallerAddress,
-        adminKey,
-        deadline
-      );
-
-      return {
-        success: true,
+      const destinationNetworkIds = body.destinationNetworkIds
+        ?? (body.targetChainId ? [`evm:${body.targetChainId}`] : undefined);
+      const job = await options.mirrorJobs.request({
         domain: cleanDomain,
-        publicKey: profile.publicKey,
-        endpointUrl: profile.endpointUrl,
-        originChainId,
-        targetChainId: body.targetChainId,
-        targetNetworkName: targetNet.name,
-        targetContractAddress: targetNet.contractAddress,
-        mirrorFeeWei: targetNet.mirrorFeeWei,
-        mirrorFeeFormatted: targetNet.mirrorFeeFormatted,
-        oracleProof,
-        adminKey,
-        deadline: deadline.toString(),
-        callerAddress: effectiveCallerAddress,
-        oracleNodeAddress: oracle.getOracleAddress(),
-        transaction: undefined,
-      };
+        operation: body.operation ?? "REGISTER",
+        destinationNetworkIds,
+      });
+      return reply.status(202).send({
+        success: true,
+        job,
+      });
     } catch (error: any) {
-      return reply.status(500).send({
-        error: "Erro ao gerar atestação de espelhamento",
-        message: error.message,
+      return reply.status(400).send({
+        error: "Não foi possível criar o job de espelhamento",
+        code: error?.code ?? "MIRROR_JOB_FAILED",
       });
     }
   });
@@ -160,9 +111,33 @@ export async function multiChainRoutes(app: FastifyInstance, options: MultiChain
    * POST /api/v1/multichain/fulfill-mirror
    * Rota interna para espelhamento por relayer
    */
-  app.post("/api/v1/multichain/fulfill-mirror", async (_request, reply) => {
-    return reply.status(503).send({
-      error: "Relayer de espelhamento suspenso até vincular pedido autenticado e confirmação on-chain real",
-    });
+  app.post("/api/v1/multichain/fulfill-mirror", async (request, reply) => {
+    if (!options.internalServiceKey
+      || request.headers["x-internal-service-key"] !== options.internalServiceKey) {
+      return reply.status(403).send({ error: "Operador interno do relayer obrigatório" });
+    }
+    if (!options.mirrorJobs) return reply.status(503).send({ error: "Pipeline multichain não configurado" });
+    const body = (request.body ?? {}) as {
+      domain?: string;
+      operation?: "REGISTER" | "SYNC" | "REVOKE";
+      destinationNetworkIds?: string[];
+      targetChainId?: number;
+    };
+    if (!body.domain) return reply.status(400).send({ error: "Campo obrigatório ausente: domain" });
+    try {
+      const destinationNetworkIds = body.destinationNetworkIds
+        ?? (body.targetChainId ? [`evm:${body.targetChainId}`] : undefined);
+      const job = await options.mirrorJobs.request({
+        domain: body.domain,
+        operation: body.operation ?? "REGISTER",
+        destinationNetworkIds,
+      });
+      return reply.status(202).send({ success: true, job });
+    } catch (error: any) {
+      return reply.status(400).send({
+        error: "Não foi possível criar o job de espelhamento",
+        code: error?.code ?? "MIRROR_JOB_FAILED",
+      });
+    }
   });
 }
