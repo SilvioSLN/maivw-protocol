@@ -64,6 +64,21 @@ enum EvmObservationStatus {
   ORPHANED
 }
 
+enum MultichainRelayStatus {
+  DETECTED
+  FINALIZED
+  ATTESTED
+  SUBMITTED
+  CONFIRMED
+  RECONCILE
+}
+
+enum MultichainRelayOperation {
+  REGISTER
+  SYNC
+  REVOKE
+}
+
 /// Cursor durável por Registry EVM. nextBlock só avança na mesma transação que
 /// persiste o bloco e todos os eventos reconhecidos nele.
 model EvmObserverCursor {
@@ -175,6 +190,75 @@ model SolanaSourceEvent {
   @@unique([networkId, signature, instructionIndex, logIndex])
   @@index([networkId, slot, signature])
   @@index([domainHash, slot])
+}
+
+/// Unidade durável de trabalho produzida por um evento de origem. Cada job
+/// possui um destino independente por deployment de mirror.
+model MultichainRelayJob {
+  id                    String                    @id @default(uuid())
+  sourceEventKey        String                    @unique
+  domainHash            String                    @db.Char(66)
+  operation             MultichainRelayOperation
+  originNetworkFamily   OriginNetworkFamily
+  originNetworkId       String
+  originRegistryId      String                    @db.Char(66)
+  sourceTransactionId   String
+  sourcePosition        String
+  globalDomainEpoch     BigInt
+  originSequence        BigInt
+  status                MultichainRelayStatus     @default(DETECTED)
+  sourceStateHash       String?                   @db.Char(66)
+  detectedAt            DateTime
+  finalizedAt           DateTime?
+  createdAt             DateTime                  @default(now())
+  updatedAt             DateTime                  @updatedAt
+
+  destinations MultichainRelayDestination[]
+  transitions  MultichainRelayTransition[]
+
+  @@index([domainHash, globalDomainEpoch, originSequence])
+  @@index([status, updatedAt])
+}
+
+model MultichainRelayDestination {
+  id                       String                @id @default(uuid())
+  jobId                    String
+  destinationNetworkFamily OriginNetworkFamily
+  destinationNetworkId     String
+  destinationRegistryId    String                @db.Char(66)
+  status                   MultichainRelayStatus @default(DETECTED)
+  attestationDigest        String?               @db.Char(66)
+  submissionId             String?
+  confirmationReference    String?
+  reconcileReference       String?
+  createdAt                DateTime              @default(now())
+  updatedAt                DateTime              @updatedAt
+
+  job         MultichainRelayJob          @relation(fields: [jobId], references: [id], onDelete: Restrict)
+  transitions MultichainRelayTransition[]
+
+  @@unique([jobId, destinationNetworkId, destinationRegistryId])
+  @@index([status, updatedAt])
+}
+
+/// Histórico append-only das transições; o estado materializado nunca é a
+/// única evidência de avanço do relayer.
+model MultichainRelayTransition {
+  id            String                @id @default(uuid())
+  jobId         String
+  destinationId String?
+  fromStatus    MultichainRelayStatus?
+  toStatus      MultichainRelayStatus
+  artifactHash  String?               @db.Char(66)
+  reference     String?
+  reason        String?
+  createdAt     DateTime              @default(now())
+
+  job         MultichainRelayJob          @relation(fields: [jobId], references: [id], onDelete: Restrict)
+  destination MultichainRelayDestination? @relation(fields: [destinationId], references: [id], onDelete: Restrict)
+
+  @@index([jobId, createdAt])
+  @@index([destinationId, createdAt])
 }
 
 /// Fonte transacional para a rede de origem imutável de cada domainHash.
