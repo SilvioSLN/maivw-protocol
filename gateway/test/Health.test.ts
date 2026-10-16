@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import Fastify from "fastify";
 import { healthRoutes } from "../src/routes/health.js";
-import { LedgerService } from "../src/services/LedgerService.js";
+import { EvmLedgerAdapter } from "../src/services/LedgerService.js";
 import { RoutingPoolService } from "../src/services/RoutingPoolService.js";
 
 test("health reports real dependency failures, recovery and unknown oracle balance", async () => {
@@ -33,7 +33,7 @@ test("health reports real dependency failures, recovery and unknown oracle balan
 });
 
 test("health probes do not convert contract failures or disconnected Redis to success", async () => {
-  const ledger = Object.create(LedgerService.prototype) as LedgerService;
+  const ledger = Object.create(EvmLedgerAdapter.prototype) as EvmLedgerAdapter;
   Object.assign(ledger, {
     contractAddress: "0x1111111111111111111111111111111111111111",
     client: { readContract: async () => { throw new Error("RPC failed"); } },
