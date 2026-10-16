@@ -10,10 +10,20 @@ import type { OracleService } from "../services/OracleService.js";
 import type { LedgerService } from "../services/LedgerService.js";
 import { isLocalDemoConfig, type EnvConfig } from "../config.js";
 import type { Address } from "viem";
+import type { OriginOnboardingCoordinator } from "../multichain/OriginOnboarding.js";
+
+const DomainNameSchema = z.string().trim().toLowerCase().max(253).regex(/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/);
+const SolanaPubkeySchema = z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/);
 
 const ChallengeSchema = z.object({
-  domainName: z.string().trim().toLowerCase().max(253).regex(/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/),
+  domainName: DomainNameSchema,
   userId: z.number().int().positive().optional(),
+  networkId: z.string().regex(/^solana:[1-9A-HJ-NP-Za-km-z]+$/).optional(),
+  registrant: SolanaPubkeySchema.optional(),
+}).superRefine((value, context) => {
+  if (Boolean(value.networkId) !== Boolean(value.registrant)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "networkId e registrant devem ser informados juntos" });
+  }
 });
 
 const CheckDnsSchema = z.object({
@@ -52,6 +62,19 @@ const FinalizeWeb3RegistrationSchema = z.object({
   targetChainId: z.number().int().optional(),
 });
 
+const SolanaOriginClaimSchema = z.object({
+  challengeId: z.string().uuid(),
+  token: z.string().min(32),
+  endpointUrl: EndpointUrlSchema,
+  registrant: SolanaPubkeySchema,
+  registrantTokenAccount: SolanaPubkeySchema,
+  operationalKey: SolanaPubkeySchema,
+  adminKey: SolanaPubkeySchema,
+  tlsFingerprint: z.string().regex(/^0x[a-fA-F0-9]{64}$/).optional(),
+  idempotencyKey: z.string().min(8).max(256),
+  requestId: z.string().min(8).max(128),
+});
+
 const CompleteOnboardingSchema = z.object({
   domainId: z.number().int().positive(),
   localPart: z.string().min(1).regex(/^[a-zA-Z0-9._-]+$/).default("admin"),
@@ -67,6 +90,7 @@ interface OnboardingRouteOptions {
   ledger: LedgerService;
   config: EnvConfig;
   resolveTxt?: (host: string) => Promise<string[][]>;
+  originOnboarding?: OriginOnboardingCoordinator;
 }
 
 export async function onboardingRoutes(app: FastifyInstance, options: OnboardingRouteOptions) {
@@ -102,7 +126,7 @@ export async function onboardingRoutes(app: FastifyInstance, options: Onboarding
       if (!isLocalDemo && new URL(endpoint.data).protocol !== "https:") return reply.status(400).send({ error: "Endpoint P2P deve usar HTTPS fora do Anvil local" });
     }
     if (body.domainName !== undefined) {
-      const domain = ChallengeSchema.shape.domainName.safeParse(body.domainName);
+      const domain = DomainNameSchema.safeParse(body.domainName);
       if (!domain.success) return reply.status(400).send({ error: "Domínio inválido" });
       const existing = await prisma.domain.findUnique({ where: { domainName: domain.data } });
       if (existing && existing.userId !== current.id) return reply.status(403).send({ error: "Domínio indisponível para esta conta" });
@@ -172,6 +196,49 @@ export async function onboardingRoutes(app: FastifyInstance, options: Onboarding
     const cleanDomain = parse.data.domainName.toLowerCase().trim();
     const userId = getAuthUser(request)!.id;
 
+    if (parse.data.networkId && parse.data.registrant) {
+      if (!options.originOnboarding) {
+        return reply.status(503).send({ error: "Onboarding de origem Solana não configurado neste nó" });
+      }
+      try {
+        const current = await ledger.readDomainIdentity(parse.data.networkId, cleanDomain);
+        if (current) return reply.status(409).send({ error: "Domínio já registrado nesta rede" });
+      } catch {
+        // O coordenador valida o deployment autorizado e retorna erro específico.
+      }
+      try {
+        const created = await options.originOnboarding.createChallenge({
+          domain: cleanDomain,
+          requesterId: userId,
+          networkId: parse.data.networkId,
+          registrant: parse.data.registrant,
+        });
+        return {
+          domain: cleanDomain,
+          challengeId: created.challengeId,
+          token: created.token,
+          expiresAt: created.expiresAt.toISOString(),
+          origin: {
+            family: created.network.family,
+            networkId: created.network.networkId,
+            registryId: created.network.registryId,
+            name: created.network.name,
+            programId: created.network.programId,
+          },
+          records: {
+            txt: {
+              type: "TXT", host: created.dnsRecord.host, name: "_maivw-verify",
+              value: created.dnsRecord.value,
+              purpose: "Prova de Posse vinculada à origem Solana escolhida", required: true,
+            },
+          },
+        };
+      } catch (error: any) {
+        const conflict = error?.code === "ORIGIN_ALREADY_ACTIVE" || error?.code === "ORIGIN_ALREADY_RESERVED";
+        return reply.status(conflict ? 409 : 400).send({ error: error?.message || "Falha ao criar desafio de origem" });
+      }
+    }
+
     // 1. Verificar se o domínio já existe on-chain no Cartório MAIVW (apenas o domínio exato)
     const isOnChain = await ledger.isDomainRegistered(cleanDomain, true);
     if (isOnChain) {
@@ -222,6 +289,52 @@ export async function onboardingRoutes(app: FastifyInstance, options: Onboarding
         },
       },
     };
+  });
+
+  /** Issues OriginClaimV1 and an unsigned Solana registration transaction draft. */
+  app.post("/api/v1/onboarding/origin-claim", { preHandler: authorizeOnboarding }, async (request, reply) => {
+    if (!options.originOnboarding) {
+      return reply.status(503).send({ error: "Onboarding de origem Solana não configurado neste nó" });
+    }
+    const parse = SolanaOriginClaimSchema.safeParse(request.body);
+    if (!parse.success) return reply.status(400).send({ error: "Dados inválidos", details: parse.error.flatten() });
+    const requesterId = getAuthUser(request)!.id;
+    try {
+      const result = await options.originOnboarding.issueSolanaClaim({
+        challengeId: parse.data.challengeId,
+        requesterId,
+        token: parse.data.token,
+        endpoint: parse.data.endpointUrl,
+        registrant: parse.data.registrant,
+        registrantTokenAccount: parse.data.registrantTokenAccount,
+        operationalKey: parse.data.operationalKey,
+        adminKey: parse.data.adminKey,
+        tlsFingerprint: parse.data.tlsFingerprint as `0x${string}` | undefined,
+        idempotencyKey: parse.data.idempotencyKey,
+        requestId: parse.data.requestId,
+      });
+      return {
+        success: true,
+        reservationId: result.reservationId,
+        origin: {
+          family: result.network.family,
+          networkId: result.network.networkId,
+          registryId: result.network.registryId,
+          name: result.network.name,
+          programId: result.network.programId,
+          asset: result.network.asset,
+        },
+        originClaim: result.claim,
+        transaction: result.transaction,
+      };
+    } catch (error: any) {
+      const conflict = error?.code === "ORIGIN_ALREADY_ACTIVE" || error?.code === "ORIGIN_ALREADY_RESERVED"
+        || error?.code === "IDEMPOTENCY_MISMATCH";
+      return reply.status(conflict ? 409 : 400).send({
+        error: error?.message || "Falha ao emitir OriginClaim Solana",
+        code: error?.code,
+      });
+    }
   });
 
   /**
