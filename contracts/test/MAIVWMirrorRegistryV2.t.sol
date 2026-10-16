@@ -15,9 +15,15 @@ import {MAIVWAttestationV1} from "../src/libraries/MAIVWAttestationV1.sol";
 import {DomainStatus, ProviderTier} from "../src/MAIVWRegistry.sol";
 import {MAIVWRegistryLens} from "../src/MAIVWRegistryLens.sol";
 
-contract MAIVWMirrorRegistryV2UpgradeMock is MAIVWMirrorRegistryV2 {
+contract MAIVWMirrorRegistryV3CompatibilityMock is MAIVWMirrorRegistryV2 {
+    uint256 public v3Marker;
+
+    function initializeV3(uint256 _marker) external reinitializer(2) {
+        v3Marker = _marker;
+    }
+
     function version() external pure returns (uint256) {
-        return 2;
+        return 3;
     }
 }
 
@@ -129,23 +135,50 @@ contract MAIVWMirrorRegistryV2Test is BaseTest {
         assertEq(adminKey.keyData, bytes32(uint256(uint160(companyB))));
     }
 
-    function test_upgradeAndOperationalRollbackPreserveMirrorStorage() public {
+    function test_upgradeToV3PreservesSolanaKeysSequenceAndOperationalWrites() public {
         string memory domain = "upgrade.maivw.com";
         MirrorStateV2 memory state = _state(DomainStatus.ACTIVE, bytes32(uint256(0x3333)));
         MAIVWAttestationV1.Attestation memory attestation = _attestation(domain, state, 2, 1, 1);
         mirrors.registerMirrorV2(domain, state, attestation, _sign(attestation));
 
-        MAIVWMirrorRegistryV2UpgradeMock upgradedImplementation = new MAIVWMirrorRegistryV2UpgradeMock();
+        MAIVWMirrorRegistryV3CompatibilityMock upgradedImplementation =
+            new MAIVWMirrorRegistryV3CompatibilityMock();
         vm.prank(owner);
-        mirrors.upgradeToAndCall(address(upgradedImplementation), "");
-        assertEq(MAIVWMirrorRegistryV2UpgradeMock(address(mirrors)).version(), 2);
-        assertTrue(mirrors.getMirrorVersion(domain).exists);
+        mirrors.upgradeToAndCall(
+            address(upgradedImplementation),
+            abi.encodeCall(MAIVWMirrorRegistryV3CompatibilityMock.initializeV3, (303))
+        );
+
+        MAIVWMirrorRegistryV3CompatibilityMock v3 =
+            MAIVWMirrorRegistryV3CompatibilityMock(address(mirrors));
+        assertEq(v3.version(), 3);
+        assertEq(v3.v3Marker(), 303);
+
+        (KeyDescriptor memory publicKey, KeyDescriptor memory adminKey) = v3.getTypedKeys(domain);
+        assertEq(uint8(publicKey.algorithm), uint8(KeyAlgorithm.ED25519_SOLANA_PUBKEY));
+        assertEq(publicKey.keyData, bytes32(uint256(0x3333)));
+        assertEq(uint8(adminKey.algorithm), uint8(KeyAlgorithm.ED25519_SOLANA_PUBKEY));
+        assertEq(adminKey.keyData, bytes32(uint256(0xaaaa)));
+        MirrorVersionV2 memory preSyncVersion = v3.getMirrorVersion(domain);
+        assertEq(preSyncVersion.originNetworkHash, SOLANA_NETWORK);
+        assertEq(preSyncVersion.originRegistry, SOLANA_REGISTRY);
+        assertEq(preSyncVersion.globalDomainEpoch, 1);
+        assertEq(preSyncVersion.originSequence, 1);
+
+        state.endpointUrl = "https://v3-upgrade.maivw.com/inbox";
+        MAIVWAttestationV1.Attestation memory syncAttestation = _attestation(domain, state, 3, 1, 2);
+        assertTrue(v3.syncMirrorV2(domain, state, syncAttestation, _sign(syncAttestation)));
+        MirrorVersionV2 memory postSyncVersion = v3.getMirrorVersion(domain);
+        assertEq(postSyncVersion.globalDomainEpoch, 1);
+        assertEq(postSyncVersion.originSequence, 2);
 
         MAIVWMirrorRegistryV2 rollbackImplementation = new MAIVWMirrorRegistryV2();
         vm.prank(owner);
         mirrors.upgradeToAndCall(address(rollbackImplementation), "");
         MirrorProfileV2 memory profile = mirrors.getMirrorProfile(domain);
         assertEq(profile.publicKey.keyData, bytes32(uint256(0x3333)));
+        assertEq(profile.adminKey.keyData, bytes32(uint256(0xaaaa)));
+        assertEq(mirrors.getMirrorVersion(domain).originSequence, 2);
         assertTrue(mirrors.isMirrorActive(domain));
     }
 

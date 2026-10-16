@@ -1,0 +1,6 @@
+guardian	0	0	20
+oracleNode	1	0	20
+legacyRegistry	2	0	20
+mirrorProfiles	3	0	32
+mirrorVersions	4	0	32
+__gap	5	0	1408
