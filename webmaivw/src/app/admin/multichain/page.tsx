@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, CheckCircle2, Crown, ExternalLink, Layers, LoaderCircle, Network, RefreshCw, Send, TriangleAlert } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Clock3, Crown, ExternalLink, Layers, LoaderCircle, Network, RefreshCw, Send, TriangleAlert } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
 type NetworkInfo = {
@@ -32,6 +32,13 @@ type DomainStatus = {
   origin: null | { family: "EVM" | "SOLANA"; networkId: string; registryId: string; transaction: { family: "EVM" | "SOLANA"; id: string }; globalDomainEpoch: string; originSequence: string; activatedAt: string; lastReconciledAt: string | null };
   deployments: Deployment[];
 };
+type TimelineEntry = {
+  id: string; stage: "REGISTRATION" | "FINALITY" | "ATTESTATION" | "FAN_OUT" | "CONFIRMATION" | "RECONCILIATION";
+  status: string; title: string; occurredAt: string; jobId?: string;
+  network: null | { family: "EVM" | "SOLANA"; networkId: string };
+  transaction: null | { family: "EVM" | "SOLANA"; id: string };
+  details: Record<string, unknown>;
+};
 
 const phases = ["DETECTED", "FINALIZED", "ATTESTED", "SUBMITTED", "CONFIRMED", "RECONCILE"];
 
@@ -42,6 +49,7 @@ export default function MultichainAdminPage() {
   const [selected, setSelected] = useState<string[]>([]);
   const [job, setJob] = useState<MirrorJob | null>(null);
   const [status, setStatus] = useState<DomainStatus | null>(null);
+  const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
   const [loadingStatus, setLoadingStatus] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -79,7 +87,18 @@ export default function MultichainAdminPage() {
     finally { setLoadingStatus(false); }
   }
 
-  useEffect(() => { loadStatus(); }, [domain, gatewayUrl]);
+  async function loadTimeline(selectedDomain = domain) {
+    if (!selectedDomain || !token) return;
+    const response = await fetch(`${gatewayUrl}/api/v1/multichain/timeline/${encodeURIComponent(selectedDomain)}`, { headers: { Authorization: `Bearer ${token}` } });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.error?.message || body.error || "Falha ao consultar timeline");
+    setTimeline(body.entries || []);
+  }
+
+  useEffect(() => {
+    loadStatus();
+    loadTimeline().catch((cause) => setError(cause.message));
+  }, [domain, gatewayUrl, token]);
 
   useEffect(() => {
     if (!job || job.destinations.every((item) => ["RECONCILE", "ORPHANED", "COMPENSATION_REQUIRED"].includes(item.status))) return;
@@ -164,6 +183,11 @@ export default function MultichainAdminPage() {
           </article>;
         })}</div>
       </section>}
+
+      {timeline.length > 0 && <section className="rounded-2xl border border-white/10 bg-white/[.03] p-5 md:p-6">
+        <div className="flex items-center justify-between gap-3 mb-6"><div><div className="text-xs uppercase tracking-[.16em] text-violet-300 font-bold">Evidência persistida</div><h2 className="text-xl font-bold mt-1">Timeline multichain</h2></div><button onClick={() => loadTimeline().catch((cause) => setError(cause.message))} className="rounded-xl border border-white/10 p-2 text-neutral-400"><RefreshCw className="w-4 h-4" /></button></div>
+        <div className="relative ml-3 border-l border-white/10 space-y-0">{timeline.map((entry) => <TimelineRow key={entry.id} entry={entry} network={entry.network ? byId.get(entry.network.networkId) : undefined} />)}</div>
+      </section>}
       {error && <div className="rounded-xl border border-red-500/30 bg-red-950/20 p-4 text-sm text-red-300">{error}</div>}
     </div>
   </main>;
@@ -192,4 +216,14 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 function projectionLabel(value: string) {
   return ({ IN_SYNC: "Sincronizado com a origem", MISSING_MIRROR: "Ainda não projetado", VERSION_BEHIND: "Atrasado", VERSION_AHEAD: "Versão à frente", ORIGIN_CONFLICT: "Conflito de origem", UNREADABLE: "Rede indisponível", MISSING_ORIGIN: "Origem ausente" } as Record<string, string>)[value] || value;
+}
+
+function TimelineRow({ entry, network }: { entry: TimelineEntry; network?: NetworkInfo }) {
+  const labels: Record<TimelineEntry["stage"], string> = { REGISTRATION: "Registro", FINALITY: "Finalidade", ATTESTATION: "Atestação", FAN_OUT: "Fan-out", CONFIRMATION: "Confirmação", RECONCILIATION: "Reconciliação" };
+  return <article className="relative pl-7 pb-7 last:pb-0">
+    <div className="absolute -left-[7px] top-1 w-3 h-3 rounded-full bg-violet-400 ring-4 ring-[#111118]" />
+    <div className="flex flex-wrap items-start justify-between gap-2"><div><div className="text-[10px] uppercase tracking-wider text-violet-300 font-bold">{labels[entry.stage]}</div><div className="font-semibold text-sm mt-1">{entry.title}</div></div><span className="text-[10px] rounded-full bg-white/5 border border-white/10 px-2 py-1 text-neutral-300">{entry.status}</span></div>
+    <div className="mt-2 text-[11px] text-neutral-500 flex flex-wrap gap-x-4 gap-y-1"><span className="inline-flex items-center gap-1"><Clock3 className="w-3 h-3" />{new Date(entry.occurredAt).toLocaleString("pt-BR")}</span>{entry.network && <span>{network?.name || entry.network.networkId} · {entry.network.family}</span>}{entry.jobId && <span className="font-mono">job {entry.jobId.slice(0, 8)}…</span>}</div>
+    {entry.transaction && <TransactionLink network={network} transaction={entry.transaction} />}
+  </article>;
 }

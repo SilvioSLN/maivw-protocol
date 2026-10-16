@@ -45,6 +45,11 @@ The authenticated mirror UI creates origin-to-N jobs using canonical NetworkIds
 and polls `GET /api/v1/multichain/jobs/:jobId?domain=...`. Transaction references
 are returned as `{ family, id }`; clients label Solana ids as signatures and EVM
 ids as hashes instead of assuming an `0x` prefix.
+
+`GET /api/v1/multichain/timeline/:domain` derives a chronological, authenticated
+view from the origin record, relay transitions and reconciliation runs. The
+public stages are registration, finality, attestation, fan-out, confirmation
+and reconciliation; worker payloads and private errors are deliberately absent.
 The isolated KMS/local signing boundary for both claim kinds is specified in `ATTESTATION_SIGNER_V1.md`.
 The durable finalized-block scanner for Base, Arbitrum and Polygon is specified in `EVM_OBSERVER_V1.md`.
 The finalized slot/signature scanner and deterministic Anchor event decoder are specified in `SOLANA_OBSERVER_V1.md`.

@@ -8,6 +8,7 @@ import { OriginCatalogService } from "../multichain/OriginCatalog.js";
 import { MultichainStatusService } from "../multichain/MultichainStatus.js";
 import type { MultichainMirrorJobCoordinator } from "../multichain/MultichainMirrorJobs.js";
 import { MultichainJobQuery } from "../multichain/MultichainJobQuery.js";
+import { MultichainTimelineService } from "../multichain/MultichainTimeline.js";
 import { catalogDomainHash } from "../multichain/OriginCatalog.js";
 import {
   CanonicalDomainSchema,
@@ -25,6 +26,7 @@ interface MultiChainRouteOptions {
   multichainStatus?: MultichainStatusService;
   mirrorJobs?: MultichainMirrorJobCoordinator;
   jobQuery?: MultichainJobQuery;
+  timeline?: MultichainTimelineService;
 }
 
 export async function multiChainRoutes(app: FastifyInstance, options: MultiChainRouteOptions) {
@@ -32,6 +34,7 @@ export async function multiChainRoutes(app: FastifyInstance, options: MultiChain
   const multichainStatus = options.multichainStatus
     ?? new MultichainStatusService(new OriginCatalogService(prisma), ledger);
   const jobQuery = options.jobQuery ?? new MultichainJobQuery(prisma);
+  const timeline = options.timeline ?? new MultichainTimelineService(prisma);
 
   /**
    * GET /api/v1/multichain/networks
@@ -135,6 +138,17 @@ export async function multiChainRoutes(app: FastifyInstance, options: MultiChain
       return reply.status(404).send({ error: "Job não encontrado" });
     }
     return { success: true, job };
+  });
+
+  app.get("/api/v1/multichain/timeline/:domain", async (request, reply) => {
+    if (!request.headers.authorization?.startsWith("Bearer ")) return reply.status(401).send({ error: "Autenticação obrigatória" });
+    const admin = await getActiveAdmin(request, prisma);
+    if (!admin) return reply.status(403).send({ error: "Administrador existente obrigatório" });
+    const parsed = CanonicalDomainSchema.safeParse((request.params as { domain: string }).domain);
+    if (!parsed.success) return reply.status(400).send(multichainErrorBody(invalidMultichainRequest("Domínio inválido")));
+    const ownedDomain = await prisma.domain.findFirst({ where: { domainName: parsed.data, userId: admin.id, isVerified: true } });
+    if (!ownedDomain) return reply.status(404).send({ error: "Domínio verificado não encontrado para esta conta" });
+    return { success: true, ...(await timeline.get(catalogDomainHash(parsed.data))) };
   });
 
   /**
