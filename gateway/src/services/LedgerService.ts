@@ -2,6 +2,19 @@ import { decodeEventLog, parseAbi, createPublicClient, createWalletClient, http,
 import { privateKeyToAccount } from "viem/accounts";
 import { foundry } from "viem/chains";
 import { MIRROR_REGISTRY_V2_ABI, REGISTRY_ABI, type EnvConfig } from "../config.js";
+import { hashNetworkId } from "../multichain/AttestationCodec.js";
+import {
+  evmRegistryId,
+  parseNetworkId,
+  type NetworkId,
+  type RegistryId,
+} from "../multichain/NetworkModel.js";
+import {
+  LedgerAdapterError,
+  type LedgerAdapter,
+  type LedgerDomainIdentity,
+  type LedgerProviderState,
+} from "./ledger/LedgerAdapter.js";
 
 export interface TypedKeyDescriptor {
   algorithm: number;
@@ -26,7 +39,10 @@ export interface TypedDomainIdentity {
 /**
  * LedgerService — Serviço de leitura e interação com o Smart Contract MAIVWRegistry
  */
-export class LedgerService {
+export class EvmLedgerAdapter implements LedgerAdapter {
+  readonly family = "EVM" as const;
+  readonly networkId: NetworkId<"EVM">;
+  readonly registryId: RegistryId;
   private client: PublicClient;
   private contractAddress: Address | null;
   private mirrorRegistryV2Address: Address | null;
@@ -44,6 +60,12 @@ export class LedgerService {
 
   constructor(config: EnvConfig) {
     this.config = config;
+    this.networkId = parseNetworkId("EVM", `evm:${config.CHAIN_ID}`);
+    const configuredRegistry = config.REGISTRY_CONTRACT_ADDRESS || config.BASE_REGISTRY_ADDRESS;
+    if (!configuredRegistry) {
+      throw new LedgerAdapterError("LEDGER_ADAPTER_INVALID", "EVM Registry não configurado");
+    }
+    this.registryId = evmRegistryId(configuredRegistry as Address);
     // Criar chain customizada para Anvil local
     this.chain = {
       ...foundry,
@@ -68,6 +90,50 @@ export class LedgerService {
     console.log(`[LEDGER] Initialized with RPC: ${config.RPC_URL}`);
     console.log(`[LEDGER] Contract address: ${this.contractAddress || "NOT SET"}`);
     console.log(`[LEDGER] Mirror Registry V2: ${this.mirrorRegistryV2Address || "NOT SET"}`);
+  }
+
+  async readDomainIdentity(domain: string): Promise<LedgerDomainIdentity | null> {
+    const identity = await this.getTypedDomainIdentity(domain);
+    if (!identity) return null;
+    return {
+      networkId: this.networkId,
+      registryId: this.registryId,
+      family: "EVM",
+      recordKind: identity.source === "mirror-v2" ? "MIRROR" : "ORIGIN",
+      domain: identity.domain,
+      endpointUrl: identity.endpointUrl,
+      operationalKey: { algorithm: identity.publicKey.algorithm, keyData: identity.publicKey.keyData },
+      adminKey: { algorithm: identity.adminKey.algorithm, keyData: identity.adminKey.keyData },
+      status: identity.revoked ? "REVOKED" : identity.isActive ? "ACTIVE" : "SUSPENDED",
+      globalDomainEpoch: identity.globalDomainEpoch,
+      originSequence: identity.originSequence,
+      originNetworkHash: identity.originNetworkHash ?? hashNetworkId(this.networkId),
+      originRegistryId: (identity.originRegistry?.toLowerCase() as RegistryId | undefined) ?? this.registryId,
+    };
+  }
+
+  async readProviderState(domain: string): Promise<LedgerProviderState | null> {
+    const identity = await this.getTypedDomainIdentity(domain);
+    if (!identity) return null;
+    if (identity.source === "mirror-v2") {
+      return { isProvider: false, tier: 0, stake: 0n, dailyLimit: 0n, strikes: 0, suspended: !identity.isActive };
+    }
+    const [isProvider, provider] = await Promise.all([this.isProvider(domain), this.getProviderInfo(domain)]);
+    if (!isProvider || !provider) {
+      return { isProvider: false, tier: 0, stake: 0n, dailyLimit: 0n, strikes: 0, suspended: false };
+    }
+    return {
+      isProvider: true,
+      tier: provider.tier,
+      stake: provider.balance,
+      dailyLimit: provider.dailyLimit,
+      strikes: provider.strikeCount,
+      suspended: !provider.isActive,
+    };
+  }
+
+  async checkHealth(): Promise<void> {
+    await this.checkBlockchainHealth();
   }
 
   /** Confirms an exact registration on this node's configured chain, without demo/parent fallbacks. */
@@ -941,4 +1007,95 @@ export class LedgerService {
   getPublicClient(): PublicClient {
     return this.client;
   }
+}
+
+/**
+ * Chain-agnostic facade. Legacy single-ledger methods delegate to the primary
+ * EVM adapter while multichain callers resolve an adapter by canonical
+ * NetworkId, without family switches in routes or services.
+ */
+export class LedgerService {
+  private readonly primary: EvmLedgerAdapter;
+  private readonly adapters = new Map<string, LedgerAdapter>();
+  private readonly registryOwners = new Map<string, string>();
+
+  constructor(config: EnvConfig, additionalAdapters: readonly LedgerAdapter[] = []) {
+    this.primary = new EvmLedgerAdapter(config);
+    this.addAdapter(this.primary);
+    for (const adapter of additionalAdapters) this.addAdapter(adapter);
+  }
+
+  private addAdapter(adapter: LedgerAdapter): void {
+    const previousNetwork = this.adapters.get(adapter.networkId);
+    const previousRegistry = this.registryOwners.get(adapter.registryId);
+    if (previousNetwork || previousRegistry) {
+      throw new LedgerAdapterError(
+        "LEDGER_ADAPTER_CONFLICT",
+        `adapter duplicado: ${adapter.networkId}${previousRegistry ? ` registry usado por ${previousRegistry}` : ""}`,
+      );
+    }
+    this.adapters.set(adapter.networkId, adapter);
+    this.registryOwners.set(adapter.registryId, adapter.networkId);
+  }
+
+  listAdapters(): readonly LedgerAdapter[] {
+    return [...this.adapters.values()];
+  }
+
+  getAdapter(networkId: string): LedgerAdapter {
+    const adapter = this.adapters.get(networkId);
+    if (!adapter) {
+      throw new LedgerAdapterError("LEDGER_ADAPTER_NOT_FOUND", `adapter não configurado: ${networkId}`);
+    }
+    return adapter;
+  }
+
+  getPrimaryNetworkId(): NetworkId<"EVM"> {
+    return this.primary.networkId;
+  }
+
+  readDomainIdentity(networkId: string, domain: string): Promise<LedgerDomainIdentity | null> {
+    return this.getAdapter(networkId).readDomainIdentity(domain);
+  }
+
+  readProviderState(networkId: string, domain: string): Promise<LedgerProviderState | null> {
+    return this.getAdapter(networkId).readProviderState(domain);
+  }
+
+  checkNetworkHealth(networkId: string): Promise<void> {
+    return this.getAdapter(networkId).checkHealth();
+  }
+
+  verifyRegistration(...args: Parameters<EvmLedgerAdapter["verifyRegistration"]>): ReturnType<EvmLedgerAdapter["verifyRegistration"]> { return this.primary.verifyRegistration(...args); }
+  setDemoDomain(...args: Parameters<EvmLedgerAdapter["setDemoDomain"]>): ReturnType<EvmLedgerAdapter["setDemoDomain"]> { return this.primary.setDemoDomain(...args); }
+  deactivateDemoDomain(...args: Parameters<EvmLedgerAdapter["deactivateDemoDomain"]>): ReturnType<EvmLedgerAdapter["deactivateDemoDomain"]> { return this.primary.deactivateDemoDomain(...args); }
+  isDemoDomain(...args: Parameters<EvmLedgerAdapter["isDemoDomain"]>): ReturnType<EvmLedgerAdapter["isDemoDomain"]> { return this.primary.isDemoDomain(...args); }
+  clearDemoDomains(...args: Parameters<EvmLedgerAdapter["clearDemoDomains"]>): ReturnType<EvmLedgerAdapter["clearDemoDomains"]> { return this.primary.clearDemoDomains(...args); }
+  getParentDomain(...args: Parameters<EvmLedgerAdapter["getParentDomain"]>): ReturnType<EvmLedgerAdapter["getParentDomain"]> { return this.primary.getParentDomain(...args); }
+  isDomainRegistered(...args: Parameters<EvmLedgerAdapter["isDomainRegistered"]>): ReturnType<EvmLedgerAdapter["isDomainRegistered"]> { return this.primary.isDomainRegistered(...args); }
+  getCompanyEndpoint(...args: Parameters<EvmLedgerAdapter["getCompanyEndpoint"]>): ReturnType<EvmLedgerAdapter["getCompanyEndpoint"]> { return this.primary.getCompanyEndpoint(...args); }
+  getPublicKey(...args: Parameters<EvmLedgerAdapter["getPublicKey"]>): ReturnType<EvmLedgerAdapter["getPublicKey"]> { return this.primary.getPublicKey(...args); }
+  getTypedDomainIdentity(...args: Parameters<EvmLedgerAdapter["getTypedDomainIdentity"]>): ReturnType<EvmLedgerAdapter["getTypedDomainIdentity"]> { return this.primary.getTypedDomainIdentity(...args); }
+  getCompanyProfile(...args: Parameters<EvmLedgerAdapter["getCompanyProfile"]>): ReturnType<EvmLedgerAdapter["getCompanyProfile"]> { return this.primary.getCompanyProfile(...args); }
+  getAllCompanies(...args: Parameters<EvmLedgerAdapter["getAllCompanies"]>): ReturnType<EvmLedgerAdapter["getAllCompanies"]> { return this.primary.getAllCompanies(...args); }
+  checkBlockchainHealth(...args: Parameters<EvmLedgerAdapter["checkBlockchainHealth"]>): ReturnType<EvmLedgerAdapter["checkBlockchainHealth"]> { return this.primary.checkBlockchainHealth(...args); }
+  getTotalRegistered(...args: Parameters<EvmLedgerAdapter["getTotalRegistered"]>): ReturnType<EvmLedgerAdapter["getTotalRegistered"]> { return this.primary.getTotalRegistered(...args); }
+  isProvider(...args: Parameters<EvmLedgerAdapter["isProvider"]>): ReturnType<EvmLedgerAdapter["isProvider"]> { return this.primary.isProvider(...args); }
+  getOracleNode(...args: Parameters<EvmLedgerAdapter["getOracleNode"]>): ReturnType<EvmLedgerAdapter["getOracleNode"]> { return this.primary.getOracleNode(...args); }
+  getAllowedDailyVolume(...args: Parameters<EvmLedgerAdapter["getAllowedDailyVolume"]>): ReturnType<EvmLedgerAdapter["getAllowedDailyVolume"]> { return this.primary.getAllowedDailyVolume(...args); }
+  getProviderInfo(...args: Parameters<EvmLedgerAdapter["getProviderInfo"]>): ReturnType<EvmLedgerAdapter["getProviderInfo"]> { return this.primary.getProviderInfo(...args); }
+  getGenesisStatus(...args: Parameters<EvmLedgerAdapter["getGenesisStatus"]>): ReturnType<EvmLedgerAdapter["getGenesisStatus"]> { return this.primary.getGenesisStatus(...args); }
+  getStandardRegistrationFee(...args: Parameters<EvmLedgerAdapter["getStandardRegistrationFee"]>): ReturnType<EvmLedgerAdapter["getStandardRegistrationFee"]> { return this.primary.getStandardRegistrationFee(...args); }
+  topUpBalance(...args: Parameters<EvmLedgerAdapter["topUpBalance"]>): ReturnType<EvmLedgerAdapter["topUpBalance"]> { return this.primary.topUpBalance(...args); }
+  updateEndpoint(...args: Parameters<EvmLedgerAdapter["updateEndpoint"]>): ReturnType<EvmLedgerAdapter["updateEndpoint"]> { return this.primary.updateEndpoint(...args); }
+  getDomainTlsFingerprint(...args: Parameters<EvmLedgerAdapter["getDomainTlsFingerprint"]>): ReturnType<EvmLedgerAdapter["getDomainTlsFingerprint"]> { return this.primary.getDomainTlsFingerprint(...args); }
+  setDomainTlsFingerprint(...args: Parameters<EvmLedgerAdapter["setDomainTlsFingerprint"]>): ReturnType<EvmLedgerAdapter["setDomainTlsFingerprint"]> { return this.primary.setDomainTlsFingerprint(...args); }
+  registerGenesisProvider(...args: Parameters<EvmLedgerAdapter["registerGenesisProvider"]>): ReturnType<EvmLedgerAdapter["registerGenesisProvider"]> { return this.primary.registerGenesisProvider(...args); }
+  getGovernanceInfo(...args: Parameters<EvmLedgerAdapter["getGovernanceInfo"]>): ReturnType<EvmLedgerAdapter["getGovernanceInfo"]> { return this.primary.getGovernanceInfo(...args); }
+  getContractAddress(...args: Parameters<EvmLedgerAdapter["getContractAddress"]>): ReturnType<EvmLedgerAdapter["getContractAddress"]> { return this.primary.getContractAddress(...args); }
+  getClient(...args: Parameters<EvmLedgerAdapter["getClient"]>): ReturnType<EvmLedgerAdapter["getClient"]> { return this.primary.getClient(...args); }
+  getSupportedNetworks(...args: Parameters<EvmLedgerAdapter["getSupportedNetworks"]>): ReturnType<EvmLedgerAdapter["getSupportedNetworks"]> { return this.primary.getSupportedNetworks(...args); }
+  getMirrorInfo(...args: Parameters<EvmLedgerAdapter["getMirrorInfo"]>): ReturnType<EvmLedgerAdapter["getMirrorInfo"]> { return this.primary.getMirrorInfo(...args); }
+  deactivateMirror(...args: Parameters<EvmLedgerAdapter["deactivateMirror"]>): ReturnType<EvmLedgerAdapter["deactivateMirror"]> { return this.primary.deactivateMirror(...args); }
+  getPublicClient(...args: Parameters<EvmLedgerAdapter["getPublicClient"]>): ReturnType<EvmLedgerAdapter["getPublicClient"]> { return this.primary.getPublicClient(...args); }
 }

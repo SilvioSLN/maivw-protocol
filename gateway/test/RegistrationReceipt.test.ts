@@ -18,7 +18,7 @@ test('registration receipt checks chain, success, Registry, exact domain/key and
     if(scenario==='recipient') data.to=key;
     if(scenario==='emitter') data.logs[0].address=key;
     if(scenario==='missing-event') data.logs=[];
-    (ledger as any).client={getChainId:async()=>scenario==='chain'?1:31337,waitForTransactionReceipt:async()=>{if(scenario==='pending') throw new Error('timeout');return data;},readContract:async({functionName}:any)=>functionName==='getPublicKey'?(scenario==='current-key'?registry:key):(scenario==='endpoint'?'https://other.example':endpoint)};
+    (ledger.getAdapter(ledger.getPrimaryNetworkId()) as any).client={getChainId:async()=>scenario==='chain'?1:31337,waitForTransactionReceipt:async()=>{if(scenario==='pending') throw new Error('timeout');return data;},readContract:async({functionName}:any)=>functionName==='getPublicKey'?(scenario==='current-key'?registry:key):(scenario==='endpoint'?'https://other.example':endpoint)};
     if(scenario==='pending') await assert.rejects(ledger.verifyRegistration(hash,'example.com',key,endpoint));
     else assert.equal(await ledger.verifyRegistration(hash,'example.com',key,endpoint),scenario==='valid',scenario);
   }

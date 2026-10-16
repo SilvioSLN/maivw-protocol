@@ -12,7 +12,7 @@ function ledgerWith(readContract: (input: any) => Promise<any>): LedgerService {
     REGISTRY_CONTRACT_ADDRESS: LEGACY,
     MIRROR_REGISTRY_V2_ADDRESS: MIRRORS,
   } as any);
-  (ledger as any).client = { readContract };
+  (ledger.getAdapter(ledger.getPrimaryNetworkId()) as any).client = { readContract };
   return ledger;
 }
 

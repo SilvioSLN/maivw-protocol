@@ -52,6 +52,7 @@ N×N drift classification, repair plans and reconciliation audit hashes are spec
 Logical orphan handling, terminal relay states and per-destination compensation are specified in `REORG_COMPENSATION_V1.md`.
 Persistent safety scopes, automatic trip conditions and audited manual reset are specified in `RELAY_CIRCUIT_BREAKER_V1.md`.
 The typed chain-agnostic deployment, explorer, asset and finality model is specified in `NETWORK_MODEL_V1.md`.
+The common Ledger facade and its family adapter boundary are specified in `LEDGER_ADAPTERS_V1.md`.
 
 Solana pause authority and the operations that remain available during an incident are specified in `SOLANA_GOVERNANCE_V1.md`.
 
