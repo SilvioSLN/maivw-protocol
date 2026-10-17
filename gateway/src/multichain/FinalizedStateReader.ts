@@ -98,6 +98,25 @@ const EVM_STATE_ABI = [
   ] },
 ] as const;
 
+const EVM_LEGACY_V1_STATE_ABI = [
+  {
+    name: "getCompanyProfile", type: "function", stateMutability: "view",
+    inputs: [{ name: "domain", type: "string" }],
+    outputs: [{ name: "profile", type: "tuple", components: [
+      { name: "domain", type: "string" }, { name: "endpointUrl", type: "string" },
+      { name: "publicKey", type: "address" }, { name: "registrationTime", type: "uint256" },
+      { name: "isProvider", type: "bool" }, { name: "isActive", type: "bool" },
+      { name: "strikeCount", type: "uint8" },
+    ] }],
+  },
+  { name: "getDomainTlsFingerprint", type: "function", stateMutability: "view", inputs: [{ name: "domain", type: "string" }], outputs: [{ type: "bytes32" }] },
+  { name: "getProviderInfo", type: "function", stateMutability: "view", inputs: [{ name: "domain", type: "string" }], outputs: [
+    { name: "tier", type: "uint8" }, { name: "balance", type: "uint256" },
+    { name: "dailyLimit", type: "uint256" }, { name: "isActive", type: "bool" },
+    { name: "strikeCount", type: "uint8" },
+  ] },
+] as const;
+
 export interface EvmFinalizedCheckpoint {
   domain: string;
   domainHash: Hex;
@@ -112,7 +131,7 @@ export interface EvmStateReaderClient {
   getBlock(input: { blockNumber: bigint }): Promise<{ number: bigint | null; hash: Hex | null }>;
   readContract(input: {
     address: Address;
-    abi: typeof EVM_STATE_ABI;
+    abi: readonly unknown[];
     functionName: string;
     args: readonly unknown[];
     blockNumber: bigint;
@@ -125,6 +144,7 @@ export interface EvmFinalizedStateReaderConfig {
   registryId: Hex;
   schemaVersion: number;
   tlsFingerprintMode?: "REQUIRED" | "OPTIONAL_ZERO";
+  registryProfileMode?: "CURRENT" | "LEGACY_V1";
 }
 
 export class EvmFinalizedStateReader {
@@ -142,9 +162,12 @@ export class EvmFinalizedStateReader {
     if (block.number !== checkpoint.blockNumber || block.hash?.toLowerCase() !== checkpoint.blockHash.toLowerCase()) {
       stateFail("FINALIZED_REFERENCE_MISMATCH", "hash do bloco EVM finalizado divergiu");
     }
+    const stateAbi = this.config.registryProfileMode === "LEGACY_V1"
+      ? EVM_LEGACY_V1_STATE_ABI
+      : EVM_STATE_ABI;
     const read = (functionName: string, args: readonly unknown[]) => this.client.readContract({
       address: this.config.registryAddress,
-      abi: EVM_STATE_ABI,
+      abi: stateAbi,
       functionName,
       args,
       blockNumber: checkpoint.blockNumber,
@@ -161,17 +184,30 @@ export class EvmFinalizedStateReader {
       tlsRead,
       read("getProviderInfo", [checkpoint.domain]),
     ]);
+    const legacyV1 = this.config.registryProfileMode === "LEGACY_V1";
     const profile = rawProfile as {
-      domain: string; endpointUrl: string; publicKey: Address; adminKey: Address;
-      registrationTime: bigint; strikeCount: number; epoch: number; isProvider: boolean; status: number;
+      domain: string; endpointUrl: string; publicKey: Address; adminKey?: Address;
+      registrationTime: bigint; strikeCount: number; epoch?: number; isProvider: boolean;
+      status?: number; isActive?: boolean;
     };
-    if (profile.domain !== checkpoint.domain || BigInt(profile.epoch) !== checkpoint.globalDomainEpoch) {
+    const profileEpoch = legacyV1 ? 0n : BigInt(profile.epoch ?? -1);
+    if (profile.domain !== checkpoint.domain || profileEpoch !== checkpoint.globalDomainEpoch) {
       stateFail("FINALIZED_REFERENCE_MISMATCH", "perfil EVM não corresponde ao evento finalizado");
     }
-    const providerInfo = rawProviderInfo as readonly [boolean, number, bigint, bigint, number, boolean];
-    if (providerInfo[0] !== profile.isProvider || providerInfo[4] !== profile.strikeCount) {
+    const currentProviderInfo = rawProviderInfo as readonly [boolean, number, bigint, bigint, number, boolean];
+    const legacyProviderInfo = rawProviderInfo as readonly [number, bigint, bigint, boolean, number];
+    const providerTier = legacyV1 ? Number(legacyProviderInfo[0]) : Number(currentProviderInfo[1]);
+    const providerStake = legacyV1 ? legacyProviderInfo[1] : currentProviderInfo[3];
+    const providerDailyLimit = legacyV1 ? legacyProviderInfo[2] : currentProviderInfo[2];
+    const providerStrikes = legacyV1 ? Number(legacyProviderInfo[4]) : Number(currentProviderInfo[4]);
+    const providerFlag = legacyV1 ? providerTier !== 0 : currentProviderInfo[0];
+    if ((profile.isProvider && !providerFlag) || providerStrikes !== profile.strikeCount
+      || (legacyV1 && legacyProviderInfo[3] !== profile.isActive)) {
       stateFail("FINALIZED_REFERENCE_MISMATCH", "visões EVM do provider são inconsistentes");
     }
+    const status = legacyV1
+      ? (profile.isActive ? "ACTIVE" as const : "SUSPENDED" as const)
+      : statusFromEvm(profile.status ?? 0);
     return validateCanonicalState({
       domain: checkpoint.domain,
       domainHash: expectedHash,
@@ -180,19 +216,19 @@ export class EvmFinalizedStateReader {
       originNetworkHash: this.config.networkHash,
       originRegistry: this.config.registryId,
       operationalKey: { algorithm: 1, value: padHex(profile.publicKey, { size: 32 }) },
-      adminKey: { algorithm: 1, value: padHex(profile.adminKey, { size: 32 }) },
+      adminKey: { algorithm: 1, value: padHex(profile.adminKey ?? profile.publicKey, { size: 32 }) },
       endpoint: profile.endpointUrl,
       tlsFingerprint: tls as Hex,
-      status: statusFromEvm(profile.status),
+      status,
       globalDomainEpoch: checkpoint.globalDomainEpoch,
       originSequence: checkpoint.originSequence,
       isProvider: profile.isProvider,
-      providerTier: profile.isProvider ? Number(providerInfo[1]) : 0,
+      providerTier: profile.isProvider ? providerTier : 0,
       strikes: profile.strikeCount,
       registrationTime: profile.registrationTime,
       updatedAt: 0n,
-      attestedStake: providerInfo[3],
-      attestedDailyLimit: profile.isProvider ? providerInfo[2] : 0n,
+      attestedStake: providerStake,
+      attestedDailyLimit: profile.isProvider ? providerDailyLimit : 0n,
       originTransactionFamily: "EVM",
       originTransaction: checkpoint.transactionHash,
       schemaVersion: this.config.schemaVersion,

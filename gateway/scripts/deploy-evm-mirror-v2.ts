@@ -6,6 +6,7 @@ import {
   encodeFunctionData,
   getAddress,
   http,
+  toFunctionSelector,
   type Abi,
   type Address,
   type Hex,
@@ -37,6 +38,8 @@ const account = privateKeyToAccount(privateKey);
 const outputPath = resolve(process.env.EVM_MIRROR_DEPLOYMENTS_FILE
   ?? resolve(protocolRoot, "contracts/deployments/testnets.json"));
 const IMPLEMENTATION_SLOT = "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc" as Hex;
+const DOMAIN_NONCES_SELECTOR = toFunctionSelector("domainNonces(bytes32)").slice(2).toLowerCase();
+const LEGACY_REGISTER_SELECTOR = toFunctionSelector("registerCompany(string,string,address,bool,bytes)").slice(2).toLowerCase();
 
 const networks = [
   { key: "baseSepolia", chain: baseSepolia, rpc: "BASE_RPC_URL", legacy: "BASE_REGISTRY_ADDRESS" },
@@ -59,6 +62,17 @@ function save(manifest: DeploymentManifest): void {
   renameSync(temporary, outputPath);
 }
 
+async function detectLegacyRegistrySchema(
+  publicClient: ReturnType<typeof createPublicClient>,
+  legacyRegistry: Address,
+): Promise<"EIP712_V2" | "PERSONAL_SIGN_V1"> {
+  const code = (await publicClient.getCode({ address: legacyRegistry }))?.toLowerCase();
+  if (!code) throw new Error(`legacy registry has no bytecode: ${legacyRegistry}`);
+  if (code.includes(DOMAIN_NONCES_SELECTOR)) return "EIP712_V2";
+  if (code.includes(LEGACY_REGISTER_SELECTOR)) return "PERSONAL_SIGN_V1";
+  throw new Error(`unsupported legacy registry ABI: ${legacyRegistry}`);
+}
+
 async function main(): Promise<void> {
   const manifest: DeploymentManifest = existsSync(outputPath)
     ? JSON.parse(readFileSync(outputPath, "utf8")) as DeploymentManifest
@@ -79,6 +93,7 @@ async function main(): Promise<void> {
     const wallet = createWalletClient({ account, chain: network.chain, transport: http(rpcUrl) });
     const chainId = await publicClient.getChainId();
     if (chainId !== network.chain.id) throw new Error(`${network.key}: unexpected chain id ${chainId}`);
+    const legacyRegistrySchema = await detectLegacyRegistrySchema(publicClient, legacyRegistry);
 
     const existing = manifest.deployments[network.key];
     if (existing?.proxy) {
@@ -102,7 +117,8 @@ async function main(): Promise<void> {
         throw new Error(`${network.key}: existing deployment verification failed`);
       }
       manifest.deployments[network.key] = {
-        ...existing, chainId, proxy, implementation, legacyRegistry, owner, guardian, oracleNode,
+        ...existing, chainId, proxy, implementation, legacyRegistry, legacyRegistrySchema,
+        owner, guardian, oracleNode,
       };
       save(manifest);
       process.stderr.write(`${network.key}: existing deployment verified ${proxy}\n`);
@@ -153,6 +169,7 @@ async function main(): Promise<void> {
       implementation,
       proxy,
       legacyRegistry,
+      legacyRegistrySchema,
       owner,
       guardian,
       oracleNode,

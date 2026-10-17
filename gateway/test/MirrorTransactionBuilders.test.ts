@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { PublicKey, Secp256k1Program } from "@solana/web3.js";
+import { ComputeBudgetProgram, PublicKey, Secp256k1Program } from "@solana/web3.js";
 import {
   decodeFunctionData,
   keccak256,
@@ -178,15 +178,17 @@ describe("Solana mirror transaction builder", () => {
       now: 1_900_000_000n,
       ...proof,
     });
-    assert.equal(built.transaction.instructions.length, 2);
-    assert.ok(built.transaction.instructions[0].programId.equals(Secp256k1Program.programId));
-    assert.ok(built.transaction.instructions[1].programId.equals(new PublicKey(PROGRAM_ID)));
+    assert.equal(built.transaction.instructions.length, 3);
+    assert.ok(built.transaction.instructions[0].programId.equals(ComputeBudgetProgram.programId));
+    assert.ok(built.transaction.instructions[1].programId.equals(Secp256k1Program.programId));
+    assert.ok(built.transaction.instructions[2].programId.equals(new PublicKey(PROGRAM_ID)));
+    assert.equal(built.transaction.instructions[0].data.readUInt32LE(1), 450_000);
     const verifyData = built.verificationInstruction.data;
     const messageOffset = verifyData.readUInt16LE(7);
     const messageSize = verifyData.readUInt16LE(9);
-    assert.equal(verifyData[3], 0);
-    assert.equal(verifyData[6], 0);
-    assert.equal(verifyData[11], 1);
+    assert.equal(verifyData[3], 1);
+    assert.equal(verifyData[6], 1);
+    assert.equal(verifyData[11], 2);
     assert.deepEqual(
       built.programInstruction.data.subarray(messageOffset, messageOffset + messageSize),
       Buffer.from(encodeAttestationV1(proof.attestation).slice(2), "hex"),
