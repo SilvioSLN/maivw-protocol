@@ -103,6 +103,16 @@ test("coordinator binds Solana choice into DNS challenge, OriginClaim and transa
   assert.equal(result.transaction.instructions[0].programId, "KeccakSecp256k11111111111111111111111111111");
   assert.equal(result.transaction.instructions[1].programId, PROGRAM);
   assert.deepEqual(result.transaction.requiredSigners, [REGISTRANT]);
+  const verifyData = Buffer.from(result.transaction.instructions[0].dataBase64, "base64");
+  const programData = Buffer.from(result.transaction.instructions[1].dataBase64, "base64");
+  const messageOffset = verifyData.readUInt16LE(7);
+  const messageSize = verifyData.readUInt16LE(9);
+  assert.equal(verifyData[11], 1);
+  assert.equal(verifyData.length, 97);
+  assert.deepEqual(
+    programData.subarray(messageOffset, messageOffset + messageSize),
+    Buffer.from(result.claim.encoded.slice(2), "hex"),
+  );
 });
 
 test("onboarding API accepts a Solana origin selection and returns family-specific proof/transaction", async () => {

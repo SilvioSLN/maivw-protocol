@@ -1,6 +1,5 @@
 import {
   PublicKey,
-  Secp256k1Program,
   SystemProgram,
   SYSVAR_INSTRUCTIONS_PUBKEY,
   Transaction,
@@ -27,6 +26,7 @@ import {
 } from "./AttestationCodec.js";
 import type { CanonicalDomainState } from "./FinalizedStateReader.js";
 import { hashMirrorStateV2 } from "./MirrorPayloadCodec.js";
+import { createCompactSecp256k1Instruction } from "./SolanaSecp256k1.js";
 
 const ZERO32 = `0x${"00".repeat(32)}` as Hex;
 const MAX_U64 = (1n << 64n) - 1n;
@@ -276,17 +276,6 @@ export async function buildSolanaMirrorTransaction(
   const relayer = new PublicKey(input.relayer);
   const destinationRegistry = toHex(programId.toBytes());
   const verified = await validateBuildInput({ ...input, destinationRegistry });
-  const signature = Buffer.from(hexToBytes(input.signature));
-  const rawRecoveryId = signature[64];
-  const recoveryId = rawRecoveryId >= 27 ? rawRecoveryId - 27 : rawRecoveryId;
-  if (recoveryId > 1) throw new Error("oracle signature recovery id must be 0 or 1");
-  const verificationInstruction = Secp256k1Program.createInstructionWithEthAddress({
-    ethAddress: input.expectedSigner,
-    message: Buffer.from(hexToBytes(verified.encoded)),
-    signature: signature.subarray(0, 64),
-    recoveryId,
-    instructionIndex: 0,
-  });
   const domainHash = fixedHex(input.state.domainHash, 32);
   const nonce = fixedHex(input.attestation.nonce, 32);
   const [config] = PublicKey.findProgramAddressSync([Buffer.from("registry-config")], programId);
@@ -297,6 +286,7 @@ export async function buildSolanaMirrorTransaction(
   );
   const args = encodeSolanaMirrorArgs(input.state, input.attestation.nonce);
   const envelope = Buffer.from(hexToBytes(verified.encoded));
+  const instructionData = Buffer.concat([solanaDiscriminator(input.operation), args, u32(envelope.length), envelope]);
   const programInstruction = new TransactionInstruction({
     programId,
     keys: [
@@ -307,7 +297,13 @@ export async function buildSolanaMirrorTransaction(
       { pubkey: SYSVAR_INSTRUCTIONS_PUBKEY, isSigner: false, isWritable: false },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
     ],
-    data: Buffer.concat([solanaDiscriminator(input.operation), args, u32(envelope.length), envelope]),
+    data: instructionData,
+  });
+  const verificationInstruction = createCompactSecp256k1Instruction({
+    ethAddress: input.expectedSigner,
+    signature: input.signature,
+    messageOffset: instructionData.length - envelope.length,
+    messageLength: envelope.length,
   });
   const transaction = new Transaction({ feePayer: relayer }).add(
     verificationInstruction,

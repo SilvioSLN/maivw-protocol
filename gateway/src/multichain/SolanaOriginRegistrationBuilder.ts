@@ -1,12 +1,12 @@
 import {
   PublicKey,
-  Secp256k1Program,
   SYSVAR_INSTRUCTIONS_PUBKEY,
   SystemProgram,
   TransactionInstruction,
 } from "@solana/web3.js";
 import { hexToBytes, recoverAddress, type Hex } from "viem";
 import type { OriginClaimIssuanceRow } from "./OriginReservation.js";
+import { createCompactSecp256k1Instruction } from "./SolanaSecp256k1.js";
 
 const REGISTER_DOMAIN_DISCRIMINATOR = Buffer.from([236, 7, 208, 151, 173, 149, 73, 104]);
 const TOKEN_PROGRAM = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
@@ -93,18 +93,8 @@ export async function buildSolanaOriginRegistrationTransaction(
   }
   const signature = Buffer.from(hexToBytes(input.claim.signature as Hex));
   if (signature.length !== 65) throw new Error("origin claim signature must contain recovery id");
-  const rawRecovery = signature[64];
-  const recoveryId = rawRecovery >= 27 ? rawRecovery - 27 : rawRecovery;
-  if (recoveryId > 1) throw new Error("origin claim recovery id must be 0 or 1");
   const signer = await recoverAddress({ hash: input.claim.digest as Hex, signature: input.claim.signature as Hex });
   const envelope = Buffer.from(hexToBytes(input.claim.encoded as Hex));
-  const verify = Secp256k1Program.createInstructionWithEthAddress({
-    ethAddress: signer,
-    message: envelope,
-    signature: signature.subarray(0, 64),
-    recoveryId,
-    instructionIndex: 0,
-  });
   const domainHash = fixed(input.domainHash);
   const nonce = fixed(input.claim.nonce);
   const [config] = PublicKey.findProgramAddressSync([Buffer.from("registry-config")], programId);
@@ -120,6 +110,7 @@ export async function buildSolanaOriginRegistrationTransaction(
     domainHash, nonce, borshString(input.domain), borshString(input.endpoint),
     fixed(input.operationalKey), fixed(input.adminKey), fixed(input.tlsFingerprint),
   ]);
+  const instructionData = Buffer.concat([REGISTER_DOMAIN_DISCRIMINATOR, args, borshVec(envelope)]);
   const instruction = new TransactionInstruction({
     programId,
     keys: [
@@ -140,7 +131,13 @@ export async function buildSolanaOriginRegistrationTransaction(
       { pubkey: ASSOCIATED_TOKEN_PROGRAM, isSigner: false, isWritable: false },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
     ],
-    data: Buffer.concat([REGISTER_DOMAIN_DISCRIMINATOR, args, borshVec(envelope)]),
+    data: instructionData,
+  });
+  const verify = createCompactSecp256k1Instruction({
+    ethAddress: signer,
+    signature: input.claim.signature as Hex,
+    messageOffset: instructionData.length - envelope.length,
+    messageLength: envelope.length,
   });
   return {
     family: "SOLANA",
