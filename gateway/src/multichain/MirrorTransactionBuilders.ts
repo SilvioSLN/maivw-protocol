@@ -1,4 +1,5 @@
 import {
+  ComputeBudgetProgram,
   PublicKey,
   SystemProgram,
   SYSVAR_INSTRUCTIONS_PUBKEY,
@@ -34,6 +35,7 @@ const SIGNATURE = /^0x[0-9a-fA-F]{130}$/;
 const REGISTER_MIRROR_DISCRIMINATOR = Buffer.from([22, 136, 130, 144, 170, 118, 114, 220]);
 const SYNC_MIRROR_DISCRIMINATOR = Buffer.from([147, 156, 93, 246, 2, 107, 220, 28]);
 const REVOKE_MIRROR_DISCRIMINATOR = Buffer.from([105, 99, 35, 241, 103, 60, 119, 105]);
+const SOLANA_MIRROR_COMPUTE_UNITS = 450_000;
 
 export type MirrorOperation = "REGISTER" | "SYNC" | "REVOKE";
 
@@ -304,8 +306,11 @@ export async function buildSolanaMirrorTransaction(
     signature: input.signature,
     messageOffset: instructionData.length - envelope.length,
     messageLength: envelope.length,
+    selfInstructionIndex: 1,
+    messageInstructionIndex: 2,
   });
   const transaction = new Transaction({ feePayer: relayer }).add(
+    ComputeBudgetProgram.setComputeUnitLimit({ units: SOLANA_MIRROR_COMPUTE_UNITS }),
     verificationInstruction,
     programInstruction,
   );

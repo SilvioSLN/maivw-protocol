@@ -14,6 +14,7 @@ import {
 import {
   createPublicClient,
   createWalletClient,
+  encodePacked,
   getAddress,
   hexToBytes,
   http,
@@ -52,7 +53,12 @@ import { buildSolanaOriginRegistrationTransaction } from "../src/multichain/Sola
 import { DomainStateChangedDecoder } from "../src/multichain/SolanaObserver.js";
 
 type Artifact = { abi: Abi };
-type EvmDeployment = { chainId: number; proxy: Address; legacyRegistry: Address };
+type EvmDeployment = {
+  chainId: number;
+  proxy: Address;
+  legacyRegistry: Address;
+  legacyRegistrySchema?: "EIP712_V2" | "PERSONAL_SIGN_V1";
+};
 type DeploymentManifest = { deployments: Record<string, EvmDeployment> };
 type PublicStep = { network: string; direction: string; operation: string; transaction: string; blockOrSlot: string; gasUsed?: string; latencyMs: number };
 
@@ -64,6 +70,16 @@ const legacyArtifact = JSON.parse(readFileSync(resolve(protocolRoot, "contracts/
 const mirrorArtifact = JSON.parse(readFileSync(resolve(protocolRoot, "contracts/out/MAIVWMirrorRegistryV2.sol/MAIVWMirrorRegistryV2.json"), "utf8")) as Artifact;
 
 const ZERO32 = `0x${"00".repeat(32)}` as Hex;
+const LEGACY_V1_REGISTRY_ABI = [
+  { name: "standardFee", type: "function", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+  {
+    name: "registerCompany", type: "function", stateMutability: "payable", outputs: [], inputs: [
+      { name: "domain", type: "string" }, { name: "endpoint", type: "string" },
+      { name: "publicKey", type: "address" }, { name: "isProvider", type: "bool" },
+      { name: "oracleProof", type: "bytes" },
+    ],
+  },
+] as const;
 const chains: Record<string, { chain: Chain; rpcEnv: string }> = {
   baseSepolia: { chain: baseSepolia, rpcEnv: "BASE_RPC_URL" },
   arbitrumSepolia: { chain: arbitrumSepolia, rpcEnv: "ARBITRUM_RPC_URL" },
@@ -332,25 +348,37 @@ async function main(): Promise<void> {
     const evmDomain = `sm080-${networkKey.toLowerCase()}-${runId}.maivw.test`;
     const evmDomainHash = keccak256(stringToHex(evmDomain));
     const evmDeadline = BigInt(Math.floor(Date.now() / 1_000) + 3_600);
-    const nonceValue = await publicClient.readContract({ address: deployment.legacyRegistry, abi: legacyArtifact.abi, functionName: "domainNonces", args: [evmDomainHash] }) as bigint;
-    const proof = await evmAccount.signTypedData({
-      domain: { name: "MAIVWRegistry", version: "2", chainId: deployment.chainId, verifyingContract: deployment.legacyRegistry },
-      types: { Register: [
-        { name: "domainHash", type: "bytes32" }, { name: "publicKey", type: "address" },
-        { name: "adminKey", type: "address" }, { name: "registrant", type: "address" },
-        { name: "isProvider", type: "bool" }, { name: "tier", type: "uint8" },
-        { name: "nonce", type: "uint256" }, { name: "deadline", type: "uint256" },
-      ] },
-      primaryType: "Register",
-      message: { domainHash: evmDomainHash, publicKey: evmAccount.address, adminKey: evmAccount.address, registrant: evmAccount.address, isProvider: false, tier: 0, nonce: nonceValue, deadline: evmDeadline },
-    });
-    const standardFee = await publicClient.readContract({ address: deployment.legacyRegistry, abi: legacyArtifact.abi, functionName: "standardFee" }) as bigint;
+    const legacyV1 = deployment.legacyRegistrySchema === "PERSONAL_SIGN_V1";
+    const nonceValue = legacyV1 ? 0n : await publicClient.readContract({
+      address: deployment.legacyRegistry, abi: legacyArtifact.abi,
+      functionName: "domainNonces", args: [evmDomainHash],
+    }) as bigint;
+    const proof = legacyV1
+      ? await evmAccount.signMessage({ message: { raw: keccak256(encodePacked(
+          ["string", "address", "address", "uint256", "address"],
+          [evmDomain, evmAccount.address, evmAccount.address, BigInt(deployment.chainId), deployment.legacyRegistry],
+        )) } })
+      : await evmAccount.signTypedData({
+          domain: { name: "MAIVWRegistry", version: "2", chainId: deployment.chainId, verifyingContract: deployment.legacyRegistry },
+          types: { Register: [
+            { name: "domainHash", type: "bytes32" }, { name: "publicKey", type: "address" },
+            { name: "adminKey", type: "address" }, { name: "registrant", type: "address" },
+            { name: "isProvider", type: "bool" }, { name: "tier", type: "uint8" },
+            { name: "nonce", type: "uint256" }, { name: "deadline", type: "uint256" },
+          ] },
+          primaryType: "Register",
+          message: { domainHash: evmDomainHash, publicKey: evmAccount.address, adminKey: evmAccount.address, registrant: evmAccount.address, isProvider: false, tier: 0, nonce: nonceValue, deadline: evmDeadline },
+        });
+    const registryAbi = legacyV1 ? LEGACY_V1_REGISTRY_ABI : legacyArtifact.abi;
+    const standardFee = await publicClient.readContract({ address: deployment.legacyRegistry, abi: registryAbi, functionName: "standardFee" }) as bigint;
     const evmStarted = Date.now();
     const originTx = await wallet.writeContract({
       address: deployment.legacyRegistry,
-      abi: legacyArtifact.abi,
+      abi: registryAbi,
       functionName: "registerCompany",
-      args: [evmDomain, `https://${evmDomain}/inbox`, evmAccount.address, evmAccount.address, false, evmDeadline, proof],
+      args: legacyV1
+        ? [evmDomain, `https://${evmDomain}/inbox`, evmAccount.address, false, proof]
+        : [evmDomain, `https://${evmDomain}/inbox`, evmAccount.address, evmAccount.address, false, evmDeadline, proof],
       value: standardFee,
     });
     const originReceipt = await publicClient.waitForTransactionReceipt({ hash: originTx, confirmations: 2 });
@@ -365,8 +393,9 @@ async function main(): Promise<void> {
       networkHash: destinationHash,
       registryAddress: deployment.legacyRegistry,
       registryId: evmAddressToRegistryBytes(deployment.legacyRegistry),
-      schemaVersion: 2,
+      schemaVersion: legacyV1 ? 1 : 2,
       tlsFingerprintMode: "OPTIONAL_ZERO",
+      registryProfileMode: legacyV1 ? "LEGACY_V1" : "CURRENT",
     });
     const evmState = await evmReader.read({
       domain: evmDomain, domainHash: evmDomainHash, blockNumber: canonicalBlock.number,

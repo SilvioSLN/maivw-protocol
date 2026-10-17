@@ -20,6 +20,8 @@ export function createCompactSecp256k1Instruction(input: {
   signature: Hex;
   messageOffset: number;
   messageLength: number;
+  selfInstructionIndex?: number;
+  messageInstructionIndex?: number;
 }): TransactionInstruction {
   const address = Buffer.from(hexToBytes(input.ethAddress));
   const signature = Buffer.from(hexToBytes(input.signature));
@@ -35,12 +37,12 @@ export function createCompactSecp256k1Instruction(input: {
   const data = Buffer.alloc(signatureOffset + SIGNATURE_SIZE + 1);
   data[0] = 1;
   putU16(data, 1, signatureOffset);
-  data[3] = 0;
+  data[3] = input.selfInstructionIndex ?? 0;
   putU16(data, 4, addressOffset);
-  data[6] = 0;
+  data[6] = input.selfInstructionIndex ?? 0;
   putU16(data, 7, input.messageOffset);
   putU16(data, 9, input.messageLength);
-  data[11] = 1;
+  data[11] = input.messageInstructionIndex ?? 1;
   address.copy(data, addressOffset);
   signature.subarray(0, SIGNATURE_SIZE).copy(data, signatureOffset);
   data[signatureOffset + SIGNATURE_SIZE] = recoveryId;

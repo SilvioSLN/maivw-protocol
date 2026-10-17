@@ -85,6 +85,37 @@ test("EVM reader only substitutes zero TLS for an explicitly declared legacy dep
   assert.equal((await compatible.read(checkpoint)).tlsFingerprint, `0x${"00".repeat(32)}`);
 });
 
+test("EVM reader normalizes an explicitly declared personal-sign V1 registry", async () => {
+  const calls: any[] = [];
+  const client = {
+    getBlock: async () => ({ number: 50n, hash: BLOCK_HASH }),
+    readContract: async (input: any) => {
+      calls.push(input);
+      if (input.functionName === "getCompanyProfile") return {
+        domain: DOMAIN, endpointUrl: "https://legacy.example.com", publicKey: REGISTRY,
+        registrationTime: 1_700_000_000n, isProvider: false, isActive: true, strikeCount: 1,
+      };
+      if (input.functionName === "getDomainTlsFingerprint") throw new Error("selector unavailable");
+      return [0, 250n, 0n, true, 1];
+    },
+  };
+  const reader = new EvmFinalizedStateReader(client as any, {
+    networkHash: `0x${"22".repeat(32)}`, registryAddress: REGISTRY,
+    registryId: padHex(REGISTRY, { size: 32 }), schemaVersion: 1,
+    registryProfileMode: "LEGACY_V1", tlsFingerprintMode: "OPTIONAL_ZERO",
+  });
+  const state = await reader.read({
+    domain: DOMAIN, domainHash: DOMAIN_HASH, blockNumber: 50n, blockHash: BLOCK_HASH,
+    transactionHash: TX_HASH, globalDomainEpoch: 0n, originSequence: 0n,
+  });
+  assert.equal(state.endpoint, "https://legacy.example.com");
+  assert.equal(state.adminKey.value, state.operationalKey.value);
+  assert.equal(state.status, "ACTIVE");
+  assert.equal(state.attestedStake, 250n);
+  assert.equal(state.schemaVersion, 1);
+  assert.ok(calls.every((call) => call.blockNumber === 50n));
+});
+
 function pushU64(parts: Buffer[], value: bigint) { const item = Buffer.alloc(8); item.writeBigUInt64LE(value); parts.push(item); }
 function pushI64(parts: Buffer[], value: bigint) { const item = Buffer.alloc(8); item.writeBigInt64LE(value); parts.push(item); }
 function pushString(parts: Buffer[], value: string) { const bytes = Buffer.from(value); const length = Buffer.alloc(4); length.writeUInt32LE(bytes.length); parts.push(length, bytes); }
