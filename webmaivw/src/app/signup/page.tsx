@@ -19,7 +19,7 @@ export default function SignupPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
-  const isFormValid = email.includes("@") && password.length >= 12 && password.length <= 128 && registrationToken.length >= 32;
+  const isFormValid = email.includes("@") && password.length >= 12 && password.length <= 128;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,7 +28,7 @@ export default function SignupPage() {
     setIsSubmitting(true);
     setError(null);
 
-    const result = await register(email.trim(), password, undefined, registrationToken);
+    const result = await register(email.trim(), password, undefined, registrationToken || undefined);
 
     if (result.ok) {
       setSuccess(true);
@@ -46,7 +46,7 @@ export default function SignupPage() {
     setIsSocialSubmitting("google");
     setError(null);
 
-    const result = await loginWithGoogle(registrationToken);
+    const result = await loginWithGoogle(registrationToken || undefined);
 
     if (result.ok) {
       if (result.isNewUser) {
@@ -65,7 +65,7 @@ export default function SignupPage() {
     setIsSocialSubmitting("github");
     setError(null);
 
-    const result = await loginWithGithub(registrationToken);
+    const result = await loginWithGithub(registrationToken || undefined);
 
     if (result.ok) {
       if (result.isNewUser) {
@@ -203,13 +203,14 @@ export default function SignupPage() {
             </div>
 
             <div>
-              <label htmlFor="registration-token" className="block text-xs font-medium text-neutral-300 mb-1.5">Código de convite do operador</label>
+              <label htmlFor="registration-token" className="block text-xs font-medium text-neutral-300 mb-1.5">Código de convite (se exigido pelo operador)</label>
               <input id="registration-token" type="password" value={registrationToken}
                 onChange={(event) => setRegistrationToken(event.target.value)} autoComplete="off"
                 className="w-full px-3.5 py-2.5 bg-[#121115] border border-white/[0.09] rounded-xl text-sm"
-                placeholder="Obrigatório também para novo cadastro social" />
-              <p className="mt-1 text-xs text-neutral-400">Solicite o código ao operador do nó. Use uma senha de 12 a 128 caracteres.</p>
+                placeholder="Opcional em instalações com cadastro público" />
+              <p className="mt-1 text-xs text-neutral-400">Use o código fornecido pelo operador quando esta instalação restringir novos administradores.</p>
             </div>
+
 
             {/* Password Field */}
             <div>
