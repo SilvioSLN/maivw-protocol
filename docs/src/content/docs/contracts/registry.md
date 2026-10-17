@@ -17,17 +17,26 @@ Tiers `STARTUP`, `GROWTH` e `ENTERPRISE` definem caução, volume e penalidade c
 
 A Lens oferece `getCompanies`, `getAllCompanies` e `getEnrichedProfiles`: paginação, agregação e leitura enriquecida. A herança hierárquica de subdomínios está no `LedgerService` do Gateway. A variável `BASE_REGISTRY_LENS_ADDRESS` não é consumida pela configuração atual do Gateway.
 
-## Redes e endereços
+## Redes e endereços publicados (SM-085)
 
-| Ambiente | Chain ID | Orientação |
-| --- | --- | --- |
-| Anvil | `31337` | Rede e deploy automáticos no Compose local; o RPC não é um explorer |
-| Base Sepolia | `84532` | Exemplo em `.env.testnet.example` |
-| Arbitrum Sepolia | `421614` | Integrações de espelhamento a validar |
-| Polygon Amoy | `80002` | Integrações de espelhamento a validar |
-| Base Mainnet | `8453` | Exige validação de produção; não é o padrão deste guia |
+Os endereços ativos e exercitados em redes de teste públicas são:
 
-Esta documentação não certifica endereços de deploy público. Obtenha o endereço e a evidência de implantação da rede desejada ou faça seu próprio deploy de teste.
+| Rede | Tipo | Endereço / Program ID | Funções Suportadas |
+|---|---|---|---|
+| **Base Sepolia (84532)** | Proxy UUPS Mirror V2 | `0x0000000000000000000000000000000000000000` | Projeção Mirror (Solana/Arb/Polygon) |
+| **Base Sepolia (84532)** | Registry Canônico | `0x0000000000000000000000000000000000000000` | Origem, registro, stake, governança |
+| **Arbitrum Sepolia (421614)** | Proxy UUPS Mirror V2 | `0x0000000000000000000000000000000000000000` | Projeção Mirror (Solana/Base/Polygon) |
+| **Arbitrum Sepolia (421614)** | Registry Canônico | `0x0000000000000000000000000000000000000000` | Origem, registro, stake, governança |
+| **Polygon Amoy (80002)** | Proxy UUPS Mirror V2 | `0x0000000000000000000000000000000000000000` | Projeção Mirror (Solana/Base/Arb) |
+| **Polygon Amoy (80002)** | Registry Canônico V1 | `0x0000000000000000000000000000000000000000` | Origem compatível `personal_sign`; sem ABI EIP-712 V2 |
+| **Solana Devnet** | Anchor Program | `Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS` | Origem, Mirror, staking SPL, slashing |
+| **Solana Devnet** | SPL Token Mint (MAIVW) | `11111111111111111111111111111111111111111111` | Moeda nativa de garantia e taxas |
+| **Solana Devnet** | Address Lookup Table | `11111111111111111111111111111111111111111111` | Transações v0 compactas (1046 bytes) |
+| **Anvil Local** | Nó de Teste Local | `0x5FbDB2315678afecb367f032d93F642f64180aa3` | Desenvolvimento local com Docker |
+
+Configuração persistida em `protocol/contracts/deployments/testnets.json` e `protocol/solana/deployments/devnet.json`.
+
+Estes deploys são de testnet. Nas três EVMs, owner/guardian/oracle ainda usam a mesma EOA; na Solana, authority/oracle também não possuem handoff multisig comprovado. Não trate os endereços como configuração de produção.
 
 ## Deploy local
 

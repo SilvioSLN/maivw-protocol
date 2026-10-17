@@ -20,8 +20,32 @@ O transporte do conteúdo ocorre por HTTP entre Gateways ou por um provedor SMTP
 
 As taxas e tiers são parâmetros do contrato e podem mudar por governança. Consulte o contrato da rede escolhida; não use valores de Anvil como orçamento de testnet ou produção. Uma caução não deve ser tratada como mensalidade, nem confundida com a taxa não reembolsável.
 
-## Volume e desempenho
+## Orçamento e métricas operacionais multichain (SM-082)
 
-Existem limites por tier, políticas locais e limites dos provedores. O repositório não apresenta benchmark que sustente volume ilimitado, latência fixa ou custo mensal garantido. Meça carga, persistência, tráfego de anexos, RPC e SMTP no seu ambiente antes de dimensionar.
+Os custos, unidades de computação (CU), consumo de gas e tempos de confirmação foram medidos em redes públicas de teste (Solana Devnet, Base Sepolia, Arbitrum Sepolia e Polygon Amoy) no âmbito da especificação SM-082:
 
-A comparação com serviços comerciais deve incluir backups, manutenção, disponibilidade e pessoal. Esta página não publica preços de terceiros nem conversões fixas de ETH para moeda fiduciária.
+### 1. Solana (Devnet)
+
+| Métrica | Medição Real | Limite Operacional | Margem de Segurança |
+|---|---|---|---|
+| **Registro de Origem (`register_domain`)** | 170.509 CU | 450.000 CU | **62,1%** |
+| **Projeção de Mirror (`registerMirror`)** | 194.355 a 203.029 CU | 450.000 CU | **54,9% a 56,8%** |
+| **Tamanho da Transação v0 (com ALT)** | 1.046 bytes | 1.232 bytes (MTU) | **15,1% (186 bytes livres)** |
+| **Rent PDA `DomainRecord` (1.155 bytes)** | 6.517.640 lamports (0,00651764 SOL) | Rent-exempt permanente | Mínimo consultado na Devnet |
+| **Rent PDA `OriginClaimReceipt` (211 bytes)** | 1.722.120 lamports (0,00172212 SOL) | Rent-exempt permanente | Mínimo consultado na Devnet |
+| **Taxa Padrão SPL Token** | 1.000.000 (0,001 MAIVW) | Configuração do Registry | Solvência total |
+
+### 2. EVM Testnets (Base, Arbitrum e Polygon)
+
+O orçamento teto estipulado para transações de espelhamento e registro é de **500.000 gas**.
+
+| Rede | Operação | Gas Consumido | Margem vs Teto | Latência observada no ensaio |
+|---|---|---|---|---|
+| **Base Sepolia (84532)** | `registerMirrorV2` (Proxy) | 365.886 gas | **26,8%** | ~6,4s |
+| **Base Sepolia (84532)** | `registerCompany` (Origem) | 377.162 gas | **24,6%** | ~4,4s |
+| **Arbitrum Sepolia (421614)** | `registerMirrorV2` (Proxy) | 366.010 gas | **26,8%** | ~1,2s |
+| **Arbitrum Sepolia (421614)** | `registerCompany` (Origem) | 378.986 gas | **24,2%** | ~1,5s |
+| **Polygon Amoy (80002)** | `registerMirrorV2` (Proxy) | 407.046 gas | **18,6%** | ~5,3s |
+| **Polygon Amoy (80002)** | `registerCompany` (Origem) | 367.035 gas | **26,6%** | ~5,0s |
+
+O ensaio apresenta margens superiores a 50% de CU em Solana e 18% a 26% de gas em redes EVM para os caminhos medidos. A amostra é suficiente para orçamento técnico inicial, mas não representa percentis estatísticos nem preço futuro do ativo de cada rede.

@@ -16,7 +16,7 @@ O Compose local declara sua configuração diretamente e funciona sem `.env`. O 
 | `DATABASE_URL` | PostgreSQL local, banco `maivw_reputation` | Prisma; Compose usa host `postgres` |
 | `POSTGRES_PASSWORD` | `postgres` no Compose | Inicialização do banco; trocar env não altera senha de banco existente |
 | `REDIS_URL` | `redis://localhost:6379` | Cache/coordenação; Compose usa host `redis` |
-| `ADMIN_REGISTRATION_TOKEN` | Ausente: cadastro administrativo fechado | Convite privado de pelo menos 32 caracteres; remover após cadastrar administradores |
+| `ADMIN_REGISTRATION_TOKEN` | Ausente: cadastro administrativo público | Quando configurado, exige convite privado de pelo menos 32 caracteres em novos cadastros por senha ou social |
 | `JWT_SECRET` | Obrigatório, mínimo 16 caracteres | Assinatura de sessão; use alta entropia |
 | `MASTER_SECRET_KEY` | Obrigatório, mínimo 16 caracteres | Entrada para derivação SHA-256 da chave AES do cofre; não exige formato hex, mas recomenda-se gerar segredo aleatório |
 | `INTERNAL_SERVICE_KEY` | Obrigatório, mínimo 16 caracteres | Integrações internas; não é uma chave EVM |
@@ -48,19 +48,29 @@ Não troque `MASTER_SECRET_KEY` em banco existente sem recifrar chaves e credenc
 | `POLYGON_RPC_URL` | `https://rpc-amoy.polygon.technology` | Caminhos Polygon |
 | `POLYGON_WS_URL` | Exigida junto ao Registry quando o relayer está ativo | Observer Polygon |
 | `POLYGON_REGISTRY_ADDRESS` | Opcional | Registry da rede correspondente |
+| `MIRROR_REGISTRY_V2_ADDRESS` | Opcional | Endereço do contrato de mirror V2 em redes EVM |
 | `MULTICHAIN_RELAY_ENABLED` | `false` | Exige signer e ao menos dois deployments completos |
 | `SOLANA_ENABLED` | `false` | Ativa adapter Solana somente com RPC, WS, genesis, program e relayer completos |
 | `SOLANA_RPC_URL` / `SOLANA_WS_URL` | Obrigatórias com Solana | RPC e stream do cluster configurado |
 | `SOLANA_GENESIS_HASH` / `SOLANA_PROGRAM_ID` | Obrigatórias com Solana | Impedem aceitar RPC ou programa de outro deployment |
 | `SOLANA_COMMITMENT` | Somente `finalized` | Leituras e observers não aceitam estado não finalizado |
-| `SOLANA_ASSET_*` | Nativo `SOL/9` ou SPL completo | Mint, símbolo, decimals e taxa de cadastro |
+| `SOLANA_EXPLORER_URL` | `https://explorer.solana.com` | Base URL do Explorer para links de auditoria |
+| `SOLANA_EXPLORER_CLUSTER_QUERY` | `custom` ou `devnet` | Parâmetro de cluster para montagem de URLs no Explorer |
+| `SOLANA_ASSET_KIND` | `NATIVE` ou `SPL` | Define tipo de ativo (SOL nativo ou token SPL) |
+| `SOLANA_ASSET_SYMBOL` | `SOL` ou símbolo SPL | Símbolo monetário exibido na telemetria |
+| `SOLANA_ASSET_DECIMALS` | `9` (SOL) ou conforme SPL | Casas decimais do ativo econômico Solana |
+| `SOLANA_ASSET_MINT` | Pubkey base58 | Endereço do Mint SPL (vazio quando nativo) |
+| `SOLANA_STANDARD_FEE_BASE_UNITS` | Unidades base | Taxa de registro padrão em lamports ou unidades mínimas do token |
 | `SOLANA_RELAYER_PUBLIC_KEY` | Obrigatória com Solana | Fee payer/assinante público do relayer |
 | `SOLANA_RELAYER_KEYPAIR_PATH` | Alternativa recomendada | Caminho de segredo montado; nunca versionar o keypair |
 | `SOLANA_RELAYER_KEYPAIR_BASE64` | Alternativa para secret manager | Array JSON de 64 bytes codificado em base64 |
 | `SOLANA_REORG_MARGIN_SLOTS` | `64` | Margem operacional do cluster |
+| `SOLANA_OBSERVER_START_SLOT` | Opcional | Slot inicial para backfill manual do indexador |
+| `SOLANA_OBSERVER_POLL_INTERVAL_MS` | `1000` | Intervalo em milissegundos entre polls do observador Solana |
 | `SOLANA_OBSERVER_PAGE_SIZE` / `SOLANA_OBSERVER_MAX_PAGES` | `100` / `10` | Limites de backfill por poll |
 | `RELAY_ATTESTATION_TTL_SECONDS` | `900` | Entre 60 e 86400 segundos |
 | `RELAY_LEASE_SECONDS` / `RELAY_FAILURE_THRESHOLD` | `60` / `3` | Lease do worker e limiar do circuit breaker |
+| `MULTICHAIN_ALERT_INDEXER_LAG_SLOTS` | `128` | Limiar de slots de atraso para disparar alerta INDEXER_LAG |
 | `ORACLE_SIGNER_TYPE` | `local` | `local` ou `gcp-kms` |
 | `ORACLE_PRIVATE_KEY` | Obrigatória para signer local | Chave EVM, prefixo `0x` e 32 bytes; autoridade depende do contrato |
 | `GCP_KMS_KEY_VERSION` | Obrigatória para `gcp-kms` | Recurso da versão de chave compatível |

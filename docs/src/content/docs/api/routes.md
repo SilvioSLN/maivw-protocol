@@ -3,7 +3,7 @@ title: Inventário de rotas
 description: Métodos e caminhos registrados no código do Gateway, agrupados por módulo.
 ---
 
-Inventário estático de **84 rotas**. Gerado por `npm run docs:routes`; não equivale a uma especificação OpenAPI nem a uma auditoria de autorização. O link de cada módulo aponta para seu código no repositório.
+Inventário estático de **92 rotas**. Gerado por `npm run docs:routes`; não equivale a uma especificação OpenAPI nem a uma auditoria de autorização. O link de cada módulo aponta para seu código no repositório.
 
 Consulte [mensagens e anexos](/api/gateway/), [contas e onboarding](/api/accounts/) e [SMTP e administração](/api/operations/) para entradas e limites.
 
@@ -122,10 +122,14 @@ Consulte [mensagens e anexos](/api/gateway/), [contas e onboarding](/api/account
 
 | Método | Caminho |
 | --- | --- |
+| `GET` | `/api/v1/multichain/alerts` |
 | `POST` | `/api/v1/multichain/attest-mirror` |
 | `POST` | `/api/v1/multichain/fulfill-mirror` |
+| `GET` | `/api/v1/multichain/jobs/:jobId` |
+| `GET` | `/api/v1/multichain/metrics` |
 | `GET` | `/api/v1/multichain/networks` |
 | `GET` | `/api/v1/multichain/status/:domain` |
+| `GET` | `/api/v1/multichain/timeline/:domain` |
 
 ## node.ts
 
@@ -148,6 +152,8 @@ Consulte [mensagens e anexos](/api/gateway/), [contas e onboarding](/api/account
 | `POST` | `/api/v1/onboarding/finalize-web3-registration` |
 | `POST` | `/api/v1/onboarding/fulfill-registration` |
 | `GET` | `/api/v1/onboarding/node-mode` |
+| `POST` | `/api/v1/onboarding/origin-claim` |
+| `GET` | `/api/v1/onboarding/origin-networks` |
 | `POST` | `/api/v1/onboarding/verify-and-register` |
 
 ## oracle.ts

@@ -7,15 +7,15 @@ Estas rotas estão inventariadas em [rotas do Gateway](/api/routes/). O fluxo at
 
 ## Cadastro e sessão
 
-`POST /api/v1/auth/register` recebe `email`, `password` (12 a 128 caracteres), `registrationToken` e `displayName` opcional. Retorna `201` com `id`, `email`, `role`, `displayName`, `token` e `message`; e-mail duplicado retorna `409`.
+`POST /api/v1/auth/register` recebe `email`, `password` (12 a 128 caracteres) e `displayName` opcional (o envio de `registrationToken` é opcional). Retorna `201` com `id`, `email`, `role`, `displayName`, `token` e `message`; e-mail duplicado retorna `409`.
 
-`POST /api/v1/auth/login` recebe `email` e `password`. Use o token retornado no cabeçalho Bearer. `GET /api/v1/auth/me` lê a sessão autenticada. `POST /api/v1/auth/google` exige `idToken` Firebase válido, não revogado, com e-mail verificado e provedor Google ou GitHub. E-mail/nome enviados pelo cliente não comprovam identidade. Novos administradores também precisam de `registrationToken`; contas existentes não precisam de convite. Configure seu próprio projeto Firebase.
+`POST /api/v1/auth/login` recebe `email` e `password`. Use o token retornado no cabeçalho Bearer. `GET /api/v1/auth/me` lê a sessão autenticada. `POST /api/v1/auth/google` exige `idToken` Firebase válido, não revogado, com e-mail verificado e provedor Google ou GitHub. Novos administradores são criados diretamente quando o cadastro é público; instalações com convite exigem `registrationToken` também no primeiro login social.
 
 ```bash
 curl -sS http://localhost:51443/api/v1/auth/login   -H 'Content-Type: application/json'   -d '{"email":"admin@example.com","password":"SENHA_DO_PILOTO"}'
 ```
 
-O cadastro administrativo fica fechado quando `ADMIN_REGISTRATION_TOKEN` não está configurado. O operador gera um segredo de pelo menos 32 caracteres (por exemplo, `openssl rand -hex 32`), configura o Gateway, entrega o convite por canal privado e remove a variável após o cadastro, reiniciando o serviço. O convite é reutilizável enquanto configurado.
+O cadastro de novos administradores é aberto quando `ADMIN_REGISTRATION_TOKEN` não está configurado. Se o operador configurar essa variável, todo novo cadastro — senha ou social — exige o token correspondente; contas já existentes continuam podendo autenticar sem convite.
 
 Senhas novas usam scrypt com salt aleatório (N=32768, r=8, p=3). Hashes SHA-256 antigos são migrados após login correto; senhas antigas menores que 12 caracteres continuam aceitas no login. JWT não significa autorização automática em todas as rotas. Limitação de tentativas e isolamento completo das rotas permanecem pendentes.
 
