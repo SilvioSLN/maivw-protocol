@@ -36,11 +36,17 @@ pub fn verify(
     require!(current_index > 0, MaivwError::MissingSecp256k1Instruction);
     let secp256k1_instruction =
         load_instruction_at_checked(usize::from(current_index - 1), instructions_sysvar)?;
+    let program_instruction =
+        load_instruction_at_checked(usize::from(current_index), instructions_sysvar)?;
     let verification_index = u8::try_from(current_index - 1)
+        .map_err(|_| error!(MaivwError::InvalidSecp256k1Instruction))?;
+    let program_index = u8::try_from(current_index)
         .map_err(|_| error!(MaivwError::InvalidSecp256k1Instruction))?;
     verify_secp256k1_instruction(
         &secp256k1_instruction,
         verification_index,
+        &program_instruction,
+        program_index,
         config.attestation_signer,
         envelope,
     )?;
@@ -383,6 +389,8 @@ fn validate_envelope(
 fn verify_secp256k1_instruction(
     instruction: &Instruction,
     verification_index: u8,
+    program_instruction: &Instruction,
+    program_index: u8,
     expected_oracle: [u8; 20],
     expected_envelope: &[u8],
 ) -> Result<()> {
@@ -404,7 +412,6 @@ fn verify_secp256k1_instruction(
     require!(
         offsets.signature_instruction_index == verification_index
             && offsets.eth_address_instruction_index == verification_index
-            && offsets.message_instruction_index == verification_index
             && usize::from(offsets.message_data_size) == expected_envelope.len(),
         MaivwError::InvalidSecp256k1Instruction
     );
@@ -432,8 +439,20 @@ fn verify_secp256k1_instruction(
         public_key == expected_oracle,
         MaivwError::InvalidOracleSigner
     );
+    let message_data = if offsets.message_instruction_index == verification_index {
+        data.as_slice()
+    } else if offsets.message_instruction_index == program_index {
+        require_keys_eq!(
+            program_instruction.program_id,
+            ID,
+            MaivwError::InvalidSecp256k1Instruction
+        );
+        program_instruction.data.as_slice()
+    } else {
+        return err!(MaivwError::InvalidSecp256k1Instruction);
+    };
     let message = checked_slice(
-        data,
+        message_data,
         offsets.message_data_offset,
         usize::from(offsets.message_data_size),
     )?;
@@ -557,11 +576,19 @@ mod tests {
         }
     }
 
+    fn program_instruction(message: &[u8], message_offset: usize) -> Instruction {
+        let mut data = vec![0_u8; message_offset + message.len()];
+        data[message_offset..].copy_from_slice(message);
+        Instruction { program_id: ID, accounts: vec![], data }
+    }
+
     #[test]
     fn accepts_one_local_secp256k1_signature_over_exact_envelope() {
         assert!(verify_secp256k1_instruction(
             &instruction([1; 20], &[2; 292], 4),
             4,
+            &program_instruction(&[2; 292], 8),
+            5,
             [1; 20],
             &[2; 292],
         )
@@ -569,16 +596,35 @@ mod tests {
     }
 
     #[test]
-    fn rejects_signer_message_and_cross_instruction_references() {
+    fn rejects_signer_message_and_unbound_instruction_references() {
         let valid = instruction([1; 20], &[2; 292], 4);
-        assert!(verify_secp256k1_instruction(&valid, 4, [3; 20], &[2; 292]).is_err());
-        assert!(verify_secp256k1_instruction(&valid, 4, [1; 20], &[3; 292]).is_err());
+        let current = program_instruction(&[2; 292], 8);
+        assert!(verify_secp256k1_instruction(&valid, 4, &current, 5, [3; 20], &[2; 292]).is_err());
+        assert!(verify_secp256k1_instruction(&valid, 4, &current, 5, [1; 20], &[3; 292]).is_err());
 
         let mut cross_instruction = valid;
-        cross_instruction.data[11] = 0;
+        cross_instruction.data[11] = 6;
         assert!(
-            verify_secp256k1_instruction(&cross_instruction, 4, [1; 20], &[2; 292]).is_err()
+            verify_secp256k1_instruction(&cross_instruction, 4, &current, 5, [1; 20], &[2; 292]).is_err()
         );
+    }
+
+    #[test]
+    fn accepts_message_reference_to_the_current_maivw_instruction() {
+        let message = [2; 292];
+        let mut secp = instruction([1; 20], &message, 4);
+        secp.data.truncate(97);
+        put_u16(&mut secp.data, 7, 8);
+        secp.data[11] = 5;
+        let current = program_instruction(&message, 8);
+        assert!(verify_secp256k1_instruction(
+            &secp, 4, &current, 5, [1; 20], &message,
+        ).is_ok());
+
+        let wrong_program = Instruction { program_id: Pubkey::new_unique(), ..current };
+        assert!(verify_secp256k1_instruction(
+            &secp, 4, &wrong_program, 5, [1; 20], &message,
+        ).is_err());
     }
 
     #[test]

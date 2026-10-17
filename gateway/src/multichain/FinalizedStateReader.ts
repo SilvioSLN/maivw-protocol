@@ -5,6 +5,7 @@ import {
   type Address,
   type Hex,
 } from "viem";
+import { createHash } from "node:crypto";
 
 const DOMAIN_RECORD_DISCRIMINATOR = Buffer.from([130, 61, 36, 125, 56, 48, 189, 247]);
 const ZERO32 = `0x${"0".repeat(64)}` as Hex;
@@ -123,6 +124,7 @@ export interface EvmFinalizedStateReaderConfig {
   registryAddress: Address;
   registryId: Hex;
   schemaVersion: number;
+  tlsFingerprintMode?: "REQUIRED" | "OPTIONAL_ZERO";
 }
 
 export class EvmFinalizedStateReader {
@@ -150,9 +152,13 @@ export class EvmFinalizedStateReader {
     if (this.config.registryId.toLowerCase() !== padHex(this.config.registryAddress, { size: 32 }).toLowerCase()) {
       stateFail("FINALIZED_STATE_INVALID", "registryId EVM não corresponde ao contrato");
     }
+    const tlsRead = read("getDomainTlsFingerprint", [checkpoint.domain]).catch((error: unknown) => {
+      if (this.config.tlsFingerprintMode === "OPTIONAL_ZERO") return ZERO32;
+      throw error;
+    });
     const [rawProfile, tls, rawProviderInfo] = await Promise.all([
       read("getCompanyProfile", [checkpoint.domain]),
-      read("getDomainTlsFingerprint", [checkpoint.domain]),
+      tlsRead,
       read("getProviderInfo", [checkpoint.domain]),
     ]);
     const profile = rawProfile as {
@@ -218,6 +224,38 @@ export interface SolanaStateReaderClient {
   }): Promise<SolanaAccountInfo | null>;
 }
 
+/**
+ * Solana transaction signatures are 64 bytes and therefore do not fit the
+ * protocol's bytes32 evidence field.  The canonical reference is SHA-256 over
+ * the decoded signature bytes (not over its base58 text representation).
+ */
+export function solanaSignatureReference(signature: string): Hex {
+  const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+  if (!signature || signature.length > 88) {
+    stateFail("FINALIZED_REFERENCE_MISMATCH", "assinatura Solana inválida");
+  }
+  let value = 0n;
+  for (const character of signature) {
+    const digit = alphabet.indexOf(character);
+    if (digit < 0) stateFail("FINALIZED_REFERENCE_MISMATCH", "assinatura Solana inválida");
+    value = value * 58n + BigInt(digit);
+  }
+  const decoded: number[] = [];
+  while (value > 0n) {
+    decoded.push(Number(value & 0xffn));
+    value >>= 8n;
+  }
+  decoded.reverse();
+  for (const character of signature) {
+    if (character !== "1") break;
+    decoded.unshift(0);
+  }
+  if (decoded.length !== 64) {
+    stateFail("FINALIZED_REFERENCE_MISMATCH", "assinatura Solana deve conter 64 bytes");
+  }
+  return `0x${createHash("sha256").update(Uint8Array.from(decoded)).digest("hex")}` as Hex;
+}
+
 export class SolanaFinalizedStateReader {
   constructor(
     private readonly client: SolanaStateReaderClient,
@@ -239,7 +277,17 @@ export class SolanaFinalizedStateReader {
     if (account.owner !== this.programId || account.contextSlot < checkpoint.slot) {
       stateFail("FINALIZED_REFERENCE_MISMATCH", "owner ou slot da conta Solana divergiu");
     }
-    const state = decodeSolanaDomainRecord(account.data);
+    const decoded = decodeSolanaDomainRecord(account.data);
+    // An origin transaction cannot know its own signature while executing.
+    // Bind the finalized checkpoint signature here; mirrors retain the foreign
+    // transaction reference committed by their StateAttestation.
+    const state = decoded.recordKind === "ORIGIN"
+      ? {
+          ...decoded,
+          originTransactionFamily: "SOLANA" as const,
+          originTransaction: solanaSignatureReference(checkpoint.signature),
+        }
+      : decoded;
     if (state.domain !== checkpoint.domain
       || state.domainHash.toLowerCase() !== checkpoint.domainHash.toLowerCase()
       || state.globalDomainEpoch !== checkpoint.globalDomainEpoch
@@ -305,7 +353,9 @@ export function decodeSolanaDomainRecord(input: Uint8Array): CanonicalDomainStat
   const originTransaction = cursor.bytes32();
   cursor.u64(); // lastMigratedSlot
   const reserved = cursor.take(32);
-  if (schemaVersion !== 2 || cursor.offset !== cursor.data.length || reserved.some((value) => value !== 0)
+  const accountPadding = cursor.take(cursor.data.length - cursor.offset);
+  if (schemaVersion !== 2 || reserved.some((value) => value !== 0)
+    || accountPadding.some((value) => value !== 0)
     || storedDomainHash.toLowerCase() !== domainHash(domain).toLowerCase()) {
     stateFail("FINALIZED_STATE_INVALID", "layout ou hash do DomainRecord inválido");
   }

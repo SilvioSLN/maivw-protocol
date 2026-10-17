@@ -9,6 +9,8 @@
     "dev": "node --env-file-if-exists=../.env --import tsx --watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
+    "evm:deploy:mirror-v2": "node --env-file-if-exists=../../.env --import tsx scripts/deploy-evm-mirror-v2.ts",
+    "testnet:e2e:sm080": "node --env-file-if-exists=../../.env --env-file-if-exists=../.env.testnet --import tsx scripts/run-sm080-testnet-e2e.ts",
     "solana:init:registry": "node --env-file-if-exists=../.env.testnet --import tsx scripts/initialize-solana-registry.ts",
     "test": "node --import tsx --test test/*.test.ts"
   },

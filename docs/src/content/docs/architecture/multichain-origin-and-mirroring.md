@@ -86,7 +86,7 @@ Os tamanhos aceitos são determinados pelo algoritmo. Padding, truncamento e der
 ### TxReference
 
 - EVM: chain ID, block number, block hash, transaction hash e log index.
-- Solana: cluster genesis hash, slot, signature e instruction index.
+- Solana: cluster genesis hash, slot, signature e instruction index. Quando a referência precisa caber em `bytes32`, usa-se `SHA-256(base58_decode(signature))`; aplicar SHA-256 ao texto base58 produziria outra referência e é proibido.
 
 ## Estado canônico e estado espelhado
 

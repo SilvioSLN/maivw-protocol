@@ -5,6 +5,7 @@ import {
   EvmFinalizedStateReader,
   FinalizedStateError,
   SolanaFinalizedStateReader,
+  solanaSignatureReference,
 } from "../src/multichain/FinalizedStateReader.js";
 
 const DOMAIN = "example.com";
@@ -12,6 +13,7 @@ const DOMAIN_HASH = keccak256(stringToHex(DOMAIN));
 const REGISTRY = "0x1111111111111111111111111111111111111111" as Address;
 const BLOCK_HASH = `0x${"aa".repeat(32)}` as Hex;
 const TX_HASH = `0x${"bb".repeat(32)}` as Hex;
+const SOLANA_SIGNATURE = "1".repeat(64);
 
 test("EVM reader pins every eth_call to the finalized block and validates its hash", async () => {
   const calls: any[] = [];
@@ -54,6 +56,35 @@ test("EVM reader pins every eth_call to the finalized block and validates its ha
   );
 });
 
+test("EVM reader only substitutes zero TLS for an explicitly declared legacy deployment", async () => {
+  const client = {
+    getBlock: async () => ({ number: 50n, hash: BLOCK_HASH }),
+    readContract: async (input: any) => {
+      if (input.functionName === "getDomainTlsFingerprint") throw new Error("selector unavailable");
+      if (input.functionName === "getCompanyProfile") return {
+        domain: DOMAIN, endpointUrl: "https://mail.example.com", publicKey: REGISTRY, adminKey: REGISTRY,
+        registrationTime: 1_700_000_000n, strikeCount: 0, epoch: 0, isProvider: false, status: 1,
+      };
+      return [false, 0, 0n, 500n, 0, false];
+    },
+  };
+  const checkpoint = {
+    domain: DOMAIN, domainHash: DOMAIN_HASH, blockNumber: 50n, blockHash: BLOCK_HASH,
+    transactionHash: TX_HASH, globalDomainEpoch: 0n, originSequence: 0n,
+  };
+  const required = new EvmFinalizedStateReader(client as any, {
+    networkHash: `0x${"22".repeat(32)}`, registryAddress: REGISTRY,
+    registryId: padHex(REGISTRY, { size: 32 }), schemaVersion: 2,
+  });
+  await assert.rejects(required.read(checkpoint), /selector unavailable/);
+  const compatible = new EvmFinalizedStateReader(client as any, {
+    networkHash: `0x${"22".repeat(32)}`, registryAddress: REGISTRY,
+    registryId: padHex(REGISTRY, { size: 32 }), schemaVersion: 2,
+    tlsFingerprintMode: "OPTIONAL_ZERO",
+  });
+  assert.equal((await compatible.read(checkpoint)).tlsFingerprint, `0x${"00".repeat(32)}`);
+});
+
 function pushU64(parts: Buffer[], value: bigint) { const item = Buffer.alloc(8); item.writeBigUInt64LE(value); parts.push(item); }
 function pushI64(parts: Buffer[], value: bigint) { const item = Buffer.alloc(8); item.writeBigInt64LE(value); parts.push(item); }
 function pushString(parts: Buffer[], value: string) { const bytes = Buffer.from(value); const length = Buffer.alloc(4); length.writeUInt32LE(bytes.length); parts.push(length, bytes); }
@@ -77,7 +108,7 @@ function domainRecord(): Buffer {
   parts.push(Buffer.from([1]), Buffer.alloc(32, 0x77));
   pushU64(parts, 0n);
   parts.push(Buffer.alloc(32));
-  return Buffer.concat(parts);
+  return Buffer.concat([...parts, Buffer.alloc(96)]);
 }
 
 test("Solana reader decodes the finalized DomainRecord instead of trusting event payload", async () => {
@@ -94,22 +125,36 @@ test("Solana reader decodes the finalized DomainRecord instead of trusting event
     }),
   }, "8MybG5qUxPpe3vVQB47VtMVUEknBuBk9yuQydr8XxRy9");
   const state = await reader.read({
-    domain: DOMAIN, domainHash: DOMAIN_HASH, slot: 99n, signature: "sig",
+    domain: DOMAIN, domainHash: DOMAIN_HASH, slot: 99n, signature: SOLANA_SIGNATURE,
     globalDomainEpoch: 4n, originSequence: 9n,
   });
   assert.equal(state.recordKind, "ORIGIN");
   assert.equal(state.originFamily, "SOLANA");
   assert.equal(state.endpoint, "https://solana.example.com");
   assert.equal(state.attestedStake, 500n);
+  assert.equal(state.originTransaction, solanaSignatureReference(SOLANA_SIGNATURE));
+  assert.notEqual(state.originTransaction, `0x${"00".repeat(32)}`);
   assert.deepEqual(derivations[0], {
     hash: DOMAIN_HASH,
     programId: "8MybG5qUxPpe3vVQB47VtMVUEknBuBk9yuQydr8XxRy9",
   });
   await assert.rejects(
     reader.read({
-      domain: DOMAIN, domainHash: DOMAIN_HASH, slot: 99n, signature: "sig",
+      domain: DOMAIN, domainHash: DOMAIN_HASH, slot: 99n, signature: SOLANA_SIGNATURE,
       globalDomainEpoch: 4n, originSequence: 10n,
     }),
     (error: unknown) => error instanceof FinalizedStateError && error.code === "FINALIZED_REFERENCE_MISMATCH",
+  );
+});
+
+test("Solana transaction reference hashes the decoded 64-byte signature", () => {
+  assert.equal(
+    solanaSignatureReference("1".repeat(64)),
+    "0xf5a5fd42d16a20302798ef6ed309979b43003d2320d9f0e8ea9831a92759fb4b",
+  );
+  assert.throws(
+    () => solanaSignatureReference("not-a-solana-signature"),
+    (error: unknown) => error instanceof FinalizedStateError
+      && error.code === "FINALIZED_REFERENCE_MISMATCH",
   );
 });

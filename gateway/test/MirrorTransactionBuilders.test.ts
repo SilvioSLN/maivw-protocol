@@ -186,11 +186,12 @@ describe("Solana mirror transaction builder", () => {
     const messageSize = verifyData.readUInt16LE(9);
     assert.equal(verifyData[3], 0);
     assert.equal(verifyData[6], 0);
-    assert.equal(verifyData[11], 0);
+    assert.equal(verifyData[11], 1);
     assert.deepEqual(
-      verifyData.subarray(messageOffset, messageOffset + messageSize),
+      built.programInstruction.data.subarray(messageOffset, messageOffset + messageSize),
       Buffer.from(encodeAttestationV1(proof.attestation).slice(2), "hex"),
     );
+    assert.equal(verifyData.length, 97);
     assert.deepEqual(
       built.programInstruction.data.subarray(0, 8),
       Buffer.from([105, 99, 35, 241, 103, 60, 119, 105]),
