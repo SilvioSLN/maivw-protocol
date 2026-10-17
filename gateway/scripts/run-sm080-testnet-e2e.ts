@@ -2,7 +2,6 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import {
-  AddressLookupTableProgram,
   ComputeBudgetProgram,
   Connection,
   Keypair,
@@ -154,31 +153,16 @@ async function sendSolana(connection: Connection, transaction: Transaction, sign
   };
 }
 
-async function sendSolanaWithEphemeralLookup(
+async function sendSolanaWithLookup(
   connection: Connection,
   instructions: TransactionInstruction[],
   signer: Keypair,
+  lookupAddress: PublicKey,
 ): Promise<{ signature: string; slot: bigint; latencyMs: number; units: number | null; serializedBytes: number }> {
-  const recentSlot = await connection.getSlot("finalized");
-  const [createLookup, lookupAddress] = AddressLookupTableProgram.createLookupTable({
-    authority: signer.publicKey, payer: signer.publicKey, recentSlot,
-  });
-  await sendLegacyHttp(connection, new Transaction().add(createLookup), signer);
-  const addresses = [...new Map(instructions.flatMap((item) => [
-    item.programId,
-    ...item.keys.filter((key) => !key.isSigner).map((key) => key.pubkey),
-  ]).map((address) => [address.toBase58(), address])).values()];
-  const extendLookup = AddressLookupTableProgram.extendLookupTable({
-    payer: signer.publicKey, authority: signer.publicKey, lookupTable: lookupAddress, addresses,
-  });
-  const extendSignature = await sendLegacyHttp(connection, new Transaction().add(extendLookup), signer);
-  const extendTransaction = await connection.getTransaction(extendSignature, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
-  const extensionSlot = extendTransaction?.slot ?? recentSlot;
-  while (await connection.getSlot("confirmed") <= extensionSlot) {
-    await new Promise((resolve) => setTimeout(resolve, 400));
-  }
   const lookup = (await connection.getAddressLookupTable(lookupAddress, { commitment: "confirmed" })).value;
-  if (!lookup) throw new Error("ephemeral address lookup table was not found");
+  if (!lookup || lookup.state.deactivationSlot !== 0xffffffffffffffffn) {
+    throw new Error("active registration address lookup table was not found");
+  }
   const latest = await connection.getLatestBlockhash("confirmed");
   const message = new TransactionMessage({
     payerKey: signer.publicKey, recentBlockhash: latest.blockhash, instructions,
@@ -276,10 +260,11 @@ async function main(): Promise<void> {
       consumedAt: null, onChainTxFamily: null, onChainTxId: null, createdAt: new Date(), updatedAt: new Date(),
     },
   });
-  const registration = await sendSolanaWithEphemeralLookup(
+  const registration = await sendSolanaWithLookup(
     connection,
     withComputeBudget(draft.instructions.map(instruction), 450_000),
     relayer,
+    new PublicKey(solanaDeployment.registrationLookupTable),
   );
   steps.push({ network: "solanaDevnet", direction: "origin", operation: "register", transaction: registration.signature, blockOrSlot: registration.slot.toString(), latencyMs: registration.latencyMs });
   computeUnits.solanaOriginRegistration = registration.units;
