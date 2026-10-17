@@ -113,8 +113,8 @@ export async function authRoutes(app: FastifyInstance, options: AuthRouteOptions
       });
     }
 
-    if (!validRegistrationToken(parse.data.registrationToken, options.registrationToken)) {
-      return reply.status(403).send({ error: "Cadastro administrativo fechado ou código de convite inválido" });
+    if (options.registrationToken && !validRegistrationToken(parse.data.registrationToken, options.registrationToken)) {
+      return reply.status(403).send({ error: "Cadastro exige um código de convite válido" });
     }
     const { email, password, displayName } = parse.data;
     const normalizedEmail = email.toLowerCase().trim();
@@ -190,8 +190,8 @@ export async function authRoutes(app: FastifyInstance, options: AuthRouteOptions
     });
 
     if (!user) {
-      if (!validRegistrationToken(parse.data.registrationToken, options.registrationToken)) {
-        return reply.status(403).send({ error: "Cadastro administrativo fechado ou código de convite inválido" });
+      if (options.registrationToken && !validRegistrationToken(parse.data.registrationToken, options.registrationToken)) {
+        return reply.status(403).send({ error: "Cadastro exige um código de convite válido" });
       }
       // Criar novo usuário como admin (para novos cadastros via /signup)
       const randomPassword = crypto.randomBytes(24).toString("hex");

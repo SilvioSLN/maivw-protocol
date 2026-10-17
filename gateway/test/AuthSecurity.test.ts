@@ -42,30 +42,44 @@ test('social login rejects missing, invalid, unverified and unsupported identiti
     } finally { await app.close(); }
   }
 });
-test('social login trusts verified claims only and new administrators require invitation', async () => {
+test('social login trusts verified claims and enforces an operator invitation when configured', async () => {
   const identity = {email:'verified@example.com',email_verified:true,firebase:{sign_in_provider:'google.com'}};
   for (const existing of [null, {id:1,email:identity.email,role:'admin'}]) {
     const {app,writes} = await fixture(identity,existing);
     try {
       const response = await app.inject({method:'POST',url:'/api/v1/auth/google',payload:{idToken:'verified',email:'forged@example.com'}});
-      assert.equal(response.statusCode,existing?200:403);
-      if(existing) assert.equal(response.json().email, identity.email);
-      assert.equal(writes.length,0);
+      assert.equal(response.statusCode, 200);
+      assert.equal(response.json().email, identity.email);
+      assert.equal(writes.length, existing ? 0 : 1);
     } finally { await app.close(); }
   }
+  const {app,writes} = await fixture(identity,null,invitation);
+  try {
+    const denied = await app.inject({method:'POST',url:'/api/v1/auth/google',payload:{idToken:'verified'}});
+    assert.equal(denied.statusCode,403);
+    const allowed = await app.inject({method:'POST',url:'/api/v1/auth/google',payload:{idToken:'verified',registrationToken:invitation}});
+    assert.equal(allowed.statusCode,200);
+    assert.equal(writes.length,1);
+  } finally { await app.close(); }
 });
-test('administrator registration is closed by default and invitation stores scrypt', async () => {
-  for (const token of [undefined, invitation]) {
-    const {app,writes} = await fixture(null,null,token);
-    try {
-      const denied = await app.inject({method:'POST',url:'/api/v1/auth/register',payload:{email:'admin@example.com',password}});
-      assert.equal(denied.statusCode,403);
-      const response = await app.inject({method:'POST',url:'/api/v1/auth/register',payload:{email:'admin@example.com',password,registrationToken:invitation}});
-      assert.equal(response.statusCode,token?201:403);
-      if(token) assert.equal(await verifyPassword(password,writes[0].passwordHash),true);
-      else assert.equal(writes.length,0);
-    } finally {await app.close();}
-  }
+test('administrator registration is public by default and invitation-gated when configured', async () => {
+  const open = await fixture(null,null,undefined);
+  try {
+    const response = await open.app.inject({method:'POST',url:'/api/v1/auth/register',payload:{email:'admin@example.com',password}});
+    assert.equal(response.statusCode,201);
+    assert.equal(await verifyPassword(password,open.writes[0].passwordHash),true);
+  } finally {await open.app.close();}
+
+  const gated = await fixture(null,null,invitation);
+  try {
+    const missing = await gated.app.inject({method:'POST',url:'/api/v1/auth/register',payload:{email:'missing@example.com',password}});
+    assert.equal(missing.statusCode,403);
+    const wrong = await gated.app.inject({method:'POST',url:'/api/v1/auth/register',payload:{email:'wrong@example.com',password,registrationToken:'wrong-token-at-least-32-characters-long'}});
+    assert.equal(wrong.statusCode,403);
+    const allowed = await gated.app.inject({method:'POST',url:'/api/v1/auth/register',payload:{email:'allowed@example.com',password,registrationToken:invitation}});
+    assert.equal(allowed.statusCode,201);
+    assert.equal(await verifyPassword(password,gated.writes[0].passwordHash),true);
+  } finally {await gated.app.close();}
 });
 test('legacy password upgrades only after successful authentication', async () => {
   const salt='b'.repeat(32);
