@@ -67,3 +67,39 @@ Faça backup consistente, registre revisão e imagens anteriores e teste o novo 
 - Chave do domínio: prepare novo assinante e atualização on-chain autorizada, com plano de transição entre nós.
 - `MASTER_SECRET_KEY`: **não substitua simplesmente o valor**. Chaves e credenciais existentes exigem migração de recifragem; essa ferramenta ainda não existe no projeto.
 - KMS: confirme versão, permissões e endereço autorizado antes de trocar o assinante.
+
+## Operação multichain, SLOs e alertas (SM-076 / SM-087)
+
+O Gateway MAIVW implementa relayer bidirecional e observador entre redes EVM (Base, Arbitrum, Polygon) e Solana. Os fluxos foram exercitados em testnets; operação em produção ainda exige auditoria externa, governança multisig, canário contínuo e medição dos SLOs abaixo.
+
+### Metas de Nível de Serviço (SLO)
+
+| Indicador | Meta | Limite Crítico (Timeout) | Ação de Mitigação |
+|---|---|---|---|
+| **Latência Solana → EVM** | p95 < 60s | > 180s | Alerta `INDEXER_LAG` ou `STATE_DRIFT` |
+| **Latência EVM → Solana** | p95 < 90s | > 300s | Inspeção de fila BullMQ / RPC timeout |
+| **Disponibilidade Relayer** | meta >= 99.9% | < 99.0% | Failover de nó Gateway |
+| **Consistência de Estado (Zero-Drift)** | 0 drift permanente | > 0 drifts não reparados | Execução de reparo via `MultichainReconciliationService` |
+| **Circuit Breaker** | Isolamento por rota | >= 3 falhas consecutivas | Dispara alerta `RELAYER_PAUSED` suspendendo apenas rota afetada |
+
+### Matriz de Alertas Operacionais
+
+O `MultichainAlertService` avalia continuamente sinais de banco e telemetria:
+
+As regras e o coletor são implementados e testados; esta documentação não afirma que exista hoje uma instalação de monitoramento 24x7 ou histórico suficiente para comprovar os SLOs.
+
+1. `ORIGIN_CONFLICT` (Crítico): Chave ou origem divergente detectada para o mesmo `domainHash`.
+2. `INDEXER_LAG` (Aviso): Cursor do observador Solana com atraso superior a 128 slots em relação ao head finalizado.
+3. `REORG_PENDING` (Crítico): Transação de origem sofreu reorg e requer compensação de estado no mirror.
+4. `LOW_BALANCE` (Aviso): Saldo de gas da conta relayer abaixo do limiar operacional na rede de destino.
+5. `RELAYER_PAUSED` (Crítico): Circuit breaker disparado por falhas repetidas na rota.
+6. `KMS_FAILURE` (Crítico): Falha de comunicação ou permissão IAM ao assinar atestações no Google Cloud KMS.
+7. `STATE_DRIFT` (Crítico): Estado on-chain do mirror diverge do estado canônico da rede de origem.
+
+Consulte o playbook detalhado em `specs/multichain/RUNBOOK_MULTICHAIN_ALERTS_V1.md`.
+
+### Procedimento de Pausa de Emergência e Rollback
+
+1. **Pausa imediata**: O `guardian` ou `authority` pode pausar contratos EVM chamando `pause()` no Registry Proxy, ou pausar o programa Solana alterando `is_paused = true` no `RegistryConfig`.
+2. **Isolamento de nó**: Se um nó Gateway apresentar anomalia de envio, defina `RELAY_PAUSE_DISPATCH=true` no `.env` para suspender novos despachos sem perder eventos pendentes na fila.
+3. **Replay determinístico**: Os cursores duráveis (`solanaObserverCursor` e block cursors EVM) gravam o último bloco/slot finalizado confirmado. Um restart lê a partir do último cursor, eliminando perdas ou duplicações.

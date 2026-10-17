@@ -1,0 +1,53 @@
+name: CI Multichain Verification
+
+on:
+  push:
+    branches:
+      - main
+      - codex/*
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Rust, Solidity, TypeScript & Drift Checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "npm"
+          cache-dependency-path: gateway/package-lock.json
+
+      - name: Install Gateway Dependencies
+        run: npm ci
+        working-directory: gateway
+
+      - name: Install Pinned Rust
+        run: rustup show
+        working-directory: solana
+
+      - name: Rust Solana Tests
+        run: cargo test --workspace --locked
+        working-directory: solana
+
+      - name: TypeScript Build & Unit Tests
+        run: |
+          npm run build
+          node --import tsx --test test/*.test.ts
+        working-directory: gateway
+
+      - name: Foundry Solidity Invariants & Storage Layout
+        run: |
+          docker run --rm --entrypoint /bin/sh \
+            -v "${{ github.workspace }}/contracts:/contracts" \
+            -w /contracts \
+            ghcr.io/foundry-rs/foundry@sha256:0c00cb0bda1ab1b91c9a6bf60f4c76c09c1a8870824b6d4718afbabacf6f9a17 \
+            -lc 'forge inspect MAIVWRegistry storageLayout && forge inspect MAIVWMirrorRegistryV2 storageLayout && forge test'

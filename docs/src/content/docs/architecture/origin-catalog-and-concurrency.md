@@ -117,6 +117,17 @@ Se observers detectarem duas origens on-chain para o mesmo domínio, o catálogo
 - Após restauração, emissão fica pausada até reconciliar o catálogo com todos os Registries.
 - Indisponibilidade do writer falha fechada: consultas continuam, mas novas origens aguardam.
 
+### Garantias de Reorg e Crash Recovery (SM-081)
+
+O pipeline de relayers e projeções multichain implementa salvaguardas formais contra forks, interrupções inesperadas e colisões:
+
+1. **Reorg Raso (Pré-Submissão):** se um bloco ou slot na origem sofrer reorg antes do envio aos destinos, o job e seus mirrors em preparação são transicionados deterministicamente para `ORPHANED`. Nenhum broadcast fantasma é emitido.
+2. **Reorg Profundo (Pós-Submissão):** se a reorganização ocorrer após transações já terem sido submetidas ou confirmadas em destinos externos, o job é classificado como `COMPENSATION_REQUIRED`. Registros de compensação duráveis são anexados com auditoria encadeada, preservando a evidência histórica para reconciliação e impedindo regressão de `globalDomainEpoch` ou `originSequence`.
+3. **Resiliência a Falhas e Crash Recovery:**
+   - **Lease Timeout:** workers adquirem exclusividade de envio sob lease temporário (`leaseUntil`). Se um worker cair durante a preparação, o job é liberado para um worker sucessor somente após o término do lease.
+   - **Idempotência Pós-Broadcast:** se a queda ocorrer após a transmissão mas antes da confirmação de finalidade, a retomada identifica o estado `BROADCAST` e monitora a transação existente (`expectedTransactionId`), evitando submissões redundantes ou quebra de nonces.
+   - **Monotonicidade Anti-Regressão:** eventos com sequências obsoletas ou regressões de epoch são rejeitados com `ORIGIN_VERSION_REGRESSION`.
+
 ## Transferência de origem
 
 Transferência é **desabilitada no MVP**. O schema reserva `originVersion` e permite registrar um predecessor futuro, mas não existe endpoint, instrução, papel administrativo ou atestação capaz de mudar `originNetworkId`/`originRegistryId` de um `OriginRecord` ativo.
@@ -133,4 +144,6 @@ Uma futura versão exigirá protocolo two-phase, janela de contestação e tombs
 - `ACTIVE` não expira e só aceita reclaim na mesma origem;
 - falha entre update e audit/outbox faz rollback de tudo;
 - restart retoma outbox e reconciliação sem duplicar claims;
-- detecção de duas origens aciona circuit breaker.
+- detecção de duas origens aciona circuit breaker;
+- reorg raso marca `ORPHANED` e reorg profundo ativa `COMPENSATION_REQUIRED` com compensações duráveis (SM-081);
+- recuperação pós-crash retoma lease sem duplicar broadcast e bloqueia regressão de versão (SM-081).
