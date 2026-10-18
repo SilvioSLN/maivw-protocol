@@ -43,6 +43,59 @@ import {
 type Stage = "domain" | "dns" | "onchain" | "complete";
 type Purpose = "both" | "webmail" | "api";
 
+type OriginNetworkKey = "base" | "solana" | "arbitrum" | "polygon";
+
+interface OriginNetworkOption {
+  key: OriginNetworkKey;
+  name: string;
+  badge: string;
+  desc: string;
+  chainId?: number;
+  family: "EVM" | "SOLANA";
+}
+
+const ORIGIN_NETWORK_OPTIONS: OriginNetworkOption[] = [
+  {
+    key: "base",
+    name: "Base",
+    badge: "Padrão",
+    desc: "L2 Coinbase • Baixo custo & alta liquidez",
+    chainId: 84532,
+    family: "EVM",
+  },
+  {
+    key: "solana",
+    name: "Solana",
+    badge: "Ed25519",
+    desc: "Cluster Solana • Assinatura SPL & alta velocidade",
+    family: "SOLANA",
+  },
+  {
+    key: "arbitrum",
+    name: "Arbitrum",
+    badge: "Nitro L2",
+    desc: "Nitro Rollup • Segurança Ethereum & baixo custo",
+    chainId: 421614,
+    family: "EVM",
+  },
+  {
+    key: "polygon",
+    name: "Polygon",
+    badge: "AggLayer",
+    desc: "AggLayer PoS • Taxas ultrabaixas em POL",
+    chainId: 80002,
+    family: "EVM",
+  },
+];
+
+function resolveDefaultOriginNetwork(): OriginNetworkKey {
+  const envVal = (process.env.NEXT_PUBLIC_DEFAULT_ORIGIN_NETWORK || "base").toLowerCase().trim();
+  if (envVal === "solana") return "solana";
+  if (envVal === "arbitrum" || envVal === "421614") return "arbitrum";
+  if (envVal === "polygon" || envVal === "80002") return "polygon";
+  return "base";
+}
+
 interface DnsRecordInfo {
   type: string;
   host: string;
@@ -64,11 +117,20 @@ export default function OnboardingPage() {
   const [showEmailDnsCard, setShowEmailDnsCard] = useState(false);
   const [showAdvancedPayment, setShowAdvancedPayment] = useState(false);
 
+  // Origin Network Selection (Transparente por padrão, configurável via env e seletor discreto)
+  const [selectedOriginNetwork, setSelectedOriginNetwork] = useState<OriginNetworkKey>(resolveDefaultOriginNetwork);
+  const [showNetworkPicker, setShowNetworkPicker] = useState<boolean>(false);
+
   // Domain Stage
   const [domainName, setDomainName] = useState("");
   const [isGeneratingChallenge, setIsGeneratingChallenge] = useState(false);
   const [domainError, setDomainError] = useState<string | null>(null);
   const [challengeToken, setChallengeToken] = useState<string | null>(null);
+  const [challengeId, setChallengeId] = useState<string | null>(null);
+  const [solanaRegistrant, setSolanaRegistrant] = useState<string | null>(null);
+  const [customSolanaPubkey, setCustomSolanaPubkey] = useState<string>("");
+  const [showSolanaAdvanced, setShowSolanaAdvanced] = useState<boolean>(false);
+  const [showSolanaPubkeyReceipt, setShowSolanaPubkeyReceipt] = useState<boolean>(false);
   const [records, setRecords] = useState<Record<string, DnsRecordInfo> | null>(null);
 
   // DNS Stage
@@ -81,7 +143,12 @@ export default function OnboardingPage() {
   const [isRegisteringOnChain, setIsRegisteringOnChain] = useState(false);
   const [onChainError, setOnChainError] = useState<string | null>(null);
   const [pendingRegistration, setPendingRegistration] = useState<{ domainId: number; txHash: string; endpointUrl: string; targetChainId: number } | null>(null);
-  const [targetChainId, setTargetChainId] = useState<number>(84532);
+  const [targetChainId, setTargetChainId] = useState<number>(() => {
+    const def = resolveDefaultOriginNetwork();
+    if (def === "arbitrum") return 421614;
+    if (def === "polygon") return 80002;
+    return 84532;
+  });
   const [showAdvancedNetwork, setShowAdvancedNetwork] = useState<boolean>(false);
   const [onChainData, setOnChainData] = useState<{
     txHash: string;
@@ -132,6 +199,9 @@ export default function OnboardingPage() {
     defaultEndpoint?: string;
     defaultEndpointPattern?: string;
     dnsMode?: "local-demo" | "public-dns";
+    solanaEnabled?: boolean;
+    solanaNetworkId?: string | null;
+    solanaNetworkName?: string | null;
   } | null>(null);
   const [p2pEndpoint, setP2pEndpoint] = useState<string>("");
   const [p2pEndpointError, setP2pEndpointError] = useState<string | null>(null);
@@ -146,7 +216,9 @@ export default function OnboardingPage() {
         if (res.ok) {
           const data = await res.json();
           setNodeMode(data);
-          if (Number.isInteger(data.chainId)) setTargetChainId(data.chainId);
+          if (Number.isInteger(data.chainId) && selectedOriginNetwork === "base") {
+            setTargetChainId(data.chainId);
+          }
           if (data.defaultEndpoint) setP2pEndpoint(data.defaultEndpoint);
         }
       } catch {
@@ -154,7 +226,7 @@ export default function OnboardingPage() {
       }
     }
     checkNodeMode();
-  }, [gatewayUrl]);
+  }, [gatewayUrl, selectedOriginNetwork]);
 
   // Mantém sugestão do endpoint P2P atualizada com o domínio
   useEffect(() => {
@@ -163,6 +235,16 @@ export default function OnboardingPage() {
       setP2pEndpoint(`https://mw-p2p.${clean}/api/v1/inbox`);
     }
   }, [domainName, p2pEndpoint]);
+
+  const isCloudInstallation = Boolean(
+    nodeMode?.isCloud ||
+    process.env.NEXT_PUBLIC_IS_CLOUD === "true" ||
+    (nodeMode === null &&
+      typeof window !== "undefined" &&
+      (window.location.hostname.includes("cloud.maivw.com") || window.location.hostname === "app.maivw.com"))
+  );
+
+  const isSovereignInstallation = !isCloudInstallation;
 
   const isSelfHosted = nodeMode
     ? nodeMode.isSelfHosted
@@ -246,16 +328,26 @@ export default function OnboardingPage() {
       return;
     }
 
+    if (selectedOriginNetwork === "solana" && nodeMode && !nodeMode.solanaEnabled) {
+      setDomainError("A rede Solana não está ativa neste nó. Ative SOLANA_ENABLED no .env ou selecione outra rede de ancoragem.");
+      return;
+    }
+
     setIsGeneratingChallenge(true);
     setDomainError(null);
 
     try {
       const res = await fetch(`${gatewayUrl}/api/v1/onboarding/challenge`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${user?.token || localStorage.getItem("maivw_token") || ""}` },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${user?.token || localStorage.getItem("maivw_token") || ""}`,
+        },
         body: JSON.stringify({
           domainName: clean,
           userId: user?.id || 1,
+          targetNetwork: selectedOriginNetwork,
+          registrant: customSolanaPubkey.trim() || undefined,
         }),
       });
 
@@ -267,6 +359,10 @@ export default function OnboardingPage() {
       }
 
       setChallengeToken(data.token);
+      setChallengeId(data.challengeId || null);
+      if (data.origin?.registrant) {
+        setSolanaRegistrant(data.origin.registrant);
+      }
       setRecords(data.records);
       setStage("dns");
     } catch {
@@ -290,6 +386,7 @@ export default function OnboardingPage() {
         body: JSON.stringify({
           domainName: domainName.trim().toLowerCase(),
           token: challengeToken,
+          challengeId: challengeId || undefined,
         }),
       });
 
@@ -561,8 +658,8 @@ export default function OnboardingPage() {
     if (pendingRegistration) return retryPendingRegistration();
     if (!challengeToken || !user?.id) return;
 
-    const trimmedEndpoint = p2pEndpoint.trim();
-    if (!validateP2pEndpoint(trimmedEndpoint)) return;
+    const trimmedEndpoint = isCloudInstallation ? "" : p2pEndpoint.trim();
+    if (!isCloudInstallation && !validateP2pEndpoint(trimmedEndpoint)) return;
     setP2pEndpointError(null);
 
     setIsRegisteringWeb3Direct(true);
@@ -590,7 +687,7 @@ export default function OnboardingPage() {
           userId: user.id,
           token: challengeToken,
           callerAddress: caller,
-          endpointUrl: trimmedEndpoint || undefined,
+          endpointUrl: isCloudInstallation ? undefined : (trimmedEndpoint || undefined),
           targetChainId,
         }),
       });
@@ -636,7 +733,7 @@ export default function OnboardingPage() {
         body: JSON.stringify({
           domainId: proofData.domainId,
           txHash,
-          endpointUrl: trimmedEndpoint || undefined,
+          endpointUrl: isCloudInstallation ? undefined : (trimmedEndpoint || undefined),
           targetChainId: proofData.chainId,
         }),
       });
@@ -669,13 +766,13 @@ export default function OnboardingPage() {
     }
   };
 
-  // STAGE: ON-CHAIN REGISTRATION (BASE SEPOLIA)
+  // STAGE: ON-CHAIN REGISTRATION
   const handleRegisterOnChain = async () => {
     if (pendingRegistration) return retryPendingRegistration();
     if (!challengeToken || !user?.id) return;
 
-    const trimmedEndpoint = p2pEndpoint.trim();
-    if (!validateP2pEndpoint(trimmedEndpoint)) return;
+    const trimmedEndpoint = isCloudInstallation ? "" : p2pEndpoint.trim();
+    if (!isCloudInstallation && !validateP2pEndpoint(trimmedEndpoint)) return;
     setP2pEndpointError(null);
 
     setIsRegisteringOnChain(true);
@@ -701,8 +798,10 @@ export default function OnboardingPage() {
           domainName: domainName.trim().toLowerCase(),
           userId: user.id,
           token: challengeToken,
-          endpointUrl: trimmedEndpoint || undefined,
-          targetChainId,
+          challengeId: challengeId || undefined,
+          targetNetwork: selectedOriginNetwork,
+          endpointUrl: isCloudInstallation ? undefined : (trimmedEndpoint || undefined),
+          targetChainId: selectedOriginNetwork !== "solana" ? targetChainId : undefined,
         }),
       });
 
@@ -873,10 +972,6 @@ export default function OnboardingPage() {
               </div>
 
               <form onSubmit={handleGenerateChallenge} className="space-y-5">
-                <Link href="/onboarding/solana" className="flex items-center justify-between rounded-2xl border border-violet-500/30 bg-violet-950/20 p-4 hover:bg-violet-950/35 transition">
-                  <span><strong className="block text-sm text-violet-200">Usar Solana como origem</strong><span className="text-xs text-neutral-400">Pubkey Ed25519, pagamento SPL e assinatura via carteira ou relayer.</span></span>
-                  <ArrowRight className="w-4 h-4 text-violet-300" />
-                </Link>
                 <div>
                   <label className="block text-xs font-semibold text-neutral-300 mb-2">
                     Nome do Domínio (FQDN)
@@ -905,6 +1000,110 @@ export default function OnboardingPage() {
                   </p>
                 </div>
 
+                {/* Opções de Rede de Ancoragem (Discreto) */}
+                <div className="pt-0.5">
+                  <div className="flex items-center justify-between text-xs px-1">
+                    <span className="text-neutral-400 text-[11px] flex items-center gap-1.5">
+                      <Network className="w-3.5 h-3.5 text-neutral-500" />
+                      <span>Rede de Ancoragem:</span>
+                      <span className="text-neutral-200 font-semibold">
+                        {ORIGIN_NETWORK_OPTIONS.find((o) => o.key === selectedOriginNetwork)?.name || "Base"}
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowNetworkPicker(!showNetworkPicker)}
+                      className="text-neutral-400 hover:text-white transition text-[11px] underline underline-offset-4 cursor-pointer flex items-center gap-1"
+                    >
+                      <span>{showNetworkPicker ? "Ocultar opções" : "Alterar rede"}</span>
+                      <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${showNetworkPicker ? "rotate-180" : ""}`} />
+                    </button>
+                  </div>
+
+                  {showNetworkPicker && (
+                    <div className="mt-2.5 p-2.5 bg-black/50 border border-white/[0.08] rounded-xl space-y-2 animate-in fade-in duration-200">
+                      <div className="text-[10px] uppercase font-semibold tracking-wider text-neutral-500 px-1">
+                        Selecione a rede de registro (Cartório On-Chain)
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        {ORIGIN_NETWORK_OPTIONS.map((net) => {
+                          const isSelected = selectedOriginNetwork === net.key;
+                          return (
+                            <button
+                              key={net.key}
+                              type="button"
+                              onClick={() => {
+                                setSelectedOriginNetwork(net.key);
+                                if (net.chainId) {
+                                  setTargetChainId(net.chainId);
+                                }
+                              }}
+                              className={`p-2.5 rounded-lg border text-left cursor-pointer transition-all ${
+                                isSelected
+                                  ? "bg-red-950/30 border-red-500/60 ring-1 ring-red-500/40 text-white shadow-md shadow-red-950/40"
+                                  : "bg-white/[0.02] border-white/[0.06] text-neutral-300 hover:border-white/20 hover:bg-white/[0.04]"
+                              }`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="font-semibold text-xs text-white">{net.name}</span>
+                                <span
+                                  className={`text-[9px] px-1.5 py-0.5 rounded font-mono ${
+                                    isSelected
+                                      ? "bg-red-500/20 text-red-300 border border-red-500/30"
+                                      : "bg-white/[0.06] text-neutral-400"
+                                  }`}
+                                >
+                                  {net.badge}
+                                </span>
+                              </div>
+                              <div className="text-[10px] text-neutral-400 mt-1 line-clamp-1 leading-tight">
+                                {net.desc}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {selectedOriginNetwork === "solana" && nodeMode && !nodeMode.solanaEnabled && (
+                  <div className="flex items-center gap-2 p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-xs text-amber-300">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-amber-400" />
+                    <span>A rede Solana não está ativa neste nó. Ative SOLANA_ENABLED no .env ou selecione outra rede de ancoragem.</span>
+                  </div>
+                )}
+
+                {isSovereignInstallation && selectedOriginNetwork === "solana" && (
+                  <div className="pt-0.5 text-left">
+                    <button
+                      type="button"
+                      onClick={() => setShowSolanaAdvanced(!showSolanaAdvanced)}
+                      className="text-[11px] text-neutral-400 hover:text-neutral-200 inline-flex items-center gap-1 cursor-pointer transition"
+                    >
+                      <span>Opções avançadas (Solana)</span>
+                      <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${showSolanaAdvanced ? "rotate-180" : ""}`} />
+                    </button>
+                    {showSolanaAdvanced && (
+                      <div className="mt-2 p-3 bg-black/40 border border-white/[0.08] rounded-xl space-y-1.5 text-xs">
+                        <label className="text-[11px] text-neutral-400 block font-medium">
+                          Pubkey Solana do Registrante (Opcional):
+                        </label>
+                        <input
+                          type="text"
+                          value={customSolanaPubkey}
+                          onChange={(e) => setCustomSolanaPubkey(e.target.value.trim())}
+                          placeholder="Ex: 7gP5KaqYC... (deixe em branco para gerar via KMS do nó)"
+                          className="w-full bg-black/60 border border-white/[0.1] rounded-lg px-3 py-2 text-xs font-mono text-white placeholder-neutral-600 focus:outline-none focus:border-red-500/60"
+                        />
+                        <p className="text-[10px] text-neutral-500">
+                          Deixe em branco para que o nó gere e guarde uma chave criptográfica Ed25519 no cofre seguro.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {domainError && (
                   <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/25 rounded-xl text-xs text-red-300">
                     <AlertCircle className="w-4 h-4 shrink-0" />
@@ -927,7 +1126,7 @@ export default function OnboardingPage() {
                     </>
                   ) : (
                     <>
-                      <span>Gerar Registros DNS & Prosseguir</span>
+                      <span>Gerar Registros DNS &amp; Prosseguir</span>
                       <ArrowRight className="w-4 h-4" />
                     </>
                   )}
@@ -1059,7 +1258,9 @@ export default function OnboardingPage() {
                   <div className="mt-4 pt-3 border-t border-red-500/10 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] text-neutral-400">
                     <span>TTL recomendado: <b>Auto</b> ou <b>300s (5 minutos)</b></span>
                     <span className="text-neutral-400 bg-white/[0.03] px-2.5 py-1 rounded-lg border border-white/[0.06]">
-                      ℹ️ Registros adicionais de e-mail (MX / SPF) estarão disponíveis após a ativação.
+                      {selectedOriginNetwork === "solana"
+                        ? "ℹ️ Prova canônica Solana vinculada por TXT criptográfico."
+                        : "ℹ️ Registros adicionais de e-mail (MX / SPF) estarão disponíveis após a ativação."}
                     </span>
                   </div>
                 </div>
@@ -1187,52 +1388,62 @@ export default function OnboardingPage() {
                         DNS Validado ✓
                       </span>
                       <span className="px-2.5 py-1 rounded-full bg-white/[0.04] text-neutral-300 border border-white/[0.08] text-[11px] font-mono">
-                        Base Sepolia (84532)
+                        {selectedOriginNetwork === "solana"
+                          ? "Solana Devnet (Ed25519)"
+                          : targetChainId === 84532
+                          ? "Base Sepolia (84532)"
+                          : targetChainId === 421614
+                            ? "Arbitrum Sepolia (421614)"
+                            : targetChainId === 80002
+                              ? "Polygon Amoy (80002)"
+                              : `Chain (${targetChainId})`}
                       </span>
                     </div>
                   </div>
 
-                  {/* P2P Endpoint Inbound Configuration Box */}
-                  <div className="mb-6 p-4 bg-[#0a0505] border border-white/[0.08] rounded-2xl text-left space-y-2">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <Network className="w-4 h-4 text-blue-400" />
-                        <span className="text-xs font-bold text-white">Endpoint de Recepção P2P</span>
+                  {/* P2P Endpoint Inbound Configuration Box (Exibir apenas para instalação soberana, ocultar no Maivw Cloud) */}
+                  {isSovereignInstallation && (
+                    <div className="mb-6 p-4 bg-[#0a0505] border border-white/[0.08] rounded-2xl text-left space-y-2">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <Network className="w-4 h-4 text-blue-400" />
+                          <span className="text-xs font-bold text-white">Endpoint de Recepção P2P</span>
+                        </div>
+                        <span className="text-[10px] px-2 py-0.5 rounded bg-blue-500/10 text-blue-300 border border-blue-500/20 font-mono">
+                          {endpointRequiresHttps ? "HTTPS obrigatório" : "HTTP local permitido"}
+                        </span>
                       </div>
-                      <span className="text-[10px] px-2 py-0.5 rounded bg-blue-500/10 text-blue-300 border border-blue-500/20 font-mono">
-                        {endpointRequiresHttps ? "HTTPS obrigatório" : "HTTP local permitido"}
-                      </span>
-                    </div>
-                    <div className="text-[11px] text-neutral-400">
-                      Endereço onde este nó escutará entregas diretas de outros servidores e gateways da rede MAIVW:
-                    </div>
-                    <div className="flex items-center gap-2 pt-1">
-                      <input
-                        type="text"
-                        value={p2pEndpoint}
-                        onChange={(e) => {
-                          setP2pEndpoint(e.target.value);
-                          if (p2pEndpointError) setP2pEndpointError(null);
-                        }}
-                        placeholder={nodeMode?.defaultEndpoint || `https://mw-p2p.${domainName || "empresa.com"}/api/v1/inbox`}
-                        className="flex-1 bg-black/60 border border-white/[0.1] rounded-xl px-3.5 py-2.5 text-xs font-mono text-white placeholder-neutral-600 focus:outline-none focus:border-blue-500/60"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setP2pEndpoint(nodeMode?.defaultEndpoint || `https://mw-p2p.${domainName.trim().toLowerCase()}/api/v1/inbox`)}
-                        className="px-3 py-2.5 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-neutral-300 rounded-xl text-xs font-medium cursor-pointer transition shrink-0"
-                        title="Restaurar padrão"
-                      >
-                        Padrão
-                      </button>
-                    </div>
-                    {p2pEndpointError && (
-                      <div className="text-[11px] text-red-400 flex items-center gap-1.5 pt-1">
-                        <AlertCircle className="w-3.5 h-3.5" />
-                        <span>{p2pEndpointError}</span>
+                      <div className="text-[11px] text-neutral-400">
+                        Endereço onde este nó escutará entregas diretas de outros servidores e gateways da rede MAIVW:
                       </div>
-                    )}
-                  </div>
+                      <div className="flex items-center gap-2 pt-1">
+                        <input
+                          type="text"
+                          value={p2pEndpoint}
+                          onChange={(e) => {
+                            setP2pEndpoint(e.target.value);
+                            if (p2pEndpointError) setP2pEndpointError(null);
+                          }}
+                          placeholder={nodeMode?.defaultEndpoint || `https://mw-p2p.${domainName || "empresa.com"}/api/v1/inbox`}
+                          className="flex-1 bg-black/60 border border-white/[0.1] rounded-xl px-3.5 py-2.5 text-xs font-mono text-white placeholder-neutral-600 focus:outline-none focus:border-blue-500/60"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setP2pEndpoint(nodeMode?.defaultEndpoint || `https://mw-p2p.${domainName.trim().toLowerCase()}/api/v1/inbox`)}
+                          className="px-3 py-2.5 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-neutral-300 rounded-xl text-xs font-medium cursor-pointer transition shrink-0"
+                          title="Restaurar padrão"
+                        >
+                          Padrão
+                        </button>
+                      </div>
+                      {p2pEndpointError && (
+                        <div className="text-[11px] text-red-400 flex items-center gap-1.5 pt-1">
+                          <AlertCircle className="w-3.5 h-3.5" />
+                          <span>{p2pEndpointError}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* Stepper Progress Bar (se estiver em execução) */}
                   {(isRegisteringOnChain || isRegisteringWeb3Direct || stepperStep > 0) && (
@@ -1247,8 +1458,8 @@ export default function OnboardingPage() {
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
                         {[
                           { step: 1, label: "1. Checagem DNS", desc: "Token TXT validado" },
-                          { step: 2, label: "2. Laudo ECDSA", desc: "Oráculo autoriza" },
-                          { step: 3, label: "3. Gravação L2", desc: "Base Sepolia" },
+                          { step: 2, label: "2. Laudo Cripto", desc: "Oráculo autoriza" },
+                          { step: 3, label: "3. Gravação On-Chain", desc: selectedOriginNetwork === "solana" ? "Solana Devnet" : "Base Sepolia" },
                           { step: 4, label: "4. Ancoragem", desc: "Chaves registradas" },
                         ].map((s) => {
                           const isDone = stepperStep > s.step;
@@ -1309,23 +1520,41 @@ export default function OnboardingPage() {
                           </span>
                         </div>
                         <div>
-                          <div className="text-sm font-bold text-white">Forma 1: Modo Gerenciado (Rede Maivw)</div>
+                          <div className="text-sm font-bold text-white">
+                            {selectedOriginNetwork === "solana"
+                              ? "Forma 1: Modo Gerenciado (Relayer Solana)"
+                              : "Forma 1: Modo Gerenciado (Rede Maivw)"}
+                          </div>
                           <div className="text-xs text-neutral-400 mt-0.5">
-                            Ativação rápida e assistida pelo nó oráculo/relayer oficial da rede.
+                            {selectedOriginNetwork === "solana"
+                              ? "Ativação rápida e assistida pelo Relayer Solana oficial da rede."
+                              : "Ativação rápida e assistida pelo nó oráculo/relayer oficial da rede."}
                           </div>
                         </div>
                         <div className="space-y-1.5 text-xs text-neutral-300 pt-2 border-t border-white/[0.06]">
                           <div className="flex items-center gap-2">
                             <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                            <span>Zero Cripto: Não requer carteira ou saldo em ETH</span>
+                            <span>
+                              {selectedOriginNetwork === "solana"
+                                ? "Zero Cripto: Não requer carteira ou saldo em SOL"
+                                : "Zero Cripto: Não requer carteira ou saldo em ETH"}
+                            </span>
                           </div>
                           <div className="flex items-center gap-2">
                             <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                            <span>Gasless: Taxa on-chain e gás patrocinados pela rede</span>
+                            <span>
+                              {selectedOriginNetwork === "solana"
+                                ? "Gasless: Taxa de rede e transação SPL gerenciadas pelo nó"
+                                : "Gasless: Taxa on-chain e gás patrocinados pela rede"}
+                            </span>
                           </div>
                           <div className="flex items-center gap-2">
                             <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                            <span>Ideal para colocar o nó no ar em segundos</span>
+                            <span>
+                              {selectedOriginNetwork === "solana"
+                                ? "Chave Ed25519 provisionada via KMS seguro do nó"
+                                : "Ideal para colocar o nó no ar em segundos"}
+                            </span>
                           </div>
                         </div>
                       </div>
@@ -1340,12 +1569,12 @@ export default function OnboardingPage() {
                           {isRegisteringOnChain ? (
                             <>
                               <RefreshCw className="w-4 h-4 animate-spin" />
-                              <span>Ativando via Rede Maivw...</span>
+                              <span>{selectedOriginNetwork === "solana" ? "Ativando via Relayer Solana..." : "Ativando via Rede Maivw..."}</span>
                             </>
                           ) : (
                             <>
                               <Zap className="w-4 h-4" />
-                              <span>Ativar via Rede Maivw (Instantâneo)</span>
+                              <span>{selectedOriginNetwork === "solana" ? "Ativar via Relayer Solana (Instantâneo)" : "Ativar via Rede Maivw (Instantâneo)"}</span>
                             </>
                           )}
                         </button>
@@ -1364,23 +1593,41 @@ export default function OnboardingPage() {
                           </span>
                         </div>
                         <div>
-                          <div className="text-sm font-bold text-white">Forma 2: Modo Soberano (Web3 Direto)</div>
+                          <div className="text-sm font-bold text-white">
+                            {selectedOriginNetwork === "solana"
+                              ? "Forma 2: Modo Soberano (Carteira Solana)"
+                              : "Forma 2: Modo Soberano (Web3 Direto)"}
+                          </div>
                           <div className="text-xs text-neutral-400 mt-0.5">
-                            Você assina a transação e paga a taxa diretamente com sua carteira.
+                            {selectedOriginNetwork === "solana"
+                              ? "Você assina a instrução de registro diretamente com Phantom ou Solflare."
+                              : "Você assina a transação e paga a taxa diretamente com sua carteira."}
                           </div>
                         </div>
                         <div className="space-y-1.5 text-xs text-neutral-300 pt-2 border-t border-white/[0.06]">
                           <div className="flex items-center gap-2">
                             <Check className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                            <span>Soberania: Sua carteira submete o registerCompany()</span>
+                            <span>
+                              {selectedOriginNetwork === "solana"
+                                ? "Soberania: Sua carteira assina a OriginClaim Solana"
+                                : "Soberania: Sua carteira submete o registerCompany()"}
+                            </span>
                           </div>
                           <div className="flex items-center gap-2">
                             <Check className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                            <span>Taxa da Rede: 0.0001 ETH na Base Sepolia</span>
+                            <span>
+                              {selectedOriginNetwork === "solana"
+                                ? "Taxa da Rede: Taxa padrão SPL / SOL na Solana Devnet"
+                                : "Taxa da Rede: 0.0001 ETH na Base Sepolia"}
+                            </span>
                           </div>
                           <div className="flex items-center gap-2">
                             <Check className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                            <span>Compatível com MetaMask, Rabby e WalletConnect</span>
+                            <span>
+                              {selectedOriginNetwork === "solana"
+                                ? "Compatível com Phantom, Solflare e Backpack"
+                                : "Compatível com MetaMask, Rabby e WalletConnect"}
+                            </span>
                           </div>
                         </div>
 
@@ -1927,7 +2174,7 @@ export default function OnboardingPage() {
                         className="inline-flex items-center gap-1.5 text-[11px] text-neutral-400 hover:text-neutral-200 transition py-1 cursor-pointer"
                       >
                         <Network className="w-3.5 h-3.5 text-blue-400" />
-                        <span>Alterar Blockchain de Ancoragem ({targetChainId === 84532 ? "Base Sepolia" : `Chain ${targetChainId}`})</span>
+                        <span>Alterar Blockchain de Ancoragem ({targetChainId === 84532 ? "Base Sepolia" : targetChainId === 421614 ? "Arbitrum Sepolia" : targetChainId === 80002 ? "Polygon Amoy" : `Chain ${targetChainId}`})</span>
                         {showAdvancedNetwork ? <ChevronUp className="w-3 h-3 text-neutral-400" /> : <ChevronDown className="w-3 h-3 text-neutral-400" />}
                       </button>
 
@@ -1939,7 +2186,7 @@ export default function OnboardingPage() {
                               { id: 421614, name: "Arbitrum Sepolia", desc: "Nitro Rollup", badge: "Nitro" },
                               { id: 80002, name: "Polygon Amoy", desc: "AggLayer EVM", badge: "Amoy" },
                               { id: 31337, name: "Anvil Local", desc: "Ambiente local", badge: "Local" },
-                            ].filter(net => net.id === nodeMode?.chainId).map((net) => (
+                            ].filter((net) => nodeMode?.chainId === 31337 ? true : net.id !== 31337).map((net) => (
                               <div
                                 key={net.id}
                                 onClick={() => setTargetChainId(net.id)}
@@ -2009,7 +2256,7 @@ export default function OnboardingPage() {
                   {/* Public Key */}
                   <div className="p-3 bg-black/50 border border-white/[0.06] rounded-xl space-y-1">
                     <div className="flex items-center justify-between text-[10px] text-neutral-400">
-                      <span>Chave Pública ECDSA:</span>
+                      <span>{selectedOriginNetwork === "solana" ? "Chave Pública Solana (Ed25519):" : "Chave Pública ECDSA:"}</span>
                       <button
                         type="button"
                         onClick={() => copyToClipboard(onChainData.publicKey, "pk_receipt")}
@@ -2034,9 +2281,14 @@ export default function OnboardingPage() {
                   <div className="p-3 bg-black/50 border border-white/[0.06] rounded-xl space-y-1">
                     <div className="flex items-center justify-between text-[10px] text-neutral-400">
                       <span>Transação Blockchain:</span>
-                      {onChainData.basescanUrl ? (
+                      {onChainData.basescanUrl || onChainData.txHash ? (
                         <a
-                          href={onChainData.basescanUrl}
+                          href={
+                            onChainData.basescanUrl ||
+                            (selectedOriginNetwork === "solana"
+                              ? `https://explorer.solana.com/tx/${onChainData.txHash}?cluster=devnet`
+                              : `https://sepolia.basescan.org/tx/${onChainData.txHash}`)
+                          }
                           target="_blank"
                           rel="noreferrer"
                           className="text-blue-400 hover:text-blue-300 transition flex items-center gap-1"
@@ -2051,6 +2303,41 @@ export default function OnboardingPage() {
                     </div>
                   </div>
                 </div>
+
+                {/* Discreet toggle for Solana Pubkey details if Solana */}
+                {selectedOriginNetwork === "solana" && (
+                  <div className="pt-2 border-t border-white/[0.06]">
+                    <button
+                      type="button"
+                      onClick={() => setShowSolanaPubkeyReceipt(!showSolanaPubkeyReceipt)}
+                      className="text-[11px] text-violet-300 hover:text-violet-200 inline-flex items-center gap-1.5 transition cursor-pointer"
+                    >
+                      <Lock className="w-3 h-3 text-violet-400" />
+                      <span>{showSolanaPubkeyReceipt ? "Ocultar detalhes da chave Solana" : "Exibir Chave Criptográfica (Pubkey Solana)"}</span>
+                      <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${showSolanaPubkeyReceipt ? "rotate-180" : ""}`} />
+                    </button>
+                    {showSolanaPubkeyReceipt && (
+                      <div className="mt-2.5 p-3.5 bg-black/60 border border-violet-500/30 rounded-xl space-y-2 text-xs animate-in fade-in duration-200">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-semibold text-violet-300">Pubkey Registrant (Base58):</span>
+                          <button
+                            type="button"
+                            onClick={() => copyToClipboard(onChainData.publicKey, "sol_pk_full")}
+                            className="text-neutral-400 hover:text-white flex items-center gap-1 text-[11px]"
+                          >
+                            {copiedKey === "sol_pk_full" ? <span className="text-emerald-400 font-bold">Copiado!</span> : <Copy className="w-3 h-3" />}
+                          </button>
+                        </div>
+                        <div className="font-mono text-[11px] text-neutral-200 break-all p-2 bg-white/[0.03] rounded-lg border border-white/[0.06]">
+                          {onChainData.publicKey}
+                        </div>
+                        <p className="text-[10px] text-neutral-400">
+                          Esta chave Ed25519 é a titular canônica do domínio na Solana. A chave privada correspondente está armazenada no cofre seguro do Gateway KMS sob criptografia AES-256-GCM.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* P2P Endpoint */}
                 {onChainData.endpointUrl && (
@@ -2098,104 +2385,106 @@ export default function OnboardingPage() {
               </Link>
             </div>
 
-            {/* Didactic Card: Apontamento DNS do Endpoint P2P */}
-            <div className="max-w-2xl mx-auto">
-              <div
-                className={`rounded-2xl border transition-all duration-200 overflow-hidden ${
-                  showP2pDnsCard
-                    ? "bg-[#100c14] border-blue-500/40 shadow-xl shadow-blue-950/30"
-                    : "bg-white/[0.02] border-white/[0.08] hover:border-white/20"
-                }`}
-              >
+            {/* Didactic Card: Apontamento DNS do Endpoint P2P (Exibir apenas para instalação soberana) */}
+            {isSovereignInstallation && (
+              <div className="max-w-2xl mx-auto">
                 <div
-                  onClick={() => setShowP2pDnsCard(!showP2pDnsCard)}
-                  className="p-4 sm:p-5 flex items-center justify-between cursor-pointer select-none"
+                  className={`rounded-2xl border transition-all duration-200 overflow-hidden ${
+                    showP2pDnsCard
+                      ? "bg-[#100c14] border-blue-500/40 shadow-xl shadow-blue-950/30"
+                      : "bg-white/[0.02] border-white/[0.08] hover:border-white/20"
+                  }`}
                 >
-                  <div className="flex items-center gap-3.5">
-                    <div
-                      className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition ${
-                        showP2pDnsCard
-                          ? "bg-blue-500/20 text-blue-400 border border-blue-500/30"
-                          : "bg-white/[0.04] text-neutral-400 border border-white/[0.08]"
-                      }`}
-                    >
-                      <Network className="w-5 h-5" />
-                    </div>
-                    <div className="text-left">
-                      <div className="text-xs sm:text-sm font-bold text-white flex items-center gap-2 flex-wrap">
-                        <span>Configuração DNS do Endpoint P2P (Inbound)</span>
-                        <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-300 border border-blue-500/30">
-                          Recomendado para Máquinas Autônomas
-                        </span>
+                  <div
+                    onClick={() => setShowP2pDnsCard(!showP2pDnsCard)}
+                    className="p-4 sm:p-5 flex items-center justify-between cursor-pointer select-none"
+                  >
+                    <div className="flex items-center gap-3.5">
+                      <div
+                        className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition ${
+                          showP2pDnsCard
+                            ? "bg-blue-500/20 text-blue-400 border border-blue-500/30"
+                            : "bg-white/[0.04] text-neutral-400 border border-white/[0.08]"
+                        }`}
+                      >
+                        <Network className="w-5 h-5" />
                       </div>
-                      <div className="text-[11px] text-neutral-400 mt-0.5">
-                        {showP2pDnsCard
-                          ? "Permite que outras máquinas e nós da rede MAIVW enviem despachos diretamente para seu servidor"
-                          : "Clique para visualizar como apontar o subdomínio mw-p2p no seu provedor DNS"}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="shrink-0 ml-3">
-                    {showP2pDnsCard ? (
-                      <ChevronUp className="w-5 h-5 text-neutral-300" />
-                    ) : (
-                      <ChevronDown className="w-5 h-5 text-neutral-500" />
-                    )}
-                  </div>
-                </div>
-
-                {showP2pDnsCard && (
-                  <div className="p-4 sm:p-6 border-t border-white/[0.06] bg-[#08050c] space-y-4 text-left">
-                    <p className="text-xs text-neutral-300 leading-relaxed">
-                      Se você configurou o endpoint como <span className="font-mono text-blue-300 font-semibold">{onChainData?.endpointUrl || p2pEndpoint || `https://mw-p2p.${domainName}/api/v1/inbox`}</span>, crie o seguinte apontamento no DNS do seu domínio:
-                    </p>
-
-                    <div className="p-3.5 bg-black/60 border border-white/[0.08] rounded-xl space-y-2">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30 font-mono text-[11px] font-bold">
-                            CNAME ou A
+                      <div className="text-left">
+                        <div className="text-xs sm:text-sm font-bold text-white flex items-center gap-2 flex-wrap">
+                          <span>Configuração DNS do Endpoint P2P (Inbound)</span>
+                          <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-300 border border-blue-500/30">
+                            Recomendado para Máquinas Autônomas
                           </span>
-                          <span className="text-xs font-semibold text-white">Subdomínio Inbound P2P</span>
                         </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
-                        <div className="sm:col-span-1">
-                          <span className="text-[10px] text-neutral-500 block mb-0.5">Host / Subdomínio:</span>
-                          <div className="flex items-center justify-between p-2 bg-white/[0.02] border border-white/[0.06] rounded-lg font-mono text-neutral-200 text-[11px]">
-                            <span>mw-p2p</span>
-                            <button
-                              type="button"
-                              onClick={() => copyToClipboard("mw-p2p", "p2p_host")}
-                              className="p-1 hover:text-white transition cursor-pointer"
-                              title="Copiar host"
-                            >
-                              {copiedKey === "p2p_host" ? (
-                                <Check className="w-3.5 h-3.5 text-emerald-400" />
-                              ) : (
-                                <Copy className="w-3.5 h-3.5" />
-                              )}
-                            </button>
-                          </div>
-                        </div>
-                        <div className="sm:col-span-2">
-                          <span className="text-[10px] text-neutral-500 block mb-0.5">Destino / Servidor da sua Máquina:</span>
-                          <div className="p-2 bg-white/[0.02] border border-blue-500/30 rounded-lg font-mono text-blue-300 text-[11px]">
-                            <span>IP público da máquina (registro A) ou CNAME apontando para seu hostname</span>
-                          </div>
+                        <div className="text-[11px] text-neutral-400 mt-0.5">
+                          {showP2pDnsCard
+                            ? "Permite que outras máquinas e nós da rede MAIVW enviem despachos diretamente para seu servidor"
+                            : "Clique para visualizar como apontar o subdomínio mw-p2p no seu provedor DNS"}
                         </div>
                       </div>
                     </div>
 
-                    <div className="p-3 bg-white/[0.02] border border-white/[0.06] rounded-xl text-[11px] text-neutral-400 leading-relaxed">
-                      💡 <b>Comunicação P2P:</b> Ao receber mensagens assinadas de outros nós, seu Gateway local valida a assinatura ECDSA on-chain do remetente e armazena na sua Inbox.
+                    <div className="shrink-0 ml-3">
+                      {showP2pDnsCard ? (
+                        <ChevronUp className="w-5 h-5 text-neutral-300" />
+                      ) : (
+                        <ChevronDown className="w-5 h-5 text-neutral-500" />
+                      )}
                     </div>
                   </div>
-                )}
+
+                  {showP2pDnsCard && (
+                    <div className="p-4 sm:p-6 border-t border-white/[0.06] bg-[#08050c] space-y-4 text-left">
+                      <p className="text-xs text-neutral-300 leading-relaxed">
+                        Se você configurou o endpoint como <span className="font-mono text-blue-300 font-semibold">{onChainData?.endpointUrl || p2pEndpoint || `https://mw-p2p.${domainName}/api/v1/inbox`}</span>, crie o seguinte apontamento no DNS do seu domínio:
+                      </p>
+
+                      <div className="p-3.5 bg-black/60 border border-white/[0.08] rounded-xl space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30 font-mono text-[11px] font-bold">
+                              CNAME ou A
+                            </span>
+                            <span className="text-xs font-semibold text-white">Subdomínio Inbound P2P</span>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                          <div className="sm:col-span-1">
+                            <span className="text-[10px] text-neutral-500 block mb-0.5">Host / Subdomínio:</span>
+                            <div className="flex items-center justify-between p-2 bg-white/[0.02] border border-white/[0.06] rounded-lg font-mono text-neutral-200 text-[11px]">
+                              <span>mw-p2p</span>
+                              <button
+                                type="button"
+                                onClick={() => copyToClipboard("mw-p2p", "p2p_host")}
+                                className="p-1 hover:text-white transition cursor-pointer"
+                                title="Copiar host"
+                              >
+                                {copiedKey === "p2p_host" ? (
+                                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                ) : (
+                                  <Copy className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                          <div className="sm:col-span-2">
+                            <span className="text-[10px] text-neutral-500 block mb-0.5">Destino / Servidor da sua Máquina:</span>
+                            <div className="p-2 bg-white/[0.02] border border-blue-500/30 rounded-lg font-mono text-blue-300 text-[11px]">
+                              <span>IP público da máquina (registro A) ou CNAME apontando para seu hostname</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="p-3 bg-white/[0.02] border border-white/[0.06] rounded-xl text-[11px] text-neutral-400 leading-relaxed">
+                        💡 <b>Comunicação P2P:</b> Ao receber mensagens assinadas de outros nós, seu Gateway local valida a assinatura ECDSA on-chain do remetente e armazena na sua Inbox.
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Optional Card: Registros DNS para Roteamento de E-mail */}
             <div className="max-w-2xl mx-auto">
