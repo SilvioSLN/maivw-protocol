@@ -204,14 +204,14 @@ function AdminConsole() {
 
   // Tab 4: Multi-Chain & Espelhamento Opcional
   interface MultiChainNetwork {
-    id: number;
+    id: number | string;
     name: string;
     symbol: string;
     isPrimary: boolean;
     rpcUrl?: string;
     contractAddress?: string | null;
     mirrorFeeFormatted: string;
-    mirrorFeeWei: string;
+    mirrorFeeWei?: string;
     explorerUrl?: string;
     status: "ACTIVE_PRIMARY" | "MIRRORED" | "NOT_MIRRORED" | "INACTIVE";
     isActive: boolean;
@@ -222,17 +222,19 @@ function AdminConsole() {
     success: boolean;
     domain: string;
     isPrimaryActive: boolean;
+    originChain?: string;
     mirrorInfo?: {
       isMirror: boolean;
-      originChainId: number;
+      originChainId: number | string;
       mirroredAt: number;
     };
     networks: MultiChainNetwork[];
   }
 
+  const [onchainSubTab, setOnchainSubTab] = useState<"overview" | "multichain" | "security" | "governance">("overview");
   const [multiChainData, setMultiChainData] = useState<MultiChainStatusData | null>(null);
   const [isLoadingMultiChain, setIsLoadingMultiChain] = useState<boolean>(false);
-  const [attestingChainId, setAttestingChainId] = useState<number | null>(null);
+  const [attestingChainId, setAttestingChainId] = useState<number | string | null>(null);
   const [mirrorModalData, setMirrorModalData] = useState<{
     targetNetworkName: string;
     txHash: string;
@@ -711,7 +713,7 @@ function AdminConsole() {
     }
   };
 
-  const handleActivateMirror = async (targetChainId: number) => {
+  const handleActivateMirror = async (targetChainId: number | string) => {
     if (!currentDomain) return;
     setAttestingChainId(targetChainId);
     setMirrorError(null);
@@ -1664,9 +1666,9 @@ function AdminConsole() {
                 </div>
                 <div className="text-sm font-bold text-white flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  <span>Base Sepolia (Chain ID 84532)</span>
+                  <span>Multi-Chain Protocol Registry</span>
                 </div>
-                <div className="text-[11px] text-neutral-500 mt-1">Contrato 0x5248...7eBF</div>
+                <div className="text-[11px] text-neutral-500 mt-1">Solana Devnet &amp; Redes EVM</div>
               </div>
             </div>
 
@@ -1712,8 +1714,12 @@ function AdminConsole() {
                           </div>
                         </div>
 
-                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 text-[10px] font-bold shrink-0">
-                          On-Chain
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${
+                          dom.originFamily === "SOLANA"
+                            ? "bg-purple-500/10 text-purple-400 border border-purple-500/25"
+                            : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/25"
+                        }`}>
+                          {dom.originNetworkName || (dom.originFamily === "SOLANA" ? "Solana Devnet" : "Base Sepolia")}
                         </span>
                       </div>
 
@@ -1781,9 +1787,17 @@ function AdminConsole() {
                   <h1 className="text-2xl font-bold tracking-tight text-white font-mono">
                     {currentDomain.domainName}
                   </h1>
-                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold">
-                    Ativo na Base Sepolia
-                  </span>
+                  {currentDomain.originFamily === "SOLANA" ? (
+                    <span className="px-2.5 py-0.5 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/30 text-[10px] font-bold flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
+                      Ativo na Solana Devnet
+                    </span>
+                  ) : (
+                    <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      {currentDomain.originNetworkName || "Ativo na Base Sepolia"}
+                    </span>
+                  )}
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3 text-xs text-neutral-400 mt-1.5">
@@ -1867,7 +1881,16 @@ function AdminConsole() {
                 }`}
               >
                 <ShieldCheck className="w-3.5 h-3.5" />
-                <span>Cartório & Base Sepolia</span>
+                <span>Cartório On-Chain</span>
+                {currentDomain?.originFamily === "SOLANA" ? (
+                  <span className="px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 text-[10px] font-bold">
+                    Solana
+                  </span>
+                ) : (
+                  <span className="px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-300 text-[10px] font-bold">
+                    Base
+                  </span>
+                )}
               </button>
 
               <button
@@ -2620,247 +2643,12 @@ print(res.json())`}
             )}
 
             {/* ========================================================== */}
-            {/* TAB 4: CARTÓRIO & BASE SEPOLIA                             */}
+            {/* ========================================================== */}
+            {/* TAB 4: CARTÓRIO ON-CHAIN                                   */}
             {/* ========================================================== */}
             {activeTab === "onchain" && (
-              <div className="space-y-6 max-w-3xl">
-                <div className="bg-[#0f0a0a]/90 border border-white/[0.08] rounded-3xl p-6 md:p-8 shadow-xl space-y-6">
-                  <div className="flex items-center justify-between pb-4 border-b border-white/[0.06]">
-                    <div>
-                      <h3 className="text-base font-bold text-white flex items-center gap-2">
-                        <ShieldCheck className="w-5 h-5 text-emerald-400" />
-                        <span>Atestado no Cartório Descentralizado</span>
-                      </h3>
-                      <p className="text-xs text-neutral-400 mt-1">
-                        A titularidade deste domínio foi comprovada via DNS TXT e ancorada na blockchain.
-                      </p>
-                    </div>
-
-                    <a
-                      href={`https://sepolia.basescan.org/address/${process.env.NEXT_PUBLIC_REGISTRY_CONTRACT_ADDRESS || "0x0000000000000000000000000000000000000000"}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="px-3 py-1.5 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-blue-300 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition"
-                    >
-                      <span>Ver Contrato no BaseScan</span>
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </a>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                    <div className="p-4 bg-black/40 border border-white/[0.06] rounded-2xl">
-                      <span className="text-neutral-400 block text-[11px] mb-1">Rede Blockchain:</span>
-                      <span className="font-bold text-white">Base Sepolia (Chain ID 84532)</span>
-                    </div>
-
-                    <div className="p-4 bg-black/40 border border-white/[0.06] rounded-2xl">
-                      <span className="text-neutral-400 block text-[11px] mb-1">Score de Reputação:</span>
-                      <span className="font-bold text-emerald-400">100 / 100 (Impecável)</span>
-                    </div>
-
-                    <div className="p-4 bg-black/40 border border-white/[0.06] rounded-2xl sm:col-span-2">
-                      <span className="text-neutral-400 block text-[11px] mb-1">Chave Pública da Carteira (KMS):</span>
-                      <div className="flex items-center justify-between font-mono text-neutral-200">
-                        <span className="truncate">{currentDomain.publicKey || "0x59c6995e998f97a5a0044966f0945389dc9e86da"}</span>
-                        <button
-                          type="button"
-                          onClick={() => copyToClipboard(currentDomain.publicKey || "0x59c6995e998f97a5a0044966f0945389dc9e86da", "wallet_key")}
-                          className="p-1 hover:text-white transition ml-2"
-                        >
-                          {copiedKey === "wallet_key" ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Card de Presença Multi-Chain & Espelhamento Opcional */}
-                <div className="bg-[#0f0a0a]/90 border border-white/[0.08] rounded-3xl p-6 md:p-8 shadow-xl space-y-6">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-white/[0.06] gap-4">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <Network className="w-5 h-5 text-blue-400" />
-                        <h3 className="text-base font-bold text-white">
-                          Presença Multi-Chain &amp; Espelhamento de Domínio
-                        </h3>
-                        <span className="px-2.5 py-0.5 text-[11px] font-bold tracking-wide rounded-md bg-blue-500/20 text-blue-300 border border-blue-500/30">
-                          EVM Cross-Ledger
-                        </span>
-                      </div>
-                      <p className="text-xs text-neutral-400 mt-1">
-                        Espelhe seu domínio em múltiplas redes EVM. Gateways em outras blockchains verificarão suas mensagens nativamente sem depender de pontes ou DNS.
-                      </p>
-                    </div>
-
-                    <div className="flex gap-2">
-                    <Link href="/admin/multichain" className="px-3.5 py-1.5 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-blue-300 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition">
-                      <Network className="w-3.5 h-3.5" /> Novo painel
-                    </Link>
-                    <button
-                      type="button"
-                      onClick={() => currentDomain && loadMultiChainStatus(currentDomain.domainName)}
-                      disabled={isLoadingMultiChain}
-                      className="px-3.5 py-1.5 bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.1] text-neutral-300 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer self-start sm:self-auto"
-                    >
-                      <RefreshCw className={`w-3.5 h-3.5 ${isLoadingMultiChain ? "animate-spin text-blue-400" : ""}`} />
-                      <span>Atualizar Redes</span>
-                    </button>
-                    </div>
-                  </div>
-
-                  {mirrorError && (
-                    <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/25 rounded-xl text-xs text-red-300">
-                      <AlertCircle className="w-4 h-4 shrink-0" />
-                      <span>{mirrorError}</span>
-                    </div>
-                  )}
-
-                  {/* Redes Suportadas */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {(multiChainData?.networks || [
-                      {
-                        id: 84532,
-                        name: "Base Sepolia",
-                        symbol: "ETH",
-                        isPrimary: true,
-                        mirrorFeeFormatted: "0.003 ETH",
-                        status: "ACTIVE_PRIMARY",
-                        isActive: true,
-                        isOrigin: true,
-                      },
-                      {
-                        id: 421614,
-                        name: "Arbitrum Sepolia",
-                        symbol: "ETH",
-                        isPrimary: false,
-                        mirrorFeeFormatted: "0.003 ETH",
-                        status: "NOT_MIRRORED",
-                        isActive: false,
-                        isOrigin: false,
-                      },
-                      {
-                        id: 80002,
-                        name: "Polygon Amoy",
-                        symbol: "POL",
-                        isPrimary: false,
-                        mirrorFeeFormatted: "25 POL",
-                        status: "NOT_MIRRORED",
-                        isActive: false,
-                        isOrigin: false,
-                      },
-                    ]).map((net: any) => {
-                      const isOrigin = net.isOrigin || (net.isPrimary && !net.status?.includes("MIRRORED"));
-                      const isMirrored = net.status === "MIRRORED";
-                      const isPending = attestingChainId === net.id;
-
-                      return (
-                        <div
-                          key={net.id}
-                          className={`p-4 rounded-2xl border flex flex-col justify-between transition-all ${
-                            isOrigin
-                              ? "bg-emerald-950/20 border-emerald-500/40"
-                              : isMirrored
-                              ? "bg-blue-950/20 border-blue-500/40"
-                              : "bg-black/40 border-white/[0.06] hover:border-white/20"
-                          }`}
-                        >
-                          <div>
-                            <div className="flex items-center justify-between mb-2">
-                              <span className="font-bold text-white text-xs">{net.name}</span>
-                              {isOrigin ? (
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                                  Origem
-                                </span>
-                              ) : isMirrored ? (
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/20 text-blue-400 border border-blue-500/30 flex items-center gap-1">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
-                                  Espelhado
-                                </span>
-                              ) : (
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/[0.06] text-neutral-400 border border-white/[0.08]">
-                                  Disponível
-                                </span>
-                              )}
-                            </div>
-
-                            <p className="text-[11px] text-neutral-400 mb-3">
-                              {net.id === 84532
-                                ? "L2 Coinbase • Ancoragem Primária do protocolo MAIVW."
-                                : net.id === 421614
-                                ? "L2 Arbitrum Nitro • Alta velocidade para DeFi e finanças."
-                                : "PoS & AggLayer • Compatibilidade com ecossistema Polygon."}
-                            </p>
-
-                            <div className="text-[11px] space-y-1 py-2 border-t border-white/[0.04]">
-                              <div className="flex justify-between text-neutral-400">
-                                <span>Chain ID:</span>
-                                <span className="font-mono text-neutral-300 font-semibold">{net.id}</span>
-                              </div>
-                              <div className="flex justify-between text-neutral-400">
-                                <span>Taxa de Espelhamento:</span>
-                                <span className="font-mono text-amber-400 font-semibold">
-                                  {net.mirrorFeeFormatted} (~$10)
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="pt-3 border-t border-white/[0.06] mt-2">
-                            {isOrigin ? (
-                              <div className="text-[11px] text-emerald-400 font-semibold flex items-center justify-center gap-1 py-1">
-                                <ShieldCheck className="w-3.5 h-3.5" />
-                                <span>Identidade Primária Ativa</span>
-                              </div>
-                            ) : isMirrored ? (
-                              <div className="text-[11px] text-blue-400 font-semibold flex items-center justify-center gap-1 py-1">
-                                <CheckCircle2 className="w-3.5 h-3.5" />
-                                <span>Espelho Ativo &amp; Sincronizado</span>
-                              </div>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => handleOpenMirrorPayment(net)}
-                                disabled={isPending || isLoadingMultiChain}
-                                className="w-full py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-blue-950/50 flex items-center justify-center gap-1.5 transition cursor-pointer active:scale-95 disabled:opacity-50"
-                              >
-                                {isPending ? (
-                                  <>
-                                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                                    <span>Atestando no Oráculo...</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <Zap className="w-3.5 h-3.5" />
-                                    <span>Ativar Espelho ($10)</span>
-                                  </>
-                                )}
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Informações Regulatórias e Econômicas */}
-                  <div className="p-4 bg-black/40 border border-white/[0.06] rounded-2xl space-y-2 text-xs">
-                    <div className="flex items-start gap-2 text-neutral-300">
-                      <Shield className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
-                      <div>
-                        <strong className="text-white">Slashing Unificado em Todas as Redes:</strong> Em caso de violação grave de conteúdo (spam/spoofing) comprovada pelo Oráculo, o domínio é banido na cadeia de origem e todas as suas instâncias espelhadas são sumariamente desativadas via chamada autorizada on-chain.
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-2 text-neutral-300 pt-1 border-t border-white/[0.04]">
-                      <Coins className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                      <div>
-                        <strong className="text-white">Taxa 100% Repassada ao Oráculo:</strong> O valor de $10 USD (0.003 ETH ou 25 POL) é transferido integral e diretamente à carteira do Nó Validador pelo smart contract para cobrir atestação criptográfica e custos operacionais multi-chain.
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Alerta Nuclear de Suspensão por Saldo Esgotado */}
+              <div className="space-y-6">
+                {/* Alerta Nuclear de Suspensão por Strikes / Saldo Esgotado */}
                 {domainEconomics?.isSuspended && (
                   <div className="bg-red-950/40 border border-red-500/50 rounded-3xl p-6 shadow-2xl space-y-4">
                     <div className="flex items-start justify-between gap-4">
@@ -2871,7 +2659,7 @@ print(res.json())`}
                             🚨 Domínio Suspenso pela Rede (Nuclear Option Ativado)
                           </h4>
                           <p className="text-xs text-neutral-300 mt-1 leading-relaxed">
-                            O saldo de caução atingiu zero após strikes de violação de handshake semântico/spam. Novos disparos P2P e SMTP estão temporariamente bloqueados pelo Gateway para proteção da reputação da rede MAIVW.
+                            O domínio acumulou infrações críticas ou saldo de caução esgotado por strikes de spam/violação de handshake semântico. Novos disparos P2P e SMTP estão temporariamente bloqueados pelo Gateway para proteção da reputação da rede MAIVW.
                           </p>
                         </div>
                       </div>
@@ -2887,578 +2675,1137 @@ print(res.json())`}
                   </div>
                 )}
 
-                {/* Card de Governança Econômica & Consumable Buffer (Fase 13) */}
-                <div className="bg-[#0f0a0a]/90 border border-white/[0.08] rounded-3xl p-6 md:p-8 shadow-xl space-y-6">
-                  <div className="flex items-center justify-between pb-4 border-b border-white/[0.06]">
-                    <div>
-                      <h3 className="text-base font-bold text-white flex items-center gap-2">
-                        <Coins className="w-5 h-5 text-amber-400" />
-                        <span>Modelo de Governança &amp; Tiers (Fase 13)</span>
-                      </h3>
-                      <p className="text-xs text-neutral-400 mt-1">
-                        Parâmetros econômicos de stake, rate limit diário e buffer consumível contra spam.
-                      </p>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => setIsTopUpOpen(true)}
-                      className="px-3.5 py-1.5 bg-[#7d0000]/20 hover:bg-[#7d0000]/40 border border-[#7d0000]/40 text-red-300 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>Recarregar Saldo</span>
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                    <div className="p-4 bg-black/40 border border-white/[0.06] rounded-2xl">
-                      <span className="text-neutral-400 block text-[11px] mb-1">Tier Operacional:</span>
-                      <span className="font-bold text-white">
-                        {domainEconomics
-                          ? domainEconomics.tier === 1
-                            ? "Tier 1: Startup SaaS (50k msgs/dia)"
-                            : domainEconomics.tier === 2
-                            ? "Tier 2: Growth ESP (1M msgs/dia)"
-                            : domainEconomics.tier === 3
-                            ? "Tier 3: Enterprise (Ilimitado)"
-                            : "Domínio Standard"
-                          : "Consultando Tier..."}
+                {/* Container Principal: Menu Lateral (Desktop) + Conteúdo */}
+                <div className="flex flex-col lg:flex-row gap-6 items-start">
+                  {/* Menu Lateral / Mobile Scrollable Pills */}
+                  <div className="w-full lg:w-64 shrink-0 bg-[#0f0a0a]/90 border border-white/[0.08] rounded-3xl p-3 shadow-xl">
+                    <div className="px-3 py-2 border-b border-white/[0.06] mb-2 hidden lg:block">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-400">
+                        Configurações do Cartório
                       </span>
                     </div>
 
-                    <div className="p-4 bg-black/40 border border-white/[0.06] rounded-2xl">
-                      <span className="text-neutral-400 block text-[11px] mb-1">Saldo de Caução (Buffer):</span>
-                      <span className="font-bold text-amber-400 font-mono">
-                        {domainEconomics
-                          ? `${(Number(BigInt(domainEconomics.balanceWei || "0") / BigInt("1000000000000000")) / 1000).toFixed(3)} ETH`
-                          : "—"}
-                      </span>
-                    </div>
-
-                    <div className="p-4 bg-black/40 border border-white/[0.06] rounded-2xl">
-                      <span className="text-neutral-400 block text-[11px] mb-1">Limite Diário de Disparo:</span>
-                      <span className="font-bold text-white">
-                        {domainEconomics
-                          ? typeof domainEconomics.dailyLimit === "number"
-                            ? `${domainEconomics.dailyLimit.toLocaleString()} mensagens/dia`
-                            : domainEconomics.dailyLimit
-                          : "10.000 msgs/dia (Padrão)"}
-                      </span>
-                    </div>
-
-                    <div className="p-4 bg-black/40 border border-white/[0.06] rounded-2xl">
-                      <span className="text-neutral-400 block text-[11px] mb-1">Infrações / Strikes Ativos:</span>
-                      <span className="font-bold text-neutral-200">
-                        {domainEconomics ? `${domainEconomics.strikeCount} strikes sofridos` : "0 strikes"}
-                        <span className="text-[10px] text-neutral-400 font-normal ml-1">(@ $50/strike)</span>
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* ========================================================== */}
-                {/* 1. BANNER CONSOLIDADO DE POSTURA DE SEGURANÇA              */}
-                {/* ========================================================== */}
-                <div className="bg-[#0f0a0a]/90 border border-white/[0.08] rounded-3xl p-6 md:p-8 shadow-xl space-y-6 relative overflow-hidden">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-white/[0.06] gap-4">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <Shield className="w-5 h-5 text-indigo-400" />
-                        <h3 className="text-base font-bold text-white">
-                          Postura de Segurança &amp; Roteamento do Domínio
-                        </h3>
-                        {securityMode === "public" && (
-                          <span className="px-2.5 py-0.5 text-[11px] font-bold tracking-wide rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                            Nível 1: Clear Web (Público)
-                          </span>
-                        )}
-                        {securityMode === "hybrid" && (
-                          <span className="px-2.5 py-0.5 text-[11px] font-bold tracking-wide rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                            ⚡ Modo Híbrido (Dual-Stack)
-                          </span>
-                        )}
-                        {securityMode === "dark" && (
-                          <span className="px-2.5 py-0.5 text-[11px] font-bold tracking-wide rounded-md bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                            🛡️ Modo Dark Total (Nível 3/4)
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-neutral-400 mt-1">
-                        Diagnóstico em tempo real da visibilidade na blockchain, camuflagem contra varreduras de portas e herança de subdomínios.
-                      </p>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] text-neutral-500">Status Ativo:</span>
-                      <span className="flex items-center gap-1.5 text-xs font-semibold text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">
-                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                        Sincronizado
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Semáforo / Diagnóstico de 3 Pilares */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                    <div className="p-4 bg-black/40 border border-white/[0.06] rounded-2xl">
-                      <span className="text-neutral-400 block text-[11px] mb-1">1. Visibilidade na Blockchain:</span>
-                      <div className="font-bold text-white flex items-center gap-1.5">
-                        {securityMode === "dark" ? (
-                          <>
-                            <Lock className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-                            <span className="text-purple-300">Oculto ("PRIVATE")</span>
-                          </>
-                        ) : (
-                          <>
-                            <Globe className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                            <span className="text-emerald-300 truncate" title={editingEndpoint}>{editingEndpoint || "https://..."}</span>
-                          </>
-                        )}
-                      </div>
-                      <p className="text-[10px] text-neutral-500 mt-1">
-                        {securityMode === "dark" ? "Nenhum IP ou URL exposto publicamente." : "Endpoint acessível via resolução on-chain."}
-                      </p>
-                    </div>
-
-                    <div className="p-4 bg-black/40 border border-white/[0.06] rounded-2xl">
-                      <span className="text-neutral-400 block text-[11px] mb-1">2. Camuflagem do Gateway (Inbound):</span>
-                      <div className="font-bold text-white flex items-center gap-1.5">
-                        {securityMode === "dark" ? (
-                          <>
-                            <ShieldAlert className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-                            <span className="text-purple-300">Silent Drop 404 Estrito</span>
-                          </>
-                        ) : securityMode === "hybrid" ? (
-                          <>
-                            <Zap className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                            <span className="text-amber-300">Porta Dupla (Público + VIP)</span>
-                          </>
-                        ) : (
-                          <>
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                            <span className="text-emerald-300">Recepção P2P Aberta</span>
-                          </>
-                        )}
-                      </div>
-                      <p className="text-[10px] text-neutral-500 mt-1">
-                        {securityMode === "dark"
-                          ? "Scanners e curiosos recebem 404 Not Found."
-                          : securityMode === "hybrid"
-                          ? "Clientes usam web aberta; bancos usam token VIP."
-                          : "Qualquer participante MAIVW pode entregar."}
-                      </p>
-                    </div>
-
-                    <div className="p-4 bg-black/40 border border-white/[0.06] rounded-2xl">
-                      <span className="text-neutral-400 block text-[11px] mb-1">3. Herança de Subdomínios:</span>
-                      <div className="font-bold text-white flex items-center gap-1.5">
-                        <Layers className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                        <span className="text-blue-300">Herança Wildcard Ativa</span>
-                      </div>
-                      <p className="text-[10px] text-neutral-500 mt-1">
-                        E-mails como <code className="text-neutral-400">@*.{currentDomain?.domainName || "dominio"}</code> herdam estas regras sem custo extra.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* ========================================================== */}
-                {/* 2. PAINEL DE CONFIGURAÇÃO DE RECEPÇÃO (INBOUND)            */}
-                {/* ========================================================== */}
-                <div className="bg-[#0f0a0a]/90 border border-white/[0.08] rounded-3xl p-6 md:p-8 shadow-xl space-y-6">
-                  <div className="pb-4 border-b border-white/[0.06]">
-                    <h3 className="text-base font-bold text-white flex items-center gap-2">
-                      <Lock className="w-5 h-5 text-indigo-400" />
-                      <span>Recepção de E-mails (Inbound): Escolha o Modo de Operação</span>
-                    </h3>
-                    <p className="text-xs text-neutral-400 mt-1">
-                      Selecione como outros participantes da rede localizam e entregam mensagens para este domínio.
-                    </p>
-                  </div>
-
-                  {/* 3 PRESETS CLICÁVEIS */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {/* Card Preset 1: Público */}
-                    <div
-                      onClick={() => setSecurityMode("public")}
-                      className={`p-4 rounded-2xl border cursor-pointer transition-all duration-200 ${
-                        securityMode === "public"
-                          ? "bg-emerald-950/30 border-emerald-500/50 shadow-lg shadow-emerald-950/50 ring-1 ring-emerald-500/50"
-                          : "bg-black/30 border-white/[0.06] hover:border-white/20 hover:bg-white/[0.02]"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <Globe className={`w-4 h-4 ${securityMode === "public" ? "text-emerald-400" : "text-neutral-400"}`} />
-                          <h4 className="text-xs font-bold text-white">1. Modo Público</h4>
+                    <div className="flex lg:flex-col gap-1.5 overflow-x-auto lg:overflow-visible pb-1 lg:pb-0 scrollbar-none">
+                      {/* Sub-tab 1: Visão Geral */}
+                      <button
+                        type="button"
+                        onClick={() => setOnchainSubTab("overview")}
+                        className={`w-full text-left px-3.5 py-3 rounded-2xl text-xs font-semibold transition flex items-center justify-between cursor-pointer whitespace-nowrap ${
+                          onchainSubTab === "overview"
+                            ? "bg-[#7d0000] text-white shadow-lg shadow-red-950/40"
+                            : "text-neutral-400 hover:text-white hover:bg-white/[0.04]"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <ShieldCheck className="w-4 h-4 shrink-0 text-emerald-400" />
+                          <span>Visão Geral</span>
                         </div>
-                        <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${securityMode === "public" ? "border-emerald-400 bg-emerald-400/20" : "border-neutral-600"}`}>
-                          {securityMode === "public" && <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />}
-                        </div>
-                      </div>
-                      <p className="text-[11px] text-neutral-400 leading-relaxed">
-                        Endpoint HTTPS publicado abertamente no Cartório. Ideal para empresas comerciais, e-commerces e SaaS.
-                      </p>
-                      <div className="mt-3 text-[10px] font-semibold text-emerald-400">
-                        Nível 1 — Clear Web P2P
-                      </div>
-                    </div>
+                        <span
+                          className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                            onchainSubTab === "overview"
+                              ? "bg-white/20 text-white"
+                              : "bg-white/[0.06] text-neutral-400"
+                          }`}
+                        >
+                          {currentDomain.originFamily === "SOLANA" ? "Solana" : "Base"}
+                        </span>
+                      </button>
 
-                    {/* Card Preset 2: Híbrido */}
-                    <div
-                      onClick={() => setSecurityMode("hybrid")}
-                      className={`p-4 rounded-2xl border cursor-pointer transition-all duration-200 ${
-                        securityMode === "hybrid"
-                          ? "bg-amber-950/30 border-amber-500/50 shadow-lg shadow-amber-950/50 ring-1 ring-amber-500/50"
-                          : "bg-black/30 border-white/[0.06] hover:border-white/20 hover:bg-white/[0.02]"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <Zap className={`w-4 h-4 ${securityMode === "hybrid" ? "text-amber-400" : "text-neutral-400"}`} />
-                          <h4 className="text-xs font-bold text-white">2. Modo Híbrido</h4>
+                      {/* Sub-tab 2: Presença Multi-Chain */}
+                      <button
+                        type="button"
+                        onClick={() => setOnchainSubTab("multichain")}
+                        className={`w-full text-left px-3.5 py-3 rounded-2xl text-xs font-semibold transition flex items-center justify-between cursor-pointer whitespace-nowrap ${
+                          onchainSubTab === "multichain"
+                            ? "bg-[#7d0000] text-white shadow-lg shadow-red-950/40"
+                            : "text-neutral-400 hover:text-white hover:bg-white/[0.04]"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <Network className="w-4 h-4 shrink-0 text-blue-400" />
+                          <span>Multi-Chain</span>
                         </div>
-                        <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${securityMode === "hybrid" ? "border-amber-400 bg-amber-400/20" : "border-neutral-600"}`}>
-                          {securityMode === "hybrid" && <div className="w-1.5 h-1.5 rounded-full bg-amber-400" />}
-                        </div>
-                      </div>
-                      <p className="text-[11px] text-neutral-400 leading-relaxed">
-                        Dual-Stack: Recebe tráfego público de clientes e disponibiliza canal camuflado com Token VIP para bancos.
-                      </p>
-                      <div className="mt-3 text-[10px] font-semibold text-amber-400">
-                        Nível 1 (Público) + Nível 3 (VIP)
-                      </div>
-                    </div>
+                        <span
+                          className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                            onchainSubTab === "multichain"
+                              ? "bg-white/20 text-white"
+                              : "bg-white/[0.06] text-neutral-400"
+                          }`}
+                        >
+                          Cross-Ledger
+                        </span>
+                      </button>
 
-                    {/* Card Preset 3: Dark Total */}
-                    <div
-                      onClick={() => setSecurityMode("dark")}
-                      className={`p-4 rounded-2xl border cursor-pointer transition-all duration-200 ${
-                        securityMode === "dark"
-                          ? "bg-purple-950/30 border-purple-500/50 shadow-lg shadow-purple-950/50 ring-1 ring-purple-500/50"
-                          : "bg-black/30 border-white/[0.06] hover:border-white/20 hover:bg-white/[0.02]"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <Lock className={`w-4 h-4 ${securityMode === "dark" ? "text-purple-400" : "text-neutral-400"}`} />
-                          <h4 className="text-xs font-bold text-white">3. Modo Dark Total</h4>
+                      {/* Sub-tab 3: Segurança & Inbound */}
+                      <button
+                        type="button"
+                        onClick={() => setOnchainSubTab("security")}
+                        className={`w-full text-left px-3.5 py-3 rounded-2xl text-xs font-semibold transition flex items-center justify-between cursor-pointer whitespace-nowrap ${
+                          onchainSubTab === "security"
+                            ? "bg-[#7d0000] text-white shadow-lg shadow-red-950/40"
+                            : "text-neutral-400 hover:text-white hover:bg-white/[0.04]"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <Shield className="w-4 h-4 shrink-0 text-indigo-400" />
+                          <span>Segurança &amp; Inbound</span>
                         </div>
-                        <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${securityMode === "dark" ? "border-purple-400 bg-purple-400/20" : "border-neutral-600"}`}>
-                          {securityMode === "dark" && <div className="w-1.5 h-1.5 rounded-full bg-purple-400" />}
+                        <span
+                          className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                            onchainSubTab === "security"
+                              ? "bg-white/20 text-white"
+                              : "bg-white/[0.06] text-neutral-400"
+                          }`}
+                        >
+                          Presets P2P
+                        </span>
+                      </button>
+
+                      {/* Sub-tab 4: Governança & Tiers */}
+                      <button
+                        type="button"
+                        onClick={() => setOnchainSubTab("governance")}
+                        className={`w-full text-left px-3.5 py-3 rounded-2xl text-xs font-semibold transition flex items-center justify-between cursor-pointer whitespace-nowrap ${
+                          onchainSubTab === "governance"
+                            ? "bg-[#7d0000] text-white shadow-lg shadow-red-950/40"
+                            : "text-neutral-400 hover:text-white hover:bg-white/[0.04]"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <Coins className="w-4 h-4 shrink-0 text-amber-400" />
+                          <span>Governança &amp; Tiers</span>
                         </div>
-                      </div>
-                      <p className="text-[11px] text-neutral-400 leading-relaxed">
-                        Invisível na rede. Gravado como "PRIVATE" on-chain. Silent Drop 404 para quem não tiver o token pré-compartilhado.
-                      </p>
-                      <div className="mt-3 text-[10px] font-semibold text-purple-400">
-                        Nível 3 / 4 — Dark Endpoint
-                      </div>
+                        <span
+                          className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                            onchainSubTab === "governance"
+                              ? "bg-white/20 text-white"
+                              : "bg-white/[0.06] text-neutral-400"
+                          }`}
+                        >
+                          Cotas
+                        </span>
+                      </button>
                     </div>
                   </div>
 
-                  {/* FORMULÁRIO DINÂMICO UNIFICADO */}
-                  <form onSubmit={handleApplySecurityMode} className="space-y-4 pt-2">
-                    {/* Campo de URL (Para Modo Público ou Híbrido) */}
-                    {(securityMode === "public" || securityMode === "hybrid") && (
-                      <div>
-                        <label className="block text-xs font-semibold text-neutral-300 mb-1.5">
-                          URL do Endpoint Público HTTPS (On-Chain):
-                        </label>
-                        <input
-                          type="text"
-                          required
-                          value={editingEndpoint}
-                          onChange={(e) => setEditingEndpoint(e.target.value)}
-                          placeholder="https://email.seudominio.com/api/v1/inbox"
-                          className="w-full bg-black/60 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white placeholder-neutral-500 font-mono focus:outline-none focus:border-indigo-500 transition"
-                        />
-                        <p className="text-[11px] text-neutral-500 mt-1">
-                          Endereço público onde gateways e provedores MAIVW entregam mensagens para este domínio.
-                        </p>
-                      </div>
-                    )}
+                  {/* Painel de Conteúdo de cada Sub-aba */}
+                  <div className="flex-1 w-full space-y-6 min-w-0">
+                    {/* ======================================================== */}
+                    {/* SUB-TAB 1: VISÃO GERAL ON-CHAIN                          */}
+                    {/* ======================================================== */}
+                    {onchainSubTab === "overview" && (
+                      <div className="space-y-6">
+                        <div className="bg-[#0f0a0a]/90 border border-white/[0.08] rounded-3xl p-6 md:p-8 shadow-xl space-y-6">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-white/[0.06] gap-4">
+                            <div>
+                              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                                <ShieldCheck className="w-5 h-5 text-emerald-400" />
+                                <span>Atestado no Cartório Descentralizado</span>
+                              </h3>
+                              <p className="text-xs text-neutral-400 mt-1">
+                                A titularidade deste domínio foi comprovada via DNS TXT e ancorada na blockchain com prova criptográfica permanente.
+                              </p>
+                            </div>
 
-                    {/* Aviso do Modo Dark (Quando Dark) */}
-                    {securityMode === "dark" && (
-                      <div className="p-4 bg-purple-950/20 border border-purple-500/30 rounded-2xl space-y-1">
-                        <div className="flex items-center gap-2 text-xs font-bold text-purple-300">
-                          <ShieldCheck className="w-4 h-4 text-purple-400" />
-                          <span>Endereço Oculto na Blockchain</span>
-                        </div>
-                        <p className="text-[11px] text-neutral-300 leading-relaxed">
-                          Ao aplicar o Modo Dark, o registro no contrato inteligente será automaticamente atualizado para <code className="text-purple-300 font-mono">PRIVATE</code>. Nenhuma URL ou IP público será visível na blockchain.
-                        </p>
-                      </div>
-                    )}
-
-                    {/* Campo de Token de Inbound (Para Modo Híbrido ou Dark) */}
-                    {(securityMode === "hybrid" || securityMode === "dark") && (
-                      <div className="pt-2">
-                        <div className="flex items-center justify-between mb-1.5">
-                          <label className="block text-xs font-semibold text-neutral-300">
-                            {securityMode === "hybrid"
-                              ? "Token de Autenticação do Canal VIP (Opcional para tráfego restrito):"
-                              : "Token Obrigatório de Acesso Inbound (x-maivw-stealth-token):"}
-                          </label>
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={generateRandomToken}
-                              className="text-[11px] text-indigo-400 hover:text-indigo-300 transition flex items-center gap-1 cursor-pointer"
-                            >
-                              <Sparkles className="w-3 h-3" />
-                              <span>Gerar Chave Segura</span>
-                            </button>
-                            {stealthConfig.inboundToken && (
-                              <button
-                                type="button"
-                                onClick={() => copyToClipboard(stealthConfig.inboundToken, "inbound_token")}
-                                className="text-[11px] text-neutral-400 hover:text-white transition flex items-center gap-1 cursor-pointer ml-2"
+                            {currentDomain.originFamily === "SOLANA" ? (
+                              <a
+                                href={
+                                  currentDomain.explorerUrl ||
+                                  "https://explorer.solana.com/address/Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS?cluster=devnet"
+                                }
+                                target="_blank"
+                                rel="noreferrer"
+                                className="px-3.5 py-1.5 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-300 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition shrink-0 self-start sm:self-auto"
                               >
-                                {copiedKey === "inbound_token" ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                                <span>Copiar</span>
-                              </button>
+                                <span>Ver no Solana Explorer</span>
+                                <ExternalLink className="w-3.5 h-3.5" />
+                              </a>
+                            ) : (
+                              <a
+                                href={
+                                  currentDomain.explorerUrl ||
+                                  `https://sepolia.basescan.org/address/${process.env.NEXT_PUBLIC_REGISTRY_CONTRACT_ADDRESS || "0x0000000000000000000000000000000000000000"}`
+                                }
+                                target="_blank"
+                                rel="noreferrer"
+                                className="px-3.5 py-1.5 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-blue-300 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition shrink-0 self-start sm:self-auto"
+                              >
+                                <span>Ver no BaseScan</span>
+                                <ExternalLink className="w-3.5 h-3.5" />
+                              </a>
                             )}
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                            <div className="p-4 bg-black/40 border border-white/[0.06] rounded-2xl">
+                              <span className="text-neutral-400 block text-[11px] mb-1">Rede de Ancoragem (Origem):</span>
+                              <div className="flex items-center gap-2">
+                                <span className={`w-2 h-2 rounded-full ${currentDomain.originFamily === "SOLANA" ? "bg-purple-400" : "bg-emerald-400"} animate-pulse`} />
+                                <span className="font-bold text-white">
+                                  {currentDomain.originNetworkName || (currentDomain.originFamily === "SOLANA" ? "Solana Devnet" : "Base Sepolia (Chain ID 84532)")}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="p-4 bg-black/40 border border-white/[0.06] rounded-2xl">
+                              <span className="text-neutral-400 block text-[11px] mb-1">Família Criptográfica:</span>
+                              <span className="font-bold text-white">
+                                {currentDomain.originFamily === "SOLANA"
+                                  ? "Ed25519 (Solana PDA / Curve25519)"
+                                  : "ECDSA secp256k1 (Ethereum Standard)"}
+                              </span>
+                            </div>
+
+                            <div className="p-4 bg-black/40 border border-white/[0.06] rounded-2xl">
+                              <span className="text-neutral-400 block text-[11px] mb-1">Score de Reputação:</span>
+                              <span className="font-bold text-emerald-400">100 / 100 (Impecável • Sem strikes)</span>
+                            </div>
+
+                            <div className="p-4 bg-black/40 border border-white/[0.06] rounded-2xl">
+                              <span className="text-neutral-400 block text-[11px] mb-1">Status de Verificação:</span>
+                              <span className="font-bold text-emerald-400 flex items-center gap-1.5">
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                <span>DNS TXT Verificado • Ativo</span>
+                              </span>
+                            </div>
+
+                            <div className="p-4 bg-black/40 border border-white/[0.06] rounded-2xl sm:col-span-2">
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-neutral-400 text-[11px]">
+                                  {currentDomain.originFamily === "SOLANA"
+                                    ? "Chave Pública Solana (KMS / PDA Authority):"
+                                    : "Chave Pública da Carteira (KMS):"}
+                                </span>
+                                <span className="text-[10px] text-neutral-500">
+                                  Assinatura Criptográfica P2P
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between font-mono text-neutral-200">
+                                <span className="truncate">{currentDomain.publicKey || "Chave KMS vinculada"}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => copyToClipboard(currentDomain.publicKey || "", "wallet_key")}
+                                  className="p-1 hover:text-white transition ml-2 cursor-pointer"
+                                  title="Copiar Chave Pública"
+                                >
+                                  {copiedKey === "wallet_key" ? (
+                                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                  ) : (
+                                    <Copy className="w-3.5 h-3.5" />
+                                  )}
+                                </button>
+                              </div>
+                            </div>
                           </div>
                         </div>
 
-                        <input
-                          type="text"
-                          value={stealthConfig.inboundToken}
-                          onChange={(e) =>
-                            setStealthConfig((prev) => ({ ...prev, inboundToken: e.target.value }))
-                          }
-                          placeholder="Ex: maivw_st_8f3a129d4c7b8e10..."
-                          className="w-full bg-black/60 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white placeholder-neutral-500 font-mono focus:outline-none focus:border-indigo-500 transition"
-                        />
-                        <p className="text-[11px] text-neutral-500 mt-1">
-                          {securityMode === "dark"
-                            ? "Remetentes devem incluir este token no cabeçalho x-maivw-stealth-token. Requisições sem o token sofrem Silent Drop (404)."
-                            : "Compartilhe este token apenas com bancos e parceiros VIP para tratamento prioritário e seguro."}
-                        </p>
+                        {/* Explicação de Autenticação */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                          <div className="p-5 bg-[#0f0a0a]/90 border border-white/[0.08] rounded-3xl space-y-2">
+                            <div className="flex items-center gap-2 text-white font-bold">
+                              <Lock className="w-4 h-4 text-indigo-400" />
+                              <span>Imutabilidade On-Chain</span>
+                            </div>
+                            <p className="text-neutral-400 leading-relaxed text-[11px]">
+                              Todos os gateways federados MAIVW consultam este registro para autenticar conexões SMTP sem requerer autoridade central de certificação, garantindo total soberania.
+                            </p>
+                          </div>
+
+                          <div className="p-5 bg-[#0f0a0a]/90 border border-white/[0.08] rounded-3xl space-y-2">
+                            <div className="flex items-center gap-2 text-white font-bold">
+                              <Network className="w-4 h-4 text-blue-400" />
+                              <span>Interoperabilidade Multi-Chain</span>
+                            </div>
+                            <p className="text-neutral-400 leading-relaxed text-[11px]">
+                              Sua identidade criptográfica na rede {currentDomain.originNetworkName || (currentDomain.originFamily === "SOLANA" ? "Solana" : "Base")} pode ser estendida para outras blockchains através da aba <strong>Multi-Chain</strong>.
+                            </p>
+                          </div>
+                        </div>
                       </div>
                     )}
 
-                    {/* Sincronização On-Chain Checkbox & Botão Principal */}
-                    <div className="pt-3 border-t border-white/[0.06] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                      <label className="flex items-center gap-2.5 text-xs text-neutral-300 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={syncOnChain}
-                          onChange={(e) => setSyncOnChain(e.target.checked)}
-                          className="w-4 h-4 rounded bg-black/60 border-white/20 text-indigo-600 focus:ring-indigo-500"
-                        />
-                        <span>Sincronizar e gravar alteração automaticamente no Smart Contract na Base Sepolia</span>
-                      </label>
+                    {/* ======================================================== */}
+                    {/* SUB-TAB 2: PRESENÇA MULTI-CHAIN & ESPELHAMENTO           */}
+                    {/* ======================================================== */}
+                    {onchainSubTab === "multichain" && (
+                      <div className="space-y-6">
+                        <div className="bg-[#0f0a0a]/90 border border-white/[0.08] rounded-3xl p-6 md:p-8 shadow-xl space-y-6">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-white/[0.06] gap-4">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <Network className="w-5 h-5 text-blue-400" />
+                                <h3 className="text-base font-bold text-white">
+                                  Presença Multi-Chain &amp; Espelhamento
+                                </h3>
+                                <span className="px-2.5 py-0.5 text-[11px] font-bold tracking-wide rounded-md bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                                  Cross-Ledger
+                                </span>
+                              </div>
+                              <p className="text-xs text-neutral-400 mt-1">
+                                Espelhe seu domínio entre redes blockchain (Solana e EVM). Gateways em outras redes verificarão suas mensagens nativamente sem depender de pontes ou DNS centralizado.
+                              </p>
+                            </div>
 
-                      <button
-                        type="submit"
-                        disabled={isSavingStealth}
-                        className="px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-700 hover:from-indigo-500 hover:to-purple-600 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-lg transition flex items-center justify-center gap-2 cursor-pointer shrink-0"
-                      >
-                        {isSavingStealth ? (
-                          <>
-                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                            <span>Aplicando Postura...</span>
-                          </>
-                        ) : (
-                          <>
-                            <ShieldCheck className="w-3.5 h-3.5" />
-                            <span>Salvar Postura de Segurança</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <Link
+                                href="/admin/multichain"
+                                className="px-3.5 py-1.5 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-blue-300 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition"
+                              >
+                                <Network className="w-3.5 h-3.5" />
+                                <span>Painel Completo</span>
+                              </Link>
+                              <button
+                                type="button"
+                                onClick={() => currentDomain && loadMultiChainStatus(currentDomain.domainName)}
+                                disabled={isLoadingMultiChain}
+                                className="px-3.5 py-1.5 bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.1] text-neutral-300 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+                              >
+                                <RefreshCw className={`w-3.5 h-3.5 ${isLoadingMultiChain ? "animate-spin text-blue-400" : ""}`} />
+                                <span>Atualizar</span>
+                              </button>
+                            </div>
+                          </div>
 
-                    {stealthSaveMsg && (
-                      <div
-                        className={`p-3.5 rounded-xl border text-xs flex items-center gap-2.5 ${
-                          stealthSaveMsg.ok
-                            ? "bg-emerald-950/40 border-emerald-500/30 text-emerald-300"
-                            : "bg-red-950/40 border-red-500/30 text-red-300"
-                        }`}
-                      >
-                        {stealthSaveMsg.ok ? (
-                          <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
-                        ) : (
-                          <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
-                        )}
-                        <span>{stealthSaveMsg.message}</span>
-                      </div>
-                    )}
-                  </form>
-                </div>
-
-                {/* ========================================================== */}
-                {/* CARD: ROTAS PRIVADAS BILATERAIS (OUTBOUND STEALTH)         */}
-                {/* ========================================================== */}
-                <div className="bg-[#0f0a0a]/90 border border-white/[0.08] rounded-3xl p-6 md:p-8 shadow-xl space-y-6">
-                  <div className="flex items-center justify-between pb-4 border-b border-white/[0.06]">
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2 mb-1">
-                        <h3 className="text-base font-bold text-white flex items-center gap-2">
-                          <Route className="w-5 h-5 text-blue-400" />
-                          <span>Tabela de Rotas Privadas Bilaterais (Outbound)</span>
-                        </h3>
-                        <span className="px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 text-[10px] font-bold">
-                          Opcional em Todos os Níveis • Apenas para Saída
-                        </span>
-                      </div>
-                      <p className="text-xs text-neutral-400">
-                        Agenda de destinos particulares para quando sua empresa precisa <strong>enviar e-mails para bancos, órgãos governamentais ou parceiros em Modo Dark</strong> que não publicam seus endpoints na blockchain. Se você apenas conversa com domínios públicos, <strong>deixe esta tabela vazia</strong> (o Gateway consultará a Base Sepolia automaticamente).
-                      </p>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => loadPrivateRoutes()}
-                      disabled={isLoadingRoutes}
-                      className="p-2 hover:bg-white/[0.05] rounded-xl text-neutral-400 hover:text-white transition"
-                      title="Recarregar rotas"
-                    >
-                      <RefreshCw className={`w-4 h-4 ${isLoadingRoutes ? "animate-spin text-blue-400" : ""}`} />
-                    </button>
-                  </div>
-
-                  {/* Lista de Rotas Cadastradas */}
-                  <div className="space-y-3">
-                    {privateRoutes.length === 0 ? (
-                      <div className="p-5 text-center bg-black/40 border border-white/[0.04] rounded-2xl text-xs text-neutral-500">
-                        Nenhuma rota privada bilateral configurada. Mensagens para domínios externos resolverão os endpoints cadastrados publicamente no Smart Contract.
-                      </div>
-                    ) : (
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-left text-xs">
-                          <thead>
-                            <tr className="border-b border-white/[0.06] text-neutral-400">
-                              <th className="pb-2.5 font-semibold">Domínio Alvo</th>
-                              <th className="pb-2.5 font-semibold">Endpoint Privado / VPN</th>
-                              <th className="pb-2.5 font-semibold">Auth Token</th>
-                              <th className="pb-2.5 font-semibold">Notas</th>
-                              <th className="pb-2.5 text-right font-semibold">Ação</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-white/[0.04]">
-                            {privateRoutes.map((r) => (
-                              <tr key={r.targetDomain} className="hover:bg-white/[0.02] transition">
-                                <td className="py-3 font-bold text-white">
-                                  {r.targetDomain}
-                                </td>
-                                <td className="py-3 font-mono text-blue-400 max-w-xs truncate" title={r.privateEndpointUrl}>
-                                  {r.privateEndpointUrl}
-                                </td>
-                                <td className="py-3 font-mono text-neutral-400">
-                                  {r.stealthToken ? "••••••••" : "Nenhum"}
-                                </td>
-                                <td className="py-3 text-neutral-400 max-w-[150px] truncate" title={r.notes || ""}>
-                                  {r.notes || "—"}
-                                </td>
-                                <td className="py-3 text-right">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeletePrivateRoute(r.targetDomain)}
-                                    className="p-1.5 hover:bg-red-500/10 text-neutral-500 hover:text-red-400 rounded-lg transition cursor-pointer"
-                                    title="Excluir rota privada"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Formulário: Adicionar Nova Rota Privada */}
-                  <div className="pt-4 border-t border-white/[0.06]">
-                    <h4 className="text-xs font-bold text-neutral-200 mb-3 flex items-center gap-1.5">
-                      <Plus className="w-3.5 h-3.5 text-blue-400" />
-                      <span>Cadastrar Nova Rota Privada Bilateral</span>
-                    </h4>
-
-                    <form onSubmit={handleAddPrivateRoute} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-[11px] text-neutral-400 mb-1">
-                          Domínio Destinatário (ex: bacen.gov.br):
-                        </label>
-                        <input
-                          type="text"
-                          required
-                          value={newTargetDomain}
-                          onChange={(e) => setNewTargetDomain(e.target.value)}
-                          placeholder="bacen.gov.br"
-                          className="w-full bg-black/60 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-blue-500 transition"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-[11px] text-neutral-400 mb-1">
-                          Endpoint Privado / VPN / Intranet:
-                        </label>
-                        <input
-                          type="url"
-                          required
-                          value={newPrivateUrl}
-                          onChange={(e) => setNewPrivateUrl(e.target.value)}
-                          placeholder="https://10.0.4.5:3001/api/v1/inbox"
-                          className="w-full bg-black/60 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-neutral-500 font-mono focus:outline-none focus:border-blue-500 transition"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-[11px] text-neutral-400 mb-1">
-                          Token de Inbound (Opcional):
-                        </label>
-                        <input
-                          type="text"
-                          value={newStealthToken}
-                          onChange={(e) => setNewStealthToken(e.target.value)}
-                          placeholder="Token bilateral fornecido pelo receptor"
-                          className="w-full bg-black/60 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-neutral-500 font-mono focus:outline-none focus:border-blue-500 transition"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-[11px] text-neutral-400 mb-1">
-                          Observações / Protocolo:
-                        </label>
-                        <input
-                          type="text"
-                          value={newRouteNotes}
-                          onChange={(e) => setNewRouteNotes(e.target.value)}
-                          placeholder="Ex: Canal Dedicado SPB / Banco Central"
-                          className="w-full bg-black/60 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-blue-500 transition"
-                        />
-                      </div>
-
-                      <div className="sm:col-span-2 flex items-center justify-between pt-1">
-                        <button
-                          type="submit"
-                          disabled={isAddingRoute || !newTargetDomain.trim() || !newPrivateUrl.trim()}
-                          className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-500 hover:to-indigo-600 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-lg transition flex items-center gap-2 cursor-pointer"
-                        >
-                          {isAddingRoute ? (
-                            <>
-                              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                              <span>Cadastrando...</span>
-                            </>
-                          ) : (
-                            <>
-                              <Plus className="w-3.5 h-3.5" />
-                              <span>Adicionar Rota Bilateral</span>
-                            </>
+                          {mirrorError && (
+                            <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/25 rounded-xl text-xs text-red-300">
+                              <AlertCircle className="w-4 h-4 shrink-0" />
+                              <span>{mirrorError}</span>
+                            </div>
                           )}
-                        </button>
 
-                        {routeMsg && (
-                          <span className={`text-xs ${routeMsg.ok ? "text-emerald-400" : "text-red-400"}`}>
-                            {routeMsg.message}
-                          </span>
-                        )}
+                          {/* Grid das Redes Suportadas */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                            {(
+                              multiChainData?.networks ||
+                              (currentDomain.originFamily === "SOLANA"
+                                ? [
+                                    {
+                                      id: "solana-devnet",
+                                      name: "Solana Devnet",
+                                      symbol: "SOL",
+                                      isPrimary: true,
+                                      mirrorFeeFormatted: "0.05 SOL",
+                                      status: "ACTIVE_PRIMARY",
+                                      isActive: true,
+                                      isOrigin: true,
+                                      explorerUrl: currentDomain.explorerUrl || "https://explorer.solana.com/address/Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS?cluster=devnet",
+                                    },
+                                    {
+                                      id: 84532,
+                                      name: "Base Sepolia",
+                                      symbol: "ETH",
+                                      isPrimary: false,
+                                      mirrorFeeFormatted: "0.003 ETH",
+                                      status: "NOT_MIRRORED",
+                                      isActive: false,
+                                      isOrigin: false,
+                                      explorerUrl: "https://sepolia.basescan.org/address/0x0000000000000000000000000000000000000000",
+                                    },
+                                    {
+                                      id: 421614,
+                                      name: "Arbitrum Sepolia",
+                                      symbol: "ETH",
+                                      isPrimary: false,
+                                      mirrorFeeFormatted: "0.003 ETH",
+                                      status: "NOT_MIRRORED",
+                                      isActive: false,
+                                      isOrigin: false,
+                                    },
+                                    {
+                                      id: 80002,
+                                      name: "Polygon Amoy",
+                                      symbol: "POL",
+                                      isPrimary: false,
+                                      mirrorFeeFormatted: "25 POL",
+                                      status: "NOT_MIRRORED",
+                                      isActive: false,
+                                      isOrigin: false,
+                                    },
+                                  ]
+                                : [
+                                    {
+                                      id: 84532,
+                                      name: "Base Sepolia",
+                                      symbol: "ETH",
+                                      isPrimary: true,
+                                      mirrorFeeFormatted: "0.003 ETH",
+                                      status: "ACTIVE_PRIMARY",
+                                      isActive: true,
+                                      isOrigin: true,
+                                      explorerUrl: "https://sepolia.basescan.org/address/0x0000000000000000000000000000000000000000",
+                                    },
+                                    {
+                                      id: "solana-devnet",
+                                      name: "Solana Devnet",
+                                      symbol: "SOL",
+                                      isPrimary: false,
+                                      mirrorFeeFormatted: "0.05 SOL",
+                                      status: "NOT_MIRRORED",
+                                      isActive: false,
+                                      isOrigin: false,
+                                      explorerUrl: "https://explorer.solana.com/address/Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS?cluster=devnet",
+                                    },
+                                    {
+                                      id: 421614,
+                                      name: "Arbitrum Sepolia",
+                                      symbol: "ETH",
+                                      isPrimary: false,
+                                      mirrorFeeFormatted: "0.003 ETH",
+                                      status: "NOT_MIRRORED",
+                                      isActive: false,
+                                      isOrigin: false,
+                                    },
+                                    {
+                                      id: 80002,
+                                      name: "Polygon Amoy",
+                                      symbol: "POL",
+                                      isPrimary: false,
+                                      mirrorFeeFormatted: "25 POL",
+                                      status: "NOT_MIRRORED",
+                                      isActive: false,
+                                      isOrigin: false,
+                                    },
+                                  ])
+                            ).map((net: any) => {
+                              const isOrigin =
+                                net.isOrigin ||
+                                (net.isPrimary && !net.status?.includes("MIRRORED")) ||
+                                (currentDomain.originFamily === "SOLANA" && (net.id === "solana-devnet" || net.name.includes("Solana")));
+                              const isMirrored = net.status === "MIRRORED";
+                              const isPending = attestingChainId === net.id;
+
+                              return (
+                                <div
+                                  key={net.id}
+                                  className={`p-4 rounded-2xl border flex flex-col justify-between transition-all ${
+                                    isOrigin
+                                      ? "bg-emerald-950/20 border-emerald-500/40"
+                                      : isMirrored
+                                      ? "bg-blue-950/20 border-blue-500/40"
+                                      : "bg-black/40 border-white/[0.06] hover:border-white/20"
+                                  }`}
+                                >
+                                  <div>
+                                    <div className="flex items-center justify-between mb-2">
+                                      <span className="font-bold text-white text-xs">{net.name}</span>
+                                      {isOrigin ? (
+                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                                          Origem
+                                        </span>
+                                      ) : isMirrored ? (
+                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/20 text-blue-400 border border-blue-500/30 flex items-center gap-1">
+                                          <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+                                          Espelhado
+                                        </span>
+                                      ) : (
+                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/[0.06] text-neutral-400 border border-white/[0.08]">
+                                          Disponível
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    <p className="text-[11px] text-neutral-400 mb-3 line-clamp-2">
+                                      {net.id === "solana-devnet" || net.name.includes("Solana")
+                                        ? "Rede Solana L1 • Alta velocidade e assinaturas Ed25519."
+                                        : net.id === 84532
+                                        ? "L2 Coinbase • Ancoragem Primária e liquidação EVM."
+                                        : net.id === 421614
+                                        ? "L2 Arbitrum Nitro • Alta velocidade para DeFi e finanças."
+                                        : "PoS & AggLayer • Compatibilidade com ecossistema Polygon."}
+                                    </p>
+
+                                    <div className="text-[11px] space-y-1 py-2 border-t border-white/[0.04]">
+                                      <div className="flex justify-between text-neutral-400">
+                                        <span>Identificador:</span>
+                                        <span className="font-mono text-neutral-300 font-semibold truncate max-w-[110px]" title={String(net.id)}>
+                                          {net.id}
+                                        </span>
+                                      </div>
+                                      <div className="flex justify-between text-neutral-400">
+                                        <span>Taxa:</span>
+                                        <span className="font-mono text-amber-400 font-semibold">
+                                          {net.mirrorFeeFormatted || "~$10"}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="pt-3 border-t border-white/[0.06] mt-2">
+                                    {isOrigin ? (
+                                      <div className="text-[11px] text-emerald-400 font-semibold flex items-center justify-center gap-1 py-1">
+                                        <ShieldCheck className="w-3.5 h-3.5" />
+                                        <span>Origem Primária Ativa</span>
+                                      </div>
+                                    ) : isMirrored ? (
+                                      <div className="text-[11px] text-blue-400 font-semibold flex items-center justify-center gap-1 py-1">
+                                        <CheckCircle2 className="w-3.5 h-3.5" />
+                                        <span>Espelho Sincronizado</span>
+                                      </div>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenMirrorPayment(net)}
+                                        disabled={isPending || isLoadingMultiChain}
+                                        className="w-full py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-blue-950/50 flex items-center justify-center gap-1.5 transition cursor-pointer active:scale-95 disabled:opacity-50"
+                                      >
+                                        {isPending ? (
+                                          <>
+                                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                            <span>Atestando...</span>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <Zap className="w-3.5 h-3.5" />
+                                            <span>Ativar Espelho ($10)</span>
+                                          </>
+                                        )}
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          {/* Informações Regulatórias e Econômicas */}
+                          <div className="p-4 bg-black/40 border border-white/[0.06] rounded-2xl space-y-2 text-xs">
+                            <div className="flex items-start gap-2 text-neutral-300">
+                              <Shield className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
+                              <div>
+                                <strong className="text-white">Slashing Unificado em Todas as Redes:</strong> Em caso de violação grave de conteúdo (spam/spoofing) comprovada pelo Oráculo, o domínio é banido na cadeia de origem e todas as suas instâncias espelhadas são sumariamente desativadas via chamada autorizada on-chain.
+                              </div>
+                            </div>
+                            <div className="flex items-start gap-2 text-neutral-300 pt-1 border-t border-white/[0.04]">
+                              <Coins className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                              <div>
+                                <strong className="text-white">Taxa 100% Repassada ao Oráculo:</strong> O valor de taxa é transferido integral e diretamente à carteira do Nó Validador para cobrir atestação criptográfica e custos operacionais cross-chain.
+                              </div>
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                    </form>
+                    )}
+
+                    {/* ======================================================== */}
+                    {/* SUB-TAB 3: POSTURA DE SEGURANÇA & INBOUND                */}
+                    {/* ======================================================== */}
+                    {onchainSubTab === "security" && (
+                      <div className="space-y-6">
+                        {/* 1. Diagnóstico de 3 Pilares */}
+                        <div className="bg-[#0f0a0a]/90 border border-white/[0.08] rounded-3xl p-6 md:p-8 shadow-xl space-y-6 relative overflow-hidden">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-white/[0.06] gap-4">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <Shield className="w-5 h-5 text-indigo-400" />
+                                <h3 className="text-base font-bold text-white">
+                                  Postura de Segurança &amp; Roteamento
+                                </h3>
+                                {securityMode === "public" && (
+                                  <span className="px-2.5 py-0.5 text-[11px] font-bold tracking-wide rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                                    Nível 1: Clear Web (Público)
+                                  </span>
+                                )}
+                                {securityMode === "hybrid" && (
+                                  <span className="px-2.5 py-0.5 text-[11px] font-bold tracking-wide rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                    ⚡ Modo Híbrido (Dual-Stack)
+                                  </span>
+                                )}
+                                {securityMode === "dark" && (
+                                  <span className="px-2.5 py-0.5 text-[11px] font-bold tracking-wide rounded-md bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                                    🛡️ Modo Dark Total (Nível 3/4)
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs text-neutral-400 mt-1">
+                                Diagnóstico em tempo real da visibilidade na blockchain, camuflagem contra varreduras de portas e herança de subdomínios.
+                              </p>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <span className="text-[11px] text-neutral-500">Status:</span>
+                              <span className="flex items-center gap-1.5 text-xs font-semibold text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">
+                                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                                Sincronizado
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Semáforo / Diagnóstico de 3 Pilares */}
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                            <div className="p-4 bg-black/40 border border-white/[0.06] rounded-2xl">
+                              <span className="text-neutral-400 block text-[11px] mb-1">1. Visibilidade na Blockchain:</span>
+                              <div className="font-bold text-white flex items-center gap-1.5">
+                                {securityMode === "dark" ? (
+                                  <>
+                                    <Lock className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                                    <span className="text-purple-300">Oculto ("PRIVATE")</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Globe className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                    <span className="text-emerald-300 truncate" title={editingEndpoint}>{editingEndpoint || "https://..."}</span>
+                                  </>
+                                )}
+                              </div>
+                              <p className="text-[10px] text-neutral-500 mt-1">
+                                {securityMode === "dark" ? "Nenhum IP ou URL exposto publicamente." : "Endpoint acessível via resolução on-chain."}
+                              </p>
+                            </div>
+
+                            <div className="p-4 bg-black/40 border border-white/[0.06] rounded-2xl">
+                              <span className="text-neutral-400 block text-[11px] mb-1">2. Camuflagem do Gateway (Inbound):</span>
+                              <div className="font-bold text-white flex items-center gap-1.5">
+                                {securityMode === "dark" ? (
+                                  <>
+                                    <ShieldAlert className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                                    <span className="text-purple-300">Silent Drop 404 Estrito</span>
+                                  </>
+                                ) : securityMode === "hybrid" ? (
+                                  <>
+                                    <Zap className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                                    <span className="text-amber-300">Porta Dupla (Público + VIP)</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                    <span className="text-emerald-300">Recepção P2P Aberta</span>
+                                  </>
+                                )}
+                              </div>
+                              <p className="text-[10px] text-neutral-500 mt-1">
+                                {securityMode === "dark"
+                                  ? "Scanners e curiosos recebem 404 Not Found."
+                                  : securityMode === "hybrid"
+                                  ? "Clientes usam web aberta; bancos usam token VIP."
+                                  : "Qualquer participante MAIVW pode entregar."}
+                              </p>
+                            </div>
+
+                            <div className="p-4 bg-black/40 border border-white/[0.06] rounded-2xl">
+                              <span className="text-neutral-400 block text-[11px] mb-1">3. Herança de Subdomínios:</span>
+                              <div className="font-bold text-white flex items-center gap-1.5">
+                                <Layers className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                                <span className="text-blue-300">Herança Wildcard Ativa</span>
+                              </div>
+                              <p className="text-[10px] text-neutral-500 mt-1">
+                                E-mails como <code className="text-neutral-400">@*.{currentDomain?.domainName || "dominio"}</code> herdam estas regras sem custo extra.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* 2. Painel de Configuração de Recepção (Inbound) */}
+                        <div className="bg-[#0f0a0a]/90 border border-white/[0.08] rounded-3xl p-6 md:p-8 shadow-xl space-y-6">
+                          <div className="pb-4 border-b border-white/[0.06]">
+                            <h3 className="text-base font-bold text-white flex items-center gap-2">
+                              <Lock className="w-5 h-5 text-indigo-400" />
+                              <span>Recepção de E-mails (Inbound): Escolha o Modo de Operação</span>
+                            </h3>
+                            <p className="text-xs text-neutral-400 mt-1">
+                              Selecione como outros participantes da rede localizam e entregam mensagens para este domínio.
+                            </p>
+                          </div>
+
+                          {/* 3 PRESETS CLICÁVEIS */}
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div
+                              onClick={() => setSecurityMode("public")}
+                              className={`p-4 rounded-2xl border cursor-pointer transition-all duration-200 ${
+                                securityMode === "public"
+                                  ? "bg-emerald-950/30 border-emerald-500/50 shadow-lg shadow-emerald-950/50 ring-1 ring-emerald-500/50"
+                                  : "bg-black/30 border-white/[0.06] hover:border-white/20 hover:bg-white/[0.02]"
+                              }`}
+                            >
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center gap-2">
+                                  <Globe className={`w-4 h-4 ${securityMode === "public" ? "text-emerald-400" : "text-neutral-400"}`} />
+                                  <h4 className="text-xs font-bold text-white">1. Modo Público</h4>
+                                </div>
+                                <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${securityMode === "public" ? "border-emerald-400 bg-emerald-400/20" : "border-neutral-600"}`}>
+                                  {securityMode === "public" && <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />}
+                                </div>
+                              </div>
+                              <p className="text-[11px] text-neutral-400 leading-relaxed">
+                                Endpoint HTTPS publicado abertamente no Cartório. Ideal para empresas comerciais, e-commerces e SaaS.
+                              </p>
+                              <div className="mt-3 text-[10px] font-semibold text-emerald-400">
+                                Nível 1 — Clear Web P2P
+                              </div>
+                            </div>
+
+                            <div
+                              onClick={() => setSecurityMode("hybrid")}
+                              className={`p-4 rounded-2xl border cursor-pointer transition-all duration-200 ${
+                                securityMode === "hybrid"
+                                  ? "bg-amber-950/30 border-amber-500/50 shadow-lg shadow-amber-950/50 ring-1 ring-amber-500/50"
+                                  : "bg-black/30 border-white/[0.06] hover:border-white/20 hover:bg-white/[0.02]"
+                              }`}
+                            >
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center gap-2">
+                                  <Zap className={`w-4 h-4 ${securityMode === "hybrid" ? "text-amber-400" : "text-neutral-400"}`} />
+                                  <h4 className="text-xs font-bold text-white">2. Modo Híbrido</h4>
+                                </div>
+                                <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${securityMode === "hybrid" ? "border-amber-400 bg-amber-400/20" : "border-neutral-600"}`}>
+                                  {securityMode === "hybrid" && <div className="w-1.5 h-1.5 rounded-full bg-amber-400" />}
+                                </div>
+                              </div>
+                              <p className="text-[11px] text-neutral-400 leading-relaxed">
+                                Dual-Stack: Recebe tráfego público de clientes e disponibiliza canal camuflado com Token VIP para bancos.
+                              </p>
+                              <div className="mt-3 text-[10px] font-semibold text-amber-400">
+                                Nível 1 (Público) + Nível 3 (VIP)
+                              </div>
+                            </div>
+
+                            <div
+                              onClick={() => setSecurityMode("dark")}
+                              className={`p-4 rounded-2xl border cursor-pointer transition-all duration-200 ${
+                                securityMode === "dark"
+                                  ? "bg-purple-950/30 border-purple-500/50 shadow-lg shadow-purple-950/50 ring-1 ring-purple-500/50"
+                                  : "bg-black/30 border-white/[0.06] hover:border-white/20 hover:bg-white/[0.02]"
+                              }`}
+                            >
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center gap-2">
+                                  <Lock className={`w-4 h-4 ${securityMode === "dark" ? "text-purple-400" : "text-neutral-400"}`} />
+                                  <h4 className="text-xs font-bold text-white">3. Modo Dark Total</h4>
+                                </div>
+                                <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${securityMode === "dark" ? "border-purple-400 bg-purple-400/20" : "border-neutral-600"}`}>
+                                  {securityMode === "dark" && <div className="w-1.5 h-1.5 rounded-full bg-purple-400" />}
+                                </div>
+                              </div>
+                              <p className="text-[11px] text-neutral-400 leading-relaxed">
+                                Invisível na rede. Gravado como "PRIVATE" on-chain. Silent Drop 404 para quem não tiver o token pré-compartilhado.
+                              </p>
+                              <div className="mt-3 text-[10px] font-semibold text-purple-400">
+                                Nível 3 / 4 — Dark Endpoint
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Formulário de Configuração */}
+                          <form onSubmit={handleApplySecurityMode} className="space-y-4 pt-2">
+                            {(securityMode === "public" || securityMode === "hybrid") && (
+                              <div>
+                                <label className="block text-xs font-semibold text-neutral-300 mb-1.5">
+                                  URL do Endpoint Público HTTPS (On-Chain):
+                                </label>
+                                <input
+                                  type="text"
+                                  required
+                                  value={editingEndpoint}
+                                  onChange={(e) => setEditingEndpoint(e.target.value)}
+                                  placeholder="https://email.seudominio.com/api/v1/inbox"
+                                  className="w-full bg-black/60 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white placeholder-neutral-500 font-mono focus:outline-none focus:border-indigo-500 transition"
+                                />
+                                <p className="text-[11px] text-neutral-500 mt-1">
+                                  Endereço público onde gateways e provedores MAIVW entregam mensagens para este domínio.
+                                </p>
+                              </div>
+                            )}
+
+                            {securityMode === "dark" && (
+                              <div className="p-4 bg-purple-950/20 border border-purple-500/30 rounded-2xl space-y-1">
+                                <div className="flex items-center gap-2 text-xs font-bold text-purple-300">
+                                  <ShieldCheck className="w-4 h-4 text-purple-400" />
+                                  <span>Endereço Oculto na Blockchain</span>
+                                </div>
+                                <p className="text-[11px] text-neutral-300 leading-relaxed">
+                                  Ao aplicar o Modo Dark, o registro no contrato inteligente será automaticamente atualizado para <code className="text-purple-300 font-mono">PRIVATE</code>. Nenhuma URL ou IP público será visível na blockchain.
+                                </p>
+                              </div>
+                            )}
+
+                            {(securityMode === "hybrid" || securityMode === "dark") && (
+                              <div className="pt-2">
+                                <div className="flex items-center justify-between mb-1.5">
+                                  <label className="block text-xs font-semibold text-neutral-300">
+                                    {securityMode === "hybrid"
+                                      ? "Token de Autenticação do Canal VIP (Opcional para tráfego restrito):"
+                                      : "Token Obrigatório de Acesso Inbound (x-maivw-stealth-token):"}
+                                  </label>
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={generateRandomToken}
+                                      className="text-[11px] text-indigo-400 hover:text-indigo-300 transition flex items-center gap-1 cursor-pointer"
+                                    >
+                                      <Sparkles className="w-3 h-3" />
+                                      <span>Gerar Chave Segura</span>
+                                    </button>
+                                    {stealthConfig.inboundToken && (
+                                      <button
+                                        type="button"
+                                        onClick={() => copyToClipboard(stealthConfig.inboundToken, "inbound_token")}
+                                        className="text-[11px] text-neutral-400 hover:text-white transition flex items-center gap-1 cursor-pointer ml-2"
+                                      >
+                                        {copiedKey === "inbound_token" ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                                        <span>Copiar</span>
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <input
+                                  type="text"
+                                  value={stealthConfig.inboundToken}
+                                  onChange={(e) =>
+                                    setStealthConfig((prev) => ({ ...prev, inboundToken: e.target.value }))
+                                  }
+                                  placeholder="Ex: maivw_st_8f3a129d4c7b8e10..."
+                                  className="w-full bg-black/60 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white placeholder-neutral-500 font-mono focus:outline-none focus:border-indigo-500 transition"
+                                />
+                                <p className="text-[11px] text-neutral-500 mt-1">
+                                  {securityMode === "dark"
+                                    ? "Remetentes devem incluir este token no cabeçalho x-maivw-stealth-token. Requisições sem o token sofrem Silent Drop (404)."
+                                    : "Compartilhe este token apenas com bancos e parceiros VIP para tratamento prioritário e seguro."}
+                                </p>
+                              </div>
+                            )}
+
+                            <div className="pt-3 border-t border-white/[0.06] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                              <label className="flex items-center gap-2.5 text-xs text-neutral-300 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={syncOnChain}
+                                  onChange={(e) => setSyncOnChain(e.target.checked)}
+                                  className="w-4 h-4 rounded bg-black/60 border-white/20 text-indigo-600 focus:ring-indigo-500"
+                                />
+                                <span>
+                                  Sincronizar e gravar alteração automaticamente no registro on-chain (
+                                  {currentDomain.originNetworkName ||
+                                    (currentDomain.originFamily === "SOLANA" ? "Solana Devnet" : "Base Sepolia")}
+                                  )
+                                </span>
+                              </label>
+
+                              <button
+                                type="submit"
+                                disabled={isSavingStealth}
+                                className="px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-700 hover:from-indigo-500 hover:to-purple-600 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-lg transition flex items-center justify-center gap-2 cursor-pointer shrink-0"
+                              >
+                                {isSavingStealth ? (
+                                  <>
+                                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                    <span>Aplicando Postura...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <ShieldCheck className="w-3.5 h-3.5" />
+                                    <span>Salvar Postura de Segurança</span>
+                                  </>
+                                )}
+                              </button>
+                            </div>
+
+                            {stealthSaveMsg && (
+                              <div
+                                className={`p-3.5 rounded-xl border text-xs flex items-center gap-2.5 ${
+                                  stealthSaveMsg.ok
+                                    ? "bg-emerald-950/40 border-emerald-500/30 text-emerald-300"
+                                    : "bg-red-950/40 border-red-500/30 text-red-300"
+                                }`}
+                              >
+                                {stealthSaveMsg.ok ? (
+                                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+                                ) : (
+                                  <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
+                                )}
+                                <span>{stealthSaveMsg.message}</span>
+                              </div>
+                            )}
+                          </form>
+                        </div>
+
+                        {/* 3. Card: Rotas Privadas Bilaterais (Outbound Stealth) */}
+                        <div className="bg-[#0f0a0a]/90 border border-white/[0.08] rounded-3xl p-6 md:p-8 shadow-xl space-y-6">
+                          <div className="flex items-center justify-between pb-4 border-b border-white/[0.06]">
+                            <div>
+                              <div className="flex flex-wrap items-center gap-2 mb-1">
+                                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                                  <Route className="w-5 h-5 text-blue-400" />
+                                  <span>Tabela de Rotas Privadas Bilaterais (Outbound)</span>
+                                </h3>
+                                <span className="px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 text-[10px] font-bold">
+                                  Opcional em Todos os Níveis • Apenas para Saída
+                                </span>
+                              </div>
+                              <p className="text-xs text-neutral-400">
+                                Agenda de destinos particulares para quando sua empresa precisa <strong>enviar e-mails para bancos, órgãos governamentais ou parceiros em Modo Dark</strong> que não publicam seus endpoints na blockchain. Se você apenas conversa com domínios públicos, <strong>deixe esta tabela vazia</strong> (o Gateway consultará o Cartório On-Chain automaticamente).
+                              </p>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => loadPrivateRoutes()}
+                              disabled={isLoadingRoutes}
+                              className="p-2 hover:bg-white/[0.05] rounded-xl text-neutral-400 hover:text-white transition"
+                              title="Recarregar rotas"
+                            >
+                              <RefreshCw className={`w-4 h-4 ${isLoadingRoutes ? "animate-spin text-blue-400" : ""}`} />
+                            </button>
+                          </div>
+
+                          {/* Lista de Rotas Cadastradas */}
+                          <div className="space-y-3">
+                            {privateRoutes.length === 0 ? (
+                              <div className="p-5 text-center bg-black/40 border border-white/[0.04] rounded-2xl text-xs text-neutral-500">
+                                Nenhuma rota privada bilateral configurada. Mensagens para domínios externos resolverão os endpoints cadastrados publicamente no Smart Contract.
+                              </div>
+                            ) : (
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-left text-xs">
+                                  <thead>
+                                    <tr className="border-b border-white/[0.06] text-neutral-400">
+                                      <th className="pb-2.5 font-semibold">Domínio Alvo</th>
+                                      <th className="pb-2.5 font-semibold">Endpoint Privado / VPN</th>
+                                      <th className="pb-2.5 font-semibold">Auth Token</th>
+                                      <th className="pb-2.5 font-semibold">Notas</th>
+                                      <th className="pb-2.5 text-right font-semibold">Ação</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-white/[0.04]">
+                                    {privateRoutes.map((r) => (
+                                      <tr key={r.targetDomain} className="hover:bg-white/[0.02] transition">
+                                        <td className="py-3 font-bold text-white">
+                                          {r.targetDomain}
+                                        </td>
+                                        <td className="py-3 font-mono text-blue-400 max-w-xs truncate" title={r.privateEndpointUrl}>
+                                          {r.privateEndpointUrl}
+                                        </td>
+                                        <td className="py-3 font-mono text-neutral-400">
+                                          {r.stealthToken ? "••••••••" : "Nenhum"}
+                                        </td>
+                                        <td className="py-3 text-neutral-400 max-w-[150px] truncate" title={r.notes || ""}>
+                                          {r.notes || "—"}
+                                        </td>
+                                        <td className="py-3 text-right">
+                                          <button
+                                            type="button"
+                                            onClick={() => handleDeletePrivateRoute(r.targetDomain)}
+                                            className="p-1.5 hover:bg-red-500/10 text-neutral-500 hover:text-red-400 rounded-lg transition cursor-pointer"
+                                            title="Excluir rota privada"
+                                          >
+                                            <Trash2 className="w-4 h-4" />
+                                          </button>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Formulário: Adicionar Nova Rota Privada */}
+                          <div className="pt-4 border-t border-white/[0.06]">
+                            <h4 className="text-xs font-bold text-neutral-200 mb-3 flex items-center gap-1.5">
+                              <Plus className="w-3.5 h-3.5 text-blue-400" />
+                              <span>Cadastrar Nova Rota Privada Bilateral</span>
+                            </h4>
+
+                            <form onSubmit={handleAddPrivateRoute} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-[11px] text-neutral-400 mb-1">
+                                  Domínio Destinatário (ex: bacen.gov.br):
+                                </label>
+                                <input
+                                  type="text"
+                                  required
+                                  value={newTargetDomain}
+                                  onChange={(e) => setNewTargetDomain(e.target.value)}
+                                  placeholder="bacen.gov.br"
+                                  className="w-full bg-black/60 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-blue-500 transition"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-[11px] text-neutral-400 mb-1">
+                                  Endpoint Privado / VPN / Intranet:
+                                </label>
+                                <input
+                                  type="url"
+                                  required
+                                  value={newPrivateUrl}
+                                  onChange={(e) => setNewPrivateUrl(e.target.value)}
+                                  placeholder="https://10.0.4.5:3001/api/v1/inbox"
+                                  className="w-full bg-black/60 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-neutral-500 font-mono focus:outline-none focus:border-blue-500 transition"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-[11px] text-neutral-400 mb-1">
+                                  Token de Inbound (Opcional):
+                                </label>
+                                <input
+                                  type="text"
+                                  value={newStealthToken}
+                                  onChange={(e) => setNewStealthToken(e.target.value)}
+                                  placeholder="Token bilateral fornecido pelo receptor"
+                                  className="w-full bg-black/60 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-neutral-500 font-mono focus:outline-none focus:border-blue-500 transition"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-[11px] text-neutral-400 mb-1">
+                                  Observações / Protocolo:
+                                </label>
+                                <input
+                                  type="text"
+                                  value={newRouteNotes}
+                                  onChange={(e) => setNewRouteNotes(e.target.value)}
+                                  placeholder="Ex: Canal Dedicado SPB / Banco Central"
+                                  className="w-full bg-black/60 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-blue-500 transition"
+                                />
+                              </div>
+
+                              <div className="sm:col-span-2 flex items-center justify-between pt-1">
+                                <button
+                                  type="submit"
+                                  disabled={isAddingRoute || !newTargetDomain.trim() || !newPrivateUrl.trim()}
+                                  className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-500 hover:to-indigo-600 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-lg transition flex items-center gap-2 cursor-pointer"
+                                >
+                                  {isAddingRoute ? (
+                                    <>
+                                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                      <span>Cadastrando...</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Plus className="w-3.5 h-3.5" />
+                                      <span>Adicionar Rota Bilateral</span>
+                                    </>
+                                  )}
+                                </button>
+
+                                {routeMsg && (
+                                  <span className={`text-xs ${routeMsg.ok ? "text-emerald-400" : "text-red-400"}`}>
+                                    {routeMsg.message}
+                                  </span>
+                                )}
+                              </div>
+                            </form>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ======================================================== */}
+                    {/* SUB-TAB 4: GOVERNANÇA & TIERS                            */}
+                    {/* ======================================================== */}
+                    {onchainSubTab === "governance" && (
+                      <div className="space-y-6">
+                        <div className="bg-[#0f0a0a]/90 border border-white/[0.08] rounded-3xl p-6 md:p-8 shadow-xl space-y-6">
+                          <div className="flex items-center justify-between pb-4 border-b border-white/[0.06]">
+                            <div>
+                              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                                <Coins className="w-5 h-5 text-amber-400" />
+                                <span>Modelo de Governança &amp; Tiers Operacionais</span>
+                              </h3>
+                              <p className="text-xs text-neutral-400 mt-1">
+                                Parâmetros operacionais de capacidade diária, reputação e limites da infraestrutura.
+                              </p>
+                            </div>
+
+                            {/* Botão de recarga se for autogovernado */}
+                            {(domainEconomics as any)?.isSelfGoverned && (
+                              <button
+                                type="button"
+                                onClick={() => setIsTopUpOpen(true)}
+                                className="px-3.5 py-1.5 bg-[#7d0000]/20 hover:bg-[#7d0000]/40 border border-[#7d0000]/40 text-red-300 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                                <span>Recarregar Saldo</span>
+                              </button>
+                            )}
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                            <div className="p-4 bg-black/40 border border-white/[0.06] rounded-2xl">
+                              <span className="text-neutral-400 block text-[11px] mb-1">Tier Operacional:</span>
+                              <span className="font-bold text-white">
+                                {domainEconomics
+                                  ? domainEconomics.tier === 1
+                                    ? "Tier 1: Startup SaaS (50k msgs/dia)"
+                                    : domainEconomics.tier === 2
+                                    ? "Tier 2: Growth ESP (1M msgs/dia)"
+                                    : domainEconomics.tier === 3
+                                    ? "Tier 3: Enterprise (Ilimitado)"
+                                    : "Domínio Standard"
+                                  : "Tier 1: Standard (50k msgs/dia)"}
+                              </span>
+                            </div>
+
+                            <div className="p-4 bg-black/40 border border-white/[0.06] rounded-2xl">
+                              <span className="text-neutral-400 block text-[11px] mb-1">Limite Diário de Disparo:</span>
+                              <span className="font-bold text-white">
+                                {domainEconomics
+                                  ? typeof domainEconomics.dailyLimit === "number"
+                                    ? `${domainEconomics.dailyLimit.toLocaleString()} mensagens/dia`
+                                    : domainEconomics.dailyLimit
+                                  : "10.000 msgs/dia (Padrão)"}
+                              </span>
+                            </div>
+
+                            <div className="p-4 bg-black/40 border border-white/[0.06] rounded-2xl">
+                              <span className="text-neutral-400 block text-[11px] mb-1">Infrações / Strikes Ativos:</span>
+                              <span className="font-bold text-neutral-200">
+                                {domainEconomics ? `${domainEconomics.strikeCount} strikes sofridos` : "0 strikes sofridos"}
+                                <span className="text-[10px] text-emerald-400 font-normal ml-1.5">
+                                  (Score: 100/100)
+                                </span>
+                              </span>
+                            </div>
+
+                            <div className="p-4 bg-black/40 border border-white/[0.06] rounded-2xl">
+                              <span className="text-neutral-400 block text-[11px] mb-1">Política Anti-Spam:</span>
+                              <span className="font-bold text-neutral-200">
+                                Validação Semântica P2P
+                                <span className="text-[10px] text-neutral-400 font-normal ml-1.5">
+                                  (3 strikes ativam Nuclear Option)
+                                </span>
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Se for domínio autogovernado com carteira própria, exibe o buffer; caso contrário, exibe o card amigável de Cota Gerenciada */}
+                          {(domainEconomics as any)?.isSelfGoverned ? (
+                            <div className="p-4 bg-black/40 border border-white/[0.06] rounded-2xl flex items-center justify-between">
+                              <div>
+                                <span className="text-neutral-400 block text-[11px] mb-1">Saldo de Caução (Buffer da Empresa):</span>
+                                <span className="font-bold text-amber-400 font-mono text-sm">
+                                  {domainEconomics
+                                    ? `${(Number(BigInt(domainEconomics.balanceWei || "0") / BigInt("1000000000000000")) / 1000).toFixed(3)} ETH`
+                                    : "—"}
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setIsTopUpOpen(true)}
+                                className="px-3.5 py-1.5 bg-[#7d0000]/20 hover:bg-[#7d0000]/40 border border-[#7d0000]/40 text-red-300 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                                <span>Recarregar Saldo</span>
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="p-4 bg-emerald-950/20 border border-emerald-500/20 rounded-2xl flex items-start gap-3">
+                              <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+                              <div>
+                                <h4 className="text-xs font-bold text-emerald-200">
+                                  Cota Operacional Gerenciada (Plano MAIVW Ativo)
+                                </h4>
+                                <p className="text-[11px] text-neutral-300 mt-1 leading-relaxed">
+                                  Seu domínio opera com taxas e buffer operacional gerenciados pela plataforma. Não é necessário manter saldo de criptoativos em carteira própria para emissão e recebimento de mensagens.
+                                </p>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -4819,7 +5166,7 @@ print(res.json())`}
       {/* Footer */}
       <footer className="border-t border-white/[0.06] py-5 text-center text-xs text-neutral-500">
         <p>
-          Protocolo MAIVW — Console Administrativo Corporativo. Cartório na Base Sepolia.
+          Protocolo MAIVW — Console Administrativo Corporativo. Cartório Descentralizado Multi-Chain.
         </p>
       </footer>
     </div>

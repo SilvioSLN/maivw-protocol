@@ -674,24 +674,53 @@ export async function authRoutes(app: FastifyInstance, options: AuthRouteOptions
       orderBy: { createdAt: "desc" },
     });
 
+    const domainNames = domains.map((d) => d.domainName);
+    const originRecords = await prisma.originRecord.findMany({
+      where: { domain: { in: domainNames } },
+    });
+    const reservations = await prisma.originReservation.findMany({
+      where: { domain: { in: domainNames } },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const solanaProgramId = process.env.SOLANA_PROGRAM_ID || "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS";
+    const evmRegistryAddress = process.env.BASE_REGISTRY_ADDRESS || process.env.REGISTRY_CONTRACT_ADDRESS || "0x0000000000000000000000000000000000000000";
+
     return {
-      domains: domains.map((d) => ({
-        id: d.id,
-        domainName: d.domainName,
-        isVerified: d.isVerified,
-        createdAt: d.createdAt,
-        accountsCount: d.accounts.length,
-        apiKeysCount: d.apiKeys.length,
-        smtpConfigured: !!d.smtpConfig?.isActive,
-        smtpProvider: d.smtpConfig?.provider || null,
-        publicKey: d.walletVault?.publicKey || null,
-        accounts: d.accounts.map((a) => ({
-          id: a.id,
-          email: `${a.localPart}@${d.domainName}`,
-          displayName: a.displayName,
-          isActive: a.isActive,
-        })),
-      })),
+      domains: domains.map((d) => {
+        const originRec = originRecords.find((r) => r.domain === d.domainName);
+        const reserv = reservations.find((r) => r.domain === d.domainName);
+        const isSolana = originRec?.originNetworkFamily === "SOLANA"
+          || reserv?.originNetworkFamily === "SOLANA"
+          || (Boolean(d.walletVault?.publicKey) && !d.walletVault!.publicKey.startsWith("0x"));
+
+        const originFamily: "SOLANA" | "EVM" = isSolana ? "SOLANA" : "EVM";
+        const originNetworkName = isSolana ? "Solana Devnet" : "Base Sepolia";
+        const explorerUrl = isSolana
+          ? `https://explorer.solana.com/address/${solanaProgramId}?cluster=devnet`
+          : `https://sepolia.basescan.org/address/${evmRegistryAddress}`;
+
+        return {
+          id: d.id,
+          domainName: d.domainName,
+          isVerified: d.isVerified,
+          createdAt: d.createdAt,
+          accountsCount: d.accounts.length,
+          apiKeysCount: d.apiKeys.length,
+          smtpConfigured: !!d.smtpConfig?.isActive,
+          smtpProvider: d.smtpConfig?.provider || null,
+          publicKey: d.walletVault?.publicKey || null,
+          originFamily,
+          originNetworkName,
+          explorerUrl,
+          accounts: d.accounts.map((a) => ({
+            id: a.id,
+            email: `${a.localPart}@${d.domainName}`,
+            displayName: a.displayName,
+            isActive: a.isActive,
+          })),
+        };
+      }),
     };
   });
 

@@ -35,6 +35,9 @@ export interface DomainSummary {
   smtpConfigured: boolean;
   smtpProvider: string | null;
   publicKey: string | null;
+  originFamily?: "SOLANA" | "EVM";
+  originNetworkName?: string;
+  explorerUrl?: string;
   accounts: Array<{
     id: number;
     email: string;
