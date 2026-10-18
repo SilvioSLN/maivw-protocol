@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import type { Address, Hex } from "viem";
 import { PrismaClient } from "@prisma/client";
+import { Keypair } from "@solana/web3.js";
 
 /**
  * KeyManagementService (KMS Mock) — Fase 10
@@ -105,6 +106,75 @@ export class KeyManagementService {
       publicKey: publicKey as Address,
       vaultId: vault.id,
     };
+  }
+
+  /**
+   * Provisiona uma carteira Ed25519 Solana para um domínio de forma transparente.
+   */
+  async provisionSolanaWalletForDomain(domainId: number): Promise<{ publicKey: string; vaultId: number }> {
+    const existingVault = await this.prisma.walletVault.findUnique({
+      where: { domainId },
+    });
+    // Se a carteira já for uma pubkey Solana base58 (não prefixada com 0x)
+    if (existingVault && !existingVault.publicKey.startsWith("0x")) {
+      return {
+        publicKey: existingVault.publicKey,
+        vaultId: existingVault.id,
+      };
+    }
+
+    const keypair = Keypair.generate();
+    const publicKey = keypair.publicKey.toBase58();
+    const secretKeyBase64 = Buffer.from(keypair.secretKey).toString("base64");
+
+    const { cipherText, iv, authTag } = this.encrypt(secretKeyBase64);
+
+    const vault = await this.prisma.walletVault.upsert({
+      where: { domainId },
+      create: {
+        domainId,
+        publicKey,
+        encryptedPrivateKey: cipherText,
+        iv,
+        authTag,
+      },
+      update: {
+        publicKey,
+        encryptedPrivateKey: cipherText,
+        iv,
+        authTag,
+      },
+    });
+
+    console.log(`[KMS] Provisioned Solana Keypair for domainId=${domainId}: ${publicKey} (AES-256-GCM encrypted)`);
+
+    return {
+      publicKey,
+      vaultId: vault.id,
+    };
+  }
+
+  /**
+   * Recupera o keypair Solana de um domínio descriptografando a chave privada.
+   */
+  async getSolanaSignerForDomain(domainNameOrId: string | number): Promise<Keypair> {
+    let vault = null;
+    if (typeof domainNameOrId === "number") {
+      vault = await this.prisma.walletVault.findUnique({ where: { domainId: domainNameOrId } });
+    } else {
+      const domain = await this.prisma.domain.findUnique({
+        where: { domainName: domainNameOrId.toLowerCase().trim() },
+        include: { walletVault: true },
+      });
+      vault = domain?.walletVault;
+    }
+
+    if (!vault) {
+      throw new Error(`[KMS] No wallet vault found for domain "${domainNameOrId}"`);
+    }
+
+    const decrypted = this.decrypt(vault.encryptedPrivateKey, vault.iv, vault.authTag);
+    return Keypair.fromSecretKey(Buffer.from(decrypted, "base64"));
   }
 
   /**

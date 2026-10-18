@@ -117,5 +117,6 @@ O processador de anexos também usa `NEXT_PUBLIC_GATEWAY_URL` como fallback. Par
 | `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET` | Bucket Firebase |
 | `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID` | Identificador público Firebase |
 | `NEXT_PUBLIC_FIREBASE_APP_ID` | Identificador público da aplicação Firebase |
+| `NEXT_PUBLIC_DEFAULT_ORIGIN_NETWORK` | Rede de registro padrão no onboarding (`base`, `solana`, `arbitrum`, `polygon`; padrão `base`) |
 
 Mudanças de `NEXT_PUBLIC_*` exigem rebuild. A configuração pública Firebase não é a credencial de serviço do backend. O frontend exige configuração Firebase própria para login social; valores ausentes produzem erro de configuração, sem recorrer a um projeto compartilhado.

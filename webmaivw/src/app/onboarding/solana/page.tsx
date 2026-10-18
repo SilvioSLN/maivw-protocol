@@ -54,6 +54,16 @@ export default function SolanaOnboardingPage() {
   const selected = useMemo(() => networks.find((item) => item.networkId === networkId), [networks, networkId]);
 
   useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const urlDomain = params.get("domain");
+      if (urlDomain) {
+        setDomain(urlDomain.trim().toLowerCase());
+      }
+    }
+  }, []);
+
+  useEffect(() => {
     if (!token) return;
     fetch(`${gatewayUrl}/api/v1/onboarding/origin-networks`, { headers: { Authorization: `Bearer ${token}` } })
       .then(async (response) => {
@@ -122,7 +132,7 @@ export default function SolanaOnboardingPage() {
   return (
     <main className="min-h-screen bg-[#08090d] text-white px-4 py-8 md:py-12">
       <div className="max-w-5xl mx-auto space-y-6">
-        <Link href="/onboarding" className="inline-flex items-center gap-2 text-sm text-neutral-400 hover:text-white"><ArrowLeft className="w-4 h-4" />Onboarding EVM</Link>
+        <Link href="/onboarding" className="inline-flex items-center gap-2 text-sm text-neutral-400 hover:text-white"><ArrowLeft className="w-4 h-4" />Voltar ao Onboarding</Link>
         <header className="rounded-3xl border border-violet-500/20 bg-gradient-to-br from-violet-950/40 to-[#101118] p-6 md:p-9">
           <div className="text-xs font-bold tracking-[.18em] text-violet-300 uppercase">Origem canônica</div>
           <h1 className="mt-2 text-3xl font-bold">Registrar domínio na Solana</h1>

@@ -19,7 +19,7 @@ Prepare nó e contrato na mesma rede e cadastre a conta administrativa. Nesta ve
 | --- | --- |
 | Tipo | `TXT` |
 | Nome | `_maivw-verify` na zona do domínio |
-| Conteúdo | `maivw-verification=TOKEN_FORNECIDO_PELO_ONBOARDING` |
+| Conteúdo | `maivw-verification=TOKEN` (redes EVM) ou `maivw-origin-v1=ID.TOKEN` (origem Solana) |
 | TTL | Conforme sua política de DNS |
 
 Cloudflare, Registro.br e Route 53 usam interfaces diferentes. Confira se o painel adiciona automaticamente o sufixo do domínio; evite criar `_maivw-verify.example.com.example.com`. Use a representação de aspas exigida pelo seu provedor, preservando o conteúdo do TXT.
