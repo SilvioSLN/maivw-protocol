@@ -113,7 +113,7 @@ export async function economicsRoutes(app: FastifyInstance, options: EconomicsRo
         dailyLimit: dailyLimitNum,
         isActive: info.isActive,
         strikeCount: info.strikeCount,
-        isSuspended: !info.isActive,
+        isSuspended: info.strikeCount >= 3,
       };
     } catch (error: any) {
       return reply.status(500).send({
