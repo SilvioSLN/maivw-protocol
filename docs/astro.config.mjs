@@ -51,6 +51,7 @@ export default defineConfig({
 					{ label: 'Domínio e DNS', slug: 'users/dns-domain-setup' },
 					{ label: 'Webmail', slug: 'users/webmail-guide' },
 					{ label: 'Serviços e persistência', slug: 'self-hosting/docker' },
+					{ label: 'Papéis de runtime', slug: 'self-hosting/runtime-roles' },
 					{ label: 'Variáveis de ambiente', slug: 'self-hosting/env-vars' },
 					{ label: 'Operação e backup', slug: 'self-hosting/operations' },
 					{ label: 'Diagnóstico', slug: 'users/troubleshooting' },

@@ -1,9 +1,12 @@
 import type { FastifyInstance } from "fastify";
 
 interface HealthOptions {
-  checks: Record<"blockchain" | "redis" | "database", () => Promise<unknown>>;
-  oracleBalance: () => Promise<bigint>;
-  oracleMinBalance: bigint;
+  service?: string;
+  role?: string;
+  activeComponents?: readonly string[];
+  checks: Record<string, () => Promise<unknown>>;
+  oracleBalance?: () => Promise<bigint>;
+  oracleMinBalance?: bigint;
   metadata: () => Record<string, unknown>;
   timeoutMs?: number;
 }
@@ -23,28 +26,35 @@ async function bounded<T>(check: () => Promise<T>, timeoutMs: number): Promise<T
 }
 
 export async function healthRoutes(app: FastifyInstance, options: HealthOptions) {
+  const service = options.service ?? "maivw-gateway";
+  const role = options.role ?? "all-in-one";
   // Liveness only: this does not assert that the node can deliver messages.
-  app.get("/health/live", async () => ({ status: "alive", service: "maivw-gateway" }));
+  app.get("/health/live", async () => ({ status: "alive", service, role }));
 
   app.get("/health", async (_request, reply) => {
     const timeout = options.timeoutMs ?? 2000;
-    const [blockchain, redis, database, balance] = await Promise.allSettled([
-      bounded(options.checks.blockchain, timeout),
-      bounded(options.checks.redis, timeout),
-      bounded(options.checks.database, timeout),
-      bounded(options.oracleBalance, timeout),
-    ]);
-    const ready = [blockchain, redis, database].every((result) => result.status === "fulfilled");
+    const entries = Object.entries(options.checks);
+    const results = await Promise.allSettled(entries.map(([, check]) => bounded(check, timeout)));
+    const dependencies = Object.fromEntries(entries.map(([name], index) => [
+      name, results[index].status === "fulfilled" ? "online" : "offline",
+    ]));
+    const ready = results.every((result) => result.status === "fulfilled");
+    const balance = options.oracleBalance
+      ? await Promise.allSettled([bounded(options.oracleBalance, timeout)]).then(([result]) => result)
+      : undefined;
     return reply.code(ready ? 200 : 503).send({
       ...options.metadata(),
       status: ready ? "ok" : "degraded",
-      service: "maivw-gateway",
+      service,
+      role,
+      activeComponents: options.activeComponents ?? [],
       timestamp: new Date().toISOString(),
-      blockchain: blockchain.status === "fulfilled" ? "online" : "offline",
-      redis: redis.status === "fulfilled" ? "online" : "offline",
-      database: database.status === "fulfilled" ? "online" : "offline",
-      oracleBalanceWei: balance.status === "fulfilled" ? balance.value.toString() : null,
-      oracleBalanceLow: balance.status === "fulfilled" ? balance.value < options.oracleMinBalance : null,
+      ...dependencies,
+      dependencies,
+      oracleBalanceWei: balance?.status === "fulfilled" ? balance.value.toString() : null,
+      oracleBalanceLow: balance?.status === "fulfilled" && options.oracleMinBalance !== undefined
+        ? balance.value < options.oracleMinBalance
+        : null,
     });
   });
 }

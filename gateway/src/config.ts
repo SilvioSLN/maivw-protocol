@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { readFileSync } from "node:fs";
 import { Keypair, PublicKey } from "@solana/web3.js";
+import { RUNTIME_ROLES } from "./runtime/roles.js";
 
 const optionalEvmAddress = z.string().regex(/^0x[0-9a-fA-F]{40}$/).optional();
 const optionalEvmPrivateKey = z.string().regex(/^0x[0-9a-fA-F]{64}$/).optional();
@@ -47,6 +48,7 @@ function solanaKeypairPublicKey(value: string): string | null {
  */
 const EnvObjectSchema = z.object({
   MAIVW_ENVIRONMENT: z.enum(["local", "testnet", "staging", "production"]).default("local"),
+  MAIVW_RUNTIME_ROLE: z.enum(RUNTIME_ROLES).default("all-in-one"),
   GATEWAY_PORT: z.coerce.number().int().min(1).max(65535).default(3001),
   GATEWAY_HOST: z.string().default("0.0.0.0"),
   GATEWAY_PUBLIC_URL: httpUrl.default("http://localhost:3001"),
@@ -125,11 +127,18 @@ const EnvObjectSchema = z.object({
 
 export const EnvSchema = EnvObjectSchema.superRefine((config, context) => {
   const add = (path: string, message: string) => context.addIssue({ code: "custom", path: [path], message });
+  const needsOracleSigner = ["all-in-one", "gateway-api", "oracle-worker", "relayer-worker"]
+    .includes(config.MAIVW_RUNTIME_ROLE);
+  const needsSolanaRelayerSigner = config.SOLANA_ENABLED && config.MULTICHAIN_RELAY_ENABLED
+    && ["all-in-one", "relayer-worker"].includes(config.MAIVW_RUNTIME_ROLE);
   if (config.SOLANA_ENABLED) {
-    for (const field of ["SOLANA_RPC_URL", "SOLANA_WS_URL", "SOLANA_GENESIS_HASH", "SOLANA_PROGRAM_ID", "SOLANA_RELAYER_PUBLIC_KEY"] as const) {
+    for (const field of ["SOLANA_RPC_URL", "SOLANA_WS_URL", "SOLANA_GENESIS_HASH", "SOLANA_PROGRAM_ID"] as const) {
       if (!config[field]) add(field, `${field} é obrigatório quando SOLANA_ENABLED=true`);
     }
-    if (!config.SOLANA_RELAYER_KEYPAIR_PATH && !config.SOLANA_RELAYER_KEYPAIR_BASE64) {
+    if (needsSolanaRelayerSigner && !config.SOLANA_RELAYER_PUBLIC_KEY) {
+      add("SOLANA_RELAYER_PUBLIC_KEY", "pubkey do relayer Solana é obrigatória para este papel");
+    }
+    if (needsSolanaRelayerSigner && !config.SOLANA_RELAYER_KEYPAIR_PATH && !config.SOLANA_RELAYER_KEYPAIR_BASE64) {
       add("SOLANA_RELAYER_KEYPAIR_PATH", "signer do relayer Solana é obrigatório");
     }
     if (config.SOLANA_RELAYER_KEYPAIR_BASE64 && config.SOLANA_RELAYER_PUBLIC_KEY
@@ -146,14 +155,14 @@ export const EnvSchema = EnvObjectSchema.superRefine((config, context) => {
     if (config.SOLANA_ASSET_KIND === "SPL" && config.SOLANA_STANDARD_FEE_BASE_UNITS <= 0n) {
       add("SOLANA_STANDARD_FEE_BASE_UNITS", "taxa positiva é obrigatória para origem Solana");
     }
-    if (config.SOLANA_ASSET_KIND === "SPL" && config.ORACLE_SIGNER_TYPE === "local" && !config.ORACLE_PRIVATE_KEY) {
-      add("ORACLE_PRIVATE_KEY", "OriginClaim local exige ORACLE_PRIVATE_KEY");
-    }
-    if (config.SOLANA_ASSET_KIND === "SPL" && config.ORACLE_SIGNER_TYPE === "gcp-kms" && !config.GCP_KMS_KEY_VERSION) {
-      add("GCP_KMS_KEY_VERSION", "OriginClaim gcp-kms exige GCP_KMS_KEY_VERSION");
-    }
   }
-  if (config.MULTICHAIN_RELAY_ENABLED) {
+  if (needsOracleSigner && config.ORACLE_SIGNER_TYPE === "local" && !config.ORACLE_PRIVATE_KEY) {
+    add("ORACLE_PRIVATE_KEY", `papel ${config.MAIVW_RUNTIME_ROLE} exige signer local do oráculo`);
+  }
+  if (needsOracleSigner && config.ORACLE_SIGNER_TYPE === "gcp-kms" && !config.GCP_KMS_KEY_VERSION) {
+    add("GCP_KMS_KEY_VERSION", `papel ${config.MAIVW_RUNTIME_ROLE} exige signer KMS do oráculo`);
+  }
+  if (config.MULTICHAIN_RELAY_ENABLED && needsSolanaRelayerSigner) {
     const deployments = [config.BASE_REGISTRY_ADDRESS, config.ARBITRUM_REGISTRY_ADDRESS, config.POLYGON_REGISTRY_ADDRESS]
       .filter(Boolean).length + (config.SOLANA_ENABLED ? 1 : 0);
     if (deployments < 2) add("MULTICHAIN_RELAY_ENABLED", "relayer exige ao menos dois deployments configurados");
@@ -169,7 +178,7 @@ export const EnvSchema = EnvObjectSchema.superRefine((config, context) => {
     [config.ARBITRUM_REGISTRY_ADDRESS, config.ARBITRUM_WS_URL],
     [config.POLYGON_REGISTRY_ADDRESS, config.POLYGON_WS_URL],
   ]) {
-    if (config.MULTICHAIN_RELAY_ENABLED && registry && !ws) {
+    if (config.MULTICHAIN_RELAY_ENABLED && needsSolanaRelayerSigner && registry && !ws) {
       add("MULTICHAIN_RELAY_ENABLED", "cada deployment EVM do relayer exige URL WebSocket");
     }
   }
@@ -192,18 +201,30 @@ export function isLocalDemoConfig(config: Pick<EnvConfig, "CHAIN_ID" | "RPC_URL"
 export function environmentSafetyErrors(config: EnvConfig): string[] {
   const errors: string[] = [];
   const localNetwork = isLocalDemoConfig(config);
+  const requiresPrimaryEvm = config.MAIVW_RUNTIME_ROLE !== "solana-indexer";
+
+  if (config.MAIVW_RUNTIME_ROLE === "solana-indexer" && !config.SOLANA_ENABLED) {
+    errors.push("MAIVW_RUNTIME_ROLE=solana-indexer exige SOLANA_ENABLED=true");
+  }
+  if (config.MAIVW_RUNTIME_ROLE === "relayer-worker" && !config.MULTICHAIN_RELAY_ENABLED) {
+    errors.push("MAIVW_RUNTIME_ROLE=relayer-worker exige MULTICHAIN_RELAY_ENABLED=true");
+  }
+  if (config.MAIVW_RUNTIME_ROLE === "evm-indexer" && !config.REGISTRY_CONTRACT_ADDRESS) {
+    errors.push("MAIVW_RUNTIME_ROLE=evm-indexer exige REGISTRY_CONTRACT_ADDRESS");
+  }
 
   if (config.MAIVW_ENVIRONMENT === "local") {
-    if (!localNetwork) {
+    if (requiresPrimaryEvm && !localNetwork) {
       errors.push("MAIVW_ENVIRONMENT=local exige Anvil 31337 em anvil, localhost ou loopback");
     }
     return errors;
   }
 
-  if (localNetwork) {
+  if (requiresPrimaryEvm && localNetwork) {
     errors.push(`MAIVW_ENVIRONMENT=${config.MAIVW_ENVIRONMENT} não pode usar Anvil local`);
   }
-  if (!config.REGISTRY_CONTRACT_ADDRESS || !/^0x[a-fA-F0-9]{40}$/.test(config.REGISTRY_CONTRACT_ADDRESS)) {
+  if (requiresPrimaryEvm
+    && (!config.REGISTRY_CONTRACT_ADDRESS || !/^0x[a-fA-F0-9]{40}$/.test(config.REGISTRY_CONTRACT_ADDRESS))) {
     errors.push("REGISTRY_CONTRACT_ADDRESS válido é obrigatório fora do Anvil local");
   }
 
@@ -222,9 +243,9 @@ export function environmentSafetyErrors(config: EnvConfig): string[] {
   }
   for (const [name, value] of [
     ["GATEWAY_PUBLIC_URL", config.GATEWAY_PUBLIC_URL],
-    ["MAIVW_ORACLE_URL", config.MAIVW_ORACLE_URL],
+    ["MAIVW_ORACLE_URL", ["all-in-one", "gateway-api"].includes(config.MAIVW_RUNTIME_ROLE) ? config.MAIVW_ORACLE_URL : undefined],
     ["DEFAULT_P2P_ENDPOINT", config.DEFAULT_P2P_ENDPOINT],
-    ["RPC_URL", config.RPC_URL],
+    ["RPC_URL", requiresPrimaryEvm ? config.RPC_URL : undefined],
     ["SOLANA_RPC_URL", config.SOLANA_RPC_URL],
   ] as const) {
     if (value && new URL(value).protocol !== "https:") {
@@ -302,13 +323,6 @@ export function loadConfig(): EnvConfig {
   if (!result.success) {
     console.error("[CONFIG] ❌ Invalid environment configuration:");
     console.error(result.error.format());
-    process.exit(1);
-  }
-
-  if (result.data.ORACLE_SIGNER_TYPE === "gcp-kms" && !result.data.GCP_KMS_KEY_VERSION) {
-    console.error(
-      "[CONFIG] ❌ Configuração inválida: ORACLE_SIGNER_TYPE='gcp-kms' exige que GCP_KMS_KEY_VERSION seja definido."
-    );
     process.exit(1);
   }
 

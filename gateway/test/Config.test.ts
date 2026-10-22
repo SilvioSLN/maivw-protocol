@@ -4,7 +4,12 @@ import { EnvSchema, environmentSafetyErrors, isLocalDemoConfig, parseEnvironment
 import { createConfiguredLedgerAdapters } from "../src/services/ledger/LedgerAdapterFactory.js";
 import { Keypair } from "@solana/web3.js";
 
-const required = { JWT_SECRET: "a".repeat(32), MASTER_SECRET_KEY: "b".repeat(32), INTERNAL_SERVICE_KEY: "c".repeat(32) };
+const required = {
+  JWT_SECRET: "a".repeat(32),
+  MASTER_SECRET_KEY: "b".repeat(32),
+  INTERNAL_SERVICE_KEY: "c".repeat(32),
+  ORACLE_PRIVATE_KEY: `0x${"11".repeat(32)}`,
+};
 const solanaRelayer = Keypair.fromSeed(Uint8Array.from(Array(32).fill(1)));
 const solanaConfig = {
   SOLANA_ENABLED: true,
@@ -29,6 +34,52 @@ test("Solana deployment fails fast on partial RPC, WS, program, signer or commit
   assert.equal(EnvSchema.safeParse({ ...required, ...solanaConfig, SOLANA_RELAYER_KEYPAIR_BASE64: "invalid" }).success, false);
   assert.equal(EnvSchema.safeParse({ ...required, ...solanaConfig, SOLANA_OBSERVER_PAGE_SIZE: 1001 }).success, false);
   assert.equal(EnvSchema.safeParse({ ...required, ...solanaConfig, SOLANA_OBSERVER_POLL_INTERVAL_MS: 999 }).success, false);
+});
+
+test("Solana indexer needs network access but no transaction or oracle signer", () => {
+  const parsed = EnvSchema.safeParse({
+    ...required,
+    ...solanaConfig,
+    MAIVW_RUNTIME_ROLE: "solana-indexer",
+    ORACLE_PRIVATE_KEY: undefined,
+    SOLANA_RELAYER_PUBLIC_KEY: undefined,
+    SOLANA_RELAYER_KEYPAIR_BASE64: undefined,
+  });
+  assert.equal(parsed.success, true);
+  if (parsed.success) assert.deepEqual(environmentSafetyErrors(parsed.data), []);
+});
+
+test("Solana origin support does not require a relayer key while mirroring is disabled", () => {
+  const parsed = EnvSchema.safeParse({
+    ...required,
+    ...solanaConfig,
+    MULTICHAIN_RELAY_ENABLED: false,
+    SOLANA_RELAYER_PUBLIC_KEY: undefined,
+    SOLANA_RELAYER_KEYPAIR_BASE64: undefined,
+  });
+  assert.equal(parsed.success, true);
+});
+
+test("external Solana indexer does not inherit EVM registry or oracle endpoint requirements", () => {
+  const parsed = EnvSchema.parse({
+    ...required,
+    ...solanaConfig,
+    MAIVW_ENVIRONMENT: "testnet",
+    MAIVW_RUNTIME_ROLE: "solana-indexer",
+    GATEWAY_PUBLIC_URL: "https://solana-indexer.example.com",
+    ORACLE_PRIVATE_KEY: undefined,
+    SOLANA_RELAYER_PUBLIC_KEY: undefined,
+    SOLANA_RELAYER_KEYPAIR_BASE64: undefined,
+  });
+  assert.deepEqual(environmentSafetyErrors(parsed), []);
+});
+
+test("signing roles fail closed while non-signing workers do not inherit oracle secrets", () => {
+  const { ORACLE_PRIVATE_KEY: _unused, ...withoutOracle } = required;
+  assert.equal(EnvSchema.safeParse({ ...withoutOracle, MAIVW_RUNTIME_ROLE: "gateway-api" }).success, false);
+  assert.equal(EnvSchema.safeParse({ ...withoutOracle, MAIVW_RUNTIME_ROLE: "oracle-worker" }).success, false);
+  assert.equal(EnvSchema.safeParse({ ...withoutOracle, MAIVW_RUNTIME_ROLE: "mail-worker" }).success, true);
+  assert.equal(EnvSchema.safeParse({ ...withoutOracle, MAIVW_RUNTIME_ROLE: "p2p-ingress" }).success, true);
 });
 
 test("validated configuration constructs only explicitly enabled EVM and Solana adapters", () => {
@@ -140,6 +191,7 @@ test("secure testnet configuration passes environment safety checks", () => {
 test("empty optional Docker values use defaults without bypassing required secrets", () => {
   const env = {
     JWT_SECRET: "a".repeat(32), MASTER_SECRET_KEY: "b".repeat(32), INTERNAL_SERVICE_KEY: "c".repeat(32),
+    ORACLE_PRIVATE_KEY: `0x${"11".repeat(32)}`,
     ORACLE_AI_JUDGE_URL: "", RPC_URL: "", IS_CLOUD: "false",
   };
   const parsed = parseEnvironment(env);

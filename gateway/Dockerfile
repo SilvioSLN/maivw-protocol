@@ -16,4 +16,4 @@ ENV NODE_ENV=production
 EXPOSE 3001
 
 # Apply reviewed, versioned migrations before starting the gateway.
-CMD ["sh", "-c", "npx prisma migrate deploy && npx tsx src/index.ts"]
+CMD ["sh", "-c", "npx prisma migrate deploy && npx tsx src/runtime.ts \"${MAIVW_RUNTIME_ROLE:-all-in-one}\""]

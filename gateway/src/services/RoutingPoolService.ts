@@ -140,18 +140,20 @@ export class RoutingPoolService {
   /**
    * Inicializa o serviço, realiza seed se necessário e inicia o health-check runner
    */
-  async start(): Promise<void> {
-    if (this.isInitialized) return;
-
-    try {
-      await this.ensureSeedData();
-      await this.loadCacheFromDb();
-      this.startHealthCheckRunner();
-      this.isInitialized = true;
-      console.log(`[ROUTING-POOL] ✅ RoutingPoolService initialized with ${this.pools.size} pools and ${this.domainRules.length} rules`);
-    } catch (error) {
-      console.error("[ROUTING-POOL] ❌ Error starting RoutingPoolService:", error);
+  async start(options: { runHealthChecks?: boolean; failFast?: boolean } = {}): Promise<void> {
+    const runHealthChecks = options.runHealthChecks ?? true;
+    if (!this.isInitialized) {
+      try {
+        await this.ensureSeedData();
+        await this.loadCacheFromDb();
+        this.isInitialized = true;
+        console.log(`[ROUTING-POOL] ✅ RoutingPoolService initialized with ${this.pools.size} pools and ${this.domainRules.length} rules`);
+      } catch (error) {
+        console.error("[ROUTING-POOL] ❌ Error starting RoutingPoolService:", error);
+        if (options.failFast) throw error;
+      }
     }
+    if (runHealthChecks && this.isInitialized) this.startHealthCheckRunner();
   }
 
   /**

@@ -66,3 +66,26 @@ test("health bounds stalled dependencies and reports a low oracle balance", asyn
     assert.equal(response.json().oracleBalanceLow, true);
   } finally { await app.close(); }
 });
+
+test("health identifies the runtime role and only its active components", async () => {
+  const app = Fastify();
+  await healthRoutes(app, {
+    service: "maivw-gateway",
+    role: "solana-indexer",
+    activeComponents: ["solana-indexer"],
+    checks: { blockchain: async () => {}, database: async () => {} },
+    metadata: () => ({}),
+  });
+  try {
+    const live = await app.inject("/health/live");
+    assert.deepEqual(live.json(), {
+      status: "alive",
+      service: "maivw-gateway",
+      role: "solana-indexer",
+    });
+    const ready = await app.inject("/health");
+    assert.equal(ready.statusCode, 200);
+    assert.deepEqual(ready.json().activeComponents, ["solana-indexer"]);
+    assert.deepEqual(ready.json().dependencies, { blockchain: "online", database: "online" });
+  } finally { await app.close(); }
+});

@@ -23,6 +23,7 @@ O Compose local declara sua configuração diretamente e funciona sem `.env`. O 
 | Variável | Padrão / exigência | Uso |
 | --- | --- | --- |
 | `MAIVW_ENVIRONMENT` | `local`; obrigatório declarar nos manifests | Fronteira de segurança entre demonstração, Testnet, staging e produção |
+| `MAIVW_RUNTIME_ROLE` | `all-in-one` | Seleciona API, ingresso, worker ou indexador; veja [papéis de runtime](/self-hosting/runtime-roles/) |
 | `GATEWAY_PORT` | `3001` | Porta do processo; Compose fixa em 3001 |
 | `GATEWAY_HOST` | `0.0.0.0` | Bind interno; a publicação do Compose é no loopback do host |
 | `GATEWAY_PUBLIC_URL` | `http://localhost:3001` | Base pública usada em anexos e respostas; HTTPS é obrigatório fora de `local` |
@@ -63,7 +64,7 @@ Não troque `MASTER_SECRET_KEY` em banco existente sem recifrar chaves e credenc
 | `POLYGON_REGISTRY_ADDRESS` | Opcional | Registry da rede correspondente |
 | `MIRROR_REGISTRY_V2_ADDRESS` | Opcional | Endereço do contrato de mirror V2 em redes EVM |
 | `MULTICHAIN_RELAY_ENABLED` | `false` | Exige signer e ao menos dois deployments completos |
-| `SOLANA_ENABLED` | `false` | Ativa adapter Solana somente com RPC, WS, genesis, program e relayer completos |
+| `SOLANA_ENABLED` | `false` | Ativa adapter Solana com RPC, WS, genesis e program; segredos adicionais dependem do papel |
 | `SOLANA_RPC_URL` / `SOLANA_WS_URL` | Obrigatórias com Solana | RPC e stream do cluster configurado |
 | `SOLANA_GENESIS_HASH` / `SOLANA_PROGRAM_ID` | Obrigatórias com Solana | Impedem aceitar RPC ou programa de outro deployment |
 | `SOLANA_COMMITMENT` | Somente `finalized` | Leituras e observers não aceitam estado não finalizado |
@@ -74,12 +75,12 @@ Não troque `MASTER_SECRET_KEY` em banco existente sem recifrar chaves e credenc
 | `SOLANA_ASSET_DECIMALS` | `9` (SOL) ou conforme SPL | Casas decimais do ativo econômico Solana |
 | `SOLANA_ASSET_MINT` | Pubkey base58 | Endereço do Mint SPL (vazio quando nativo) |
 | `SOLANA_STANDARD_FEE_BASE_UNITS` | Unidades base | Taxa de registro padrão em lamports ou unidades mínimas do token |
-| `SOLANA_RELAYER_PUBLIC_KEY` | Obrigatória com Solana | Fee payer/assinante público do relayer |
-| `SOLANA_RELAYER_KEYPAIR_PATH` | Alternativa recomendada | Caminho de segredo montado; nunca versionar o keypair |
-| `SOLANA_RELAYER_KEYPAIR_BASE64` | Alternativa para secret manager | Array JSON de 64 bytes codificado em base64 |
+| `SOLANA_RELAYER_PUBLIC_KEY` | Obrigatória em `relayer-worker` e `all-in-one` com Solana e relay habilitados | Fee payer/assinante público do relayer |
+| `SOLANA_RELAYER_KEYPAIR_PATH` | Alternativa recomendada nos papéis de relayer | Caminho de segredo montado; nunca versionar o keypair |
+| `SOLANA_RELAYER_KEYPAIR_BASE64` | Alternativa para secret manager nos papéis de relayer | Array JSON de 64 bytes codificado em base64 |
 | `SOLANA_REORG_MARGIN_SLOTS` | `64` | Margem operacional do cluster |
 | `SOLANA_OBSERVER_START_SLOT` | Opcional | Slot inicial para backfill manual do indexador |
-| `SOLANA_OBSERVER_POLL_INTERVAL_MS` | `1000` | Intervalo em milissegundos entre polls do observador Solana |
+| `SOLANA_OBSERVER_POLL_INTERVAL_MS` | `5000` | Intervalo em milissegundos entre polls do observador Solana |
 | `SOLANA_OBSERVER_PAGE_SIZE` / `SOLANA_OBSERVER_MAX_PAGES` | `100` / `10` | Limites de backfill por poll |
 | `RELAY_ATTESTATION_TTL_SECONDS` | `900` | Entre 60 e 86400 segundos |
 | `RELAY_LEASE_SECONDS` / `RELAY_FAILURE_THRESHOLD` | `60` / `3` | Lease do worker e limiar do circuit breaker |
