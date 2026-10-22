@@ -41,39 +41,70 @@ import type { SolanaNetworkDefinition } from "./multichain/NetworkModel.js";
 import { SolanaRegistryIndexer, Web3SolanaIndexerClient } from "./multichain/SolanaRegistryIndexer.js";
 import { MultichainTelemetry } from "./multichain/MultichainTelemetry.js";
 import { MultichainAlertCollector, MultichainAlertService } from "./multichain/MultichainAlerts.js";
+import { hasLoop, hasRouteGroup, runtimeProfile } from "./runtime/roles.js";
 
 // ============================================
 //  Configuration
 // ============================================
 const config = loadConfig();
+const profile = runtimeProfile(config.MAIVW_RUNTIME_ROLE);
 
 const app = Fastify({ logger: { level: "info" } });
 const multichainTelemetry = new MultichainTelemetry(app.log);
+
+function required<T>(value: T | undefined, name: string): T {
+  if (value === undefined) throw new Error(`${name} não foi inicializado para ${profile.role}`);
+  return value;
+}
 
 // ============================================
 //  Services & Database
 // ============================================
 const prisma = new PrismaClient();
-const kms = new KeyManagementService(prisma, config.MASTER_SECRET_KEY);
 const ledger = new LedgerService(config, createConfiguredLedgerAdapters(config));
-const defaultSignerKey = (config.COMPANY_A_PRIVATE_KEY || generatePrivateKey()) as Hex;
-const signer = new SignatureService(defaultSignerKey);
-const smtp = new SmtpService(config.RESEND_API_KEY, prisma, config.MASTER_SECRET_KEY);
-const reputation = new ReputationService();
-const oracle = await OracleService.create(config, ledger);
-const oracleReportService = new OracleReportService();
-const eventListener = new EventListenerService(ledger, prisma);
-eventListener.start();
-const stealth = new StealthRoutingService(prisma);
-const routingPool = new RoutingPoolService(prisma, config.REDIS_URL);
-await routingPool.start();
-const originCatalog = new OriginCatalogService(prisma);
-const relayJobs = new MultichainRelayJobService(new PrismaRelayJobRepository(prisma));
-const mirrorJobs = new MultichainMirrorJobCoordinator(originCatalog, ledger, relayJobs);
+const gatewayApiEnabled = hasRouteGroup(profile, "gateway-api");
+const p2pIngressEnabled = hasRouteGroup(profile, "p2p-ingress");
+const mailWorkerEnabled = hasRouteGroup(profile, "mail-worker");
+const oracleWorkerEnabled = hasRouteGroup(profile, "oracle-worker");
+const relayerWorkerEnabled = hasRouteGroup(profile, "relayer-worker");
+const needsSigner = gatewayApiEnabled || p2pIngressEnabled || mailWorkerEnabled || oracleWorkerEnabled;
+const needsSmtp = gatewayApiEnabled || mailWorkerEnabled;
+const needsKms = gatewayApiEnabled || mailWorkerEnabled;
+const needsReputation = gatewayApiEnabled || p2pIngressEnabled || oracleWorkerEnabled;
+const needsOracle = gatewayApiEnabled || oracleWorkerEnabled || relayerWorkerEnabled;
+const needsRouting = gatewayApiEnabled || p2pIngressEnabled || mailWorkerEnabled || hasLoop(profile, "routing-health");
+const needsStealth = gatewayApiEnabled || p2pIngressEnabled || mailWorkerEnabled;
+
+const kms = needsKms ? new KeyManagementService(prisma, config.MASTER_SECRET_KEY) : undefined;
+const signer = needsSigner
+  ? new SignatureService((config.COMPANY_A_PRIVATE_KEY || generatePrivateKey()) as Hex)
+  : undefined;
+const smtp = needsSmtp ? new SmtpService(config.RESEND_API_KEY, prisma, config.MASTER_SECRET_KEY) : undefined;
+const reputation = needsReputation ? new ReputationService() : undefined;
+const oracle = needsOracle ? await OracleService.create(config, ledger) : undefined;
+const oracleReportService = oracleWorkerEnabled ? new OracleReportService() : undefined;
+const eventListener = hasLoop(profile, "evm-indexer") ? new EventListenerService(ledger, prisma) : undefined;
+const stealth = needsStealth ? new StealthRoutingService(prisma) : undefined;
+const routingPool = needsRouting ? new RoutingPoolService(prisma, config.REDIS_URL) : undefined;
+if (routingPool) {
+  await routingPool.start({
+    runHealthChecks: hasLoop(profile, "routing-health"),
+    failFast: config.MAIVW_ENVIRONMENT !== "local",
+  });
+}
+if (eventListener) eventListener.start();
+
+const originCatalog = relayerWorkerEnabled ? new OriginCatalogService(prisma) : undefined;
+const relayJobs = relayerWorkerEnabled
+  ? new MultichainRelayJobService(new PrismaRelayJobRepository(prisma))
+  : undefined;
+const mirrorJobs = originCatalog && relayJobs
+  ? new MultichainMirrorJobCoordinator(originCatalog, ledger, relayJobs)
+  : undefined;
 const solanaOriginNetwork = ledger.listAdapters()
   .map((adapter) => adapter.network)
   .find((network): network is SolanaNetworkDefinition => network.family === "SOLANA" && network.capabilities.origin);
-const originOnboarding = solanaOriginNetwork && solanaOriginNetwork.asset.kind === "SPL"
+const originOnboarding = gatewayApiEnabled && solanaOriginNetwork && solanaOriginNetwork.asset.kind === "SPL"
   ? new OriginOnboardingCoordinator(
       new OriginReservationService(
         prisma,
@@ -91,12 +122,13 @@ const originOnboarding = solanaOriginNetwork && solanaOriginNetwork.asset.kind =
     )
   : undefined;
 
-const multichainAlerts = new MultichainAlertService();
-const multichainAlertCollector = new MultichainAlertCollector(
-  prisma, multichainTelemetry, config.MULTICHAIN_ALERT_INDEXER_LAG_SLOTS,
-);
+const multichainAlerts = relayerWorkerEnabled ? new MultichainAlertService() : undefined;
+const multichainAlertCollector = relayerWorkerEnabled
+  ? new MultichainAlertCollector(prisma, multichainTelemetry, config.MULTICHAIN_ALERT_INDEXER_LAG_SLOTS)
+  : undefined;
 let solanaIndexer: SolanaRegistryIndexer | undefined;
-if (config.SOLANA_ENABLED && solanaOriginNetwork && config.SOLANA_RPC_URL && config.SOLANA_PROGRAM_ID) {
+if (hasLoop(profile, "solana-indexer") && config.SOLANA_ENABLED
+  && solanaOriginNetwork && config.SOLANA_RPC_URL && config.SOLANA_PROGRAM_ID) {
   const indexerClient = new Web3SolanaIndexerClient(config.SOLANA_RPC_URL);
   solanaIndexer = new SolanaRegistryIndexer(prisma, indexerClient, indexerClient, {
     networkId: solanaOriginNetwork.networkId,
@@ -114,8 +146,15 @@ if (config.SOLANA_ENABLED && solanaOriginNetwork && config.SOLANA_RPC_URL && con
       observedSlot: result.observedSlot, transactions: result.persistedTransactions, events: result.persistedEvents,
     });
   });
-  app.addHook("onClose", async () => solanaIndexer?.stop());
 }
+const activeLoops = profile.loops.filter((loop) => loop !== "solana-indexer" || solanaIndexer !== undefined);
+
+app.addHook("onClose", async () => {
+  solanaIndexer?.stop();
+  eventListener?.stop();
+  routingPool?.destroy();
+  await prisma.$disconnect();
+});
 
 // ============================================
 //  Register CORS
@@ -133,17 +172,22 @@ await app.register(cors, {
 //  Health Check
 // ============================================
 await healthRoutes(app, {
+  service: "maivw-gateway",
+  role: profile.role,
+  activeComponents: [...profile.routeGroups, ...activeLoops],
   checks: {
-    blockchain: () => ledger.checkBlockchainHealth(),
-    redis: () => routingPool.checkRedisHealth(),
+    blockchain: () => profile.role === "solana-indexer" && solanaOriginNetwork
+      ? ledger.checkNetworkHealth(solanaOriginNetwork.networkId)
+      : ledger.checkBlockchainHealth(),
     database: () => prisma.$queryRaw`SELECT 1`,
+    ...(routingPool ? { redis: () => routingPool.checkRedisHealth() } : {}),
   },
-  oracleBalance: () => oracle.getBalance(),
+  oracleBalance: oracle ? () => oracle.getBalance() : undefined,
   oracleMinBalance: config.ORACLE_MIN_BALANCE_WEI,
   metadata: () => ({
-    smtp: smtp.getProviderInfo(),
-    oracle: oracle.getOracleAddress(),
-    oracleSignerType: oracle.getSignerType(),
+    smtp: smtp?.getProviderInfo() ?? null,
+    oracle: oracle?.getOracleAddress() ?? null,
+    oracleSignerType: oracle?.getSignerType() ?? null,
     contractAddress: config.REGISTRY_CONTRACT_ADDRESS || "not deployed",
   }),
 });
@@ -151,15 +195,16 @@ await healthRoutes(app, {
 // ============================================
 //  API Status
 // ============================================
+if (gatewayApiEnabled) {
 app.get("/api/v1/status", async () => {
   const totalRegistered = await ledger.getTotalRegistered();
-  const smtpInfo = smtp.getProviderInfo();
+  const smtpInfo = required(smtp, "SmtpService").getProviderInfo();
   return {
     message: "MAIVW Gateway is running",
     version: "0.4.0",
     senderDomain: config.SENDER_DOMAIN,
-    signerAddress: signer.address,
-    oracleAddress: oracle.getOracleAddress(),
+    signerAddress: required(signer, "SignatureService").address,
+    oracleAddress: required(oracle, "OracleService").getOracleAddress(),
     contractAddress: config.REGISTRY_CONTRACT_ADDRESS || "not deployed",
     totalRegisteredDomains: totalRegistered,
     smtp: smtpInfo,
@@ -195,7 +240,7 @@ app.get("/api/v1/companies/:domain", async (request, reply) => {
       };
     }
 
-    const rep = await reputation.getReputation(cleanDomain);
+    const rep = await required(reputation, "ReputationService").getReputation(cleanDomain);
 
     return {
       registered: true,
@@ -231,125 +276,126 @@ app.get("/api/v1/companies", async () => {
 app.get("/api/v1/reputation/:domain", async (request, reply) => {
   const { domain } = request.params as { domain: string };
   const query = request.query as { subIdentityId?: string };
-  const rep = await reputation.getReputation(domain, query.subIdentityId);
+  const rep = await required(reputation, "ReputationService").getReputation(domain, query.subIdentityId);
   return { domain, subIdentityId: query.subIdentityId || "default", reputation: rep };
 });
+}
 
 // ============================================
 //  Routes
 // ============================================
-await sendRoutes(app, {
+if (mailWorkerEnabled) await sendRoutes(app, {
   ledger,
-  signer,
-  smtp,
+  signer: required(signer, "SignatureService"),
+  smtp: required(smtp, "SmtpService"),
   senderDomain: config.SENDER_DOMAIN,
   prisma,
-  kms,
+  kms: required(kms, "KeyManagementService"),
   eventListener,
-  stealth,
-  routingPool,
+  stealth: required(stealth, "StealthRoutingService"),
+  routingPool: required(routingPool, "RoutingPoolService"),
   config,
 });
 
-await inboxRoutes(app, {
+if (p2pIngressEnabled) await inboxRoutes(app, {
   ledger,
-  signer,
-  reputation,
+  signer: required(signer, "SignatureService"),
+  reputation: required(reputation, "ReputationService"),
   prisma,
-  stealth,
-  routingPool,
+  stealth: required(stealth, "StealthRoutingService"),
+  routingPool: required(routingPool, "RoutingPoolService"),
   trustProxy: config.TRUST_PROXY,
 });
 
-await disputeRoutes(app, {
+if (oracleWorkerEnabled) await disputeRoutes(app, {
   ledger,
-  signer,
-  oracle,
-  reputation,
-  reportService: oracleReportService,
+  signer: required(signer, "SignatureService"),
+  oracle: required(oracle, "OracleService"),
+  reputation: required(reputation, "ReputationService"),
+  reportService: required(oracleReportService, "OracleReportService"),
 });
 
-await authRoutes(app, {
+if (gatewayApiEnabled) await authRoutes(app, {
   registrationToken: config.ADMIN_REGISTRATION_TOKEN,
   prisma,
-  kms,
-  smtp,
+  kms: required(kms, "KeyManagementService"),
+  smtp: required(smtp, "SmtpService"),
 });
 
-await webhookRoutes(app, {
+if (gatewayApiEnabled) await webhookRoutes(app, {
   prisma,
   webhookSecret: config.LEGACY_WEBHOOK_SECRET,
 });
 
-await settingsRoutes(app, {
+if (gatewayApiEnabled) await settingsRoutes(app, {
   prisma,
-  smtp,
+  smtp: required(smtp, "SmtpService"),
   masterKey: config.MASTER_SECRET_KEY,
   ledger,
   config,
 });
 
-await onboardingRoutes(app, {
+if (gatewayApiEnabled) await onboardingRoutes(app, {
   prisma,
-  kms,
-  oracle,
+  kms: required(kms, "KeyManagementService"),
+  oracle: required(oracle, "OracleService"),
   ledger,
   config,
   originOnboarding,
   telemetry: multichainTelemetry,
 });
 
-await economicsRoutes(app, {
+if (gatewayApiEnabled) await economicsRoutes(app, {
   ledger,
   prisma,
   internalServiceKey: config.INTERNAL_SERVICE_KEY,
 });
 
-await oracleRoutes(app, {
-  oracle,
+if (oracleWorkerEnabled) await oracleRoutes(app, {
+  oracle: required(oracle, "OracleService"),
   ledger,
-  reportService: oracleReportService,
+  reportService: required(oracleReportService, "OracleReportService"),
   internalServiceKey: config.INTERNAL_SERVICE_KEY,
 });
 
-await stealthRoutes(app, {
-  stealth,
+if (gatewayApiEnabled) await stealthRoutes(app, {
+  stealth: required(stealth, "StealthRoutingService"),
   ledger,
   prisma,
   internalServiceKey: config.INTERNAL_SERVICE_KEY,
 });
 
-await attachmentRoutes(app, {
+if (gatewayApiEnabled) await attachmentRoutes(app, {
   prisma,
-  kms,
+  kms: required(kms, "KeyManagementService"),
 });
 
-await contactsRoutes(app, {
+if (gatewayApiEnabled) await contactsRoutes(app, {
   prisma,
   jwtSecret: config.JWT_SECRET,
 });
 
-await multiChainRoutes(app, {
+if (relayerWorkerEnabled) await multiChainRoutes(app, {
   ledger,
-  oracle,
+  oracle: required(oracle, "OracleService"),
   prisma,
   internalServiceKey: config.INTERNAL_SERVICE_KEY,
-  mirrorJobs,
+  mirrorJobs: required(mirrorJobs, "MultichainMirrorJobCoordinator"),
   telemetry: multichainTelemetry,
-  alertService: multichainAlerts,
-  alertCollector: multichainAlertCollector,
+  alertService: required(multichainAlerts, "MultichainAlertService"),
+  alertCollector: required(multichainAlertCollector, "MultichainAlertCollector"),
 });
 
-await routingRoutes(app, {
+if (gatewayApiEnabled) await routingRoutes(app, {
   prisma,
-  routingPool,
+  routingPool: required(routingPool, "RoutingPoolService"),
   internalServiceKey: config.INTERNAL_SERVICE_KEY,
 });
 
-await nodeRoutes(app, {
+if (gatewayApiEnabled) await nodeRoutes(app, {
   ledger,
-  signer,
-  reputation,
+  signer: required(signer, "SignatureService"),
+  reputation: required(reputation, "ReputationService"),
   prisma,
   config,
 });
@@ -362,29 +408,12 @@ const HOST = config.GATEWAY_HOST;
 
 try {
   await app.listen({ port: PORT, host: HOST });
-  console.log(`
-  ╔══════════════════════════════════════════════════════╗
-  ║   🚀 MAIVW Gateway v0.4.0 — Email Real + Auth      ║
-  ║   📡 http://${HOST}:${PORT}                          ║
-  ║                                                      ║
-  ║   Auth:                                              ║
-  ║   POST /api/v1/auth/register   → Cadastro Admin      ║
-  ║   POST /api/v1/auth/login      → Login JWT            ║
-  ║   GET  /api/v1/auth/me         → Dados do Usuário     ║
-  ║   POST /api/v1/auth/accounts   → Criar Conta Email    ║
-  ║                                                      ║
-  ║   Email:                                             ║
-  ║   POST /api/v1/send            → Envio Real/P2P      ║
-  ║   POST /api/v1/inbox           → Recepção P2P        ║
-  ║   GET  /api/v1/inbox/messages  → Caixa de Entrada    ║
-  ║   POST /api/v1/webhooks/inbound-legacy → SMTP In     ║
-  ║                                                      ║
-  ║   Config:                                            ║
-  ║   GET/PUT /api/v1/settings/smtp → Config Provedor    ║
-  ║   POST /api/v1/settings/smtp/test → Teste Conexão   ║
-  ║   POST /api/v1/dispute         → Tribunal IA         ║
-  ╚══════════════════════════════════════════════════════╝
-  `);
+  app.log.info({
+    role: profile.role,
+    routeGroups: profile.routeGroups,
+    loops: activeLoops,
+    address: `http://${HOST}:${PORT}`,
+  }, "MAIVW runtime started");
 } catch (err) {
   app.log.error(err);
   process.exit(1);
