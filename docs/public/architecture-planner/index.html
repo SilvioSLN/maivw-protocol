@@ -1,0 +1,1029 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Planejador interativo de arquitetura, responsabilidades e evolução de escala do protocolo MAIVW." />
+  <meta name="theme-color" content="#07110f" />
+  <title>MAIVW — Planejador de arquitetura</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #07110f;
+      --bg-soft: #0b1815;
+      --panel: rgba(15, 31, 27, .82);
+      --panel-strong: #10231e;
+      --line: rgba(181, 222, 205, .16);
+      --line-strong: rgba(181, 222, 205, .3);
+      --text: #f3f7f4;
+      --muted: #a8bbb3;
+      --green: #67f0b2;
+      --green-2: #2bc786;
+      --amber: #ffc869;
+      --red: #ff716b;
+      --blue: #75bfff;
+      --violet: #ba9cff;
+      --shadow: 0 24px 80px rgba(0, 0, 0, .34);
+      --radius: 22px;
+      --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      min-width: 320px;
+      background:
+        radial-gradient(circle at 12% 8%, rgba(43, 199, 134, .13), transparent 26rem),
+        radial-gradient(circle at 90% 20%, rgba(117, 191, 255, .09), transparent 30rem),
+        var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      line-height: 1.55;
+    }
+
+    button, input { font: inherit; }
+    button { color: inherit; }
+    a { color: var(--green); }
+    code { font-family: var(--mono); }
+
+    .skip-link {
+      position: fixed;
+      left: 1rem;
+      top: -5rem;
+      z-index: 100;
+      padding: .7rem 1rem;
+      border-radius: 10px;
+      background: var(--green);
+      color: #04100c;
+      font-weight: 800;
+    }
+    .skip-link:focus { top: 1rem; }
+
+    .shell { width: min(1440px, calc(100% - 32px)); margin: 0 auto; }
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      border-bottom: 1px solid var(--line);
+      background: rgba(7, 17, 15, .88);
+      backdrop-filter: blur(18px);
+    }
+    .topbar-inner {
+      min-height: 72px;
+      display: flex;
+      align-items: center;
+      gap: 24px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      color: var(--text);
+      text-decoration: none;
+      font-weight: 900;
+      letter-spacing: .05em;
+      white-space: nowrap;
+    }
+    .brand-mark {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(103, 240, 178, .5);
+      border-radius: 10px;
+      background: linear-gradient(145deg, rgba(103, 240, 178, .2), rgba(103, 240, 178, .03));
+      color: var(--green);
+      box-shadow: inset 0 0 18px rgba(103, 240, 178, .08);
+    }
+    .brand small { color: var(--muted); font-size: .72rem; font-weight: 650; letter-spacing: .02em; }
+    .nav {
+      margin-left: auto;
+      display: flex;
+      gap: 4px;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .nav a {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: .84rem;
+      font-weight: 700;
+      padding: .55rem .72rem;
+      border-radius: 9px;
+      white-space: nowrap;
+    }
+    .nav a:hover, .nav a:focus-visible { color: var(--text); background: rgba(255,255,255,.06); outline: none; }
+
+    .hero {
+      padding: 78px 0 44px;
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(320px, .85fr);
+      gap: 44px;
+      align-items: center;
+    }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--green);
+      font-size: .77rem;
+      font-weight: 850;
+      text-transform: uppercase;
+      letter-spacing: .14em;
+    }
+    .eyebrow::before { content: ""; width: 24px; height: 1px; background: currentColor; }
+    h1 {
+      margin: 18px 0;
+      max-width: 900px;
+      font-size: clamp(2.7rem, 6vw, 6.4rem);
+      line-height: .98;
+      letter-spacing: -.065em;
+    }
+    .hero h1 span { color: var(--green); }
+    .hero-copy { max-width: 760px; color: var(--muted); font-size: clamp(1rem, 1.5vw, 1.22rem); }
+    .hero-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 28px; }
+    .btn {
+      border: 1px solid var(--line-strong);
+      border-radius: 11px;
+      padding: .74rem 1rem;
+      background: rgba(255,255,255,.04);
+      cursor: pointer;
+      font-weight: 800;
+      text-decoration: none;
+    }
+    .btn:hover, .btn:focus-visible { border-color: var(--green); outline: none; transform: translateY(-1px); }
+    .btn-primary { background: var(--green); border-color: var(--green); color: #04100c; }
+
+    .hero-panel {
+      position: relative;
+      min-height: 430px;
+      padding: 24px;
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      background: linear-gradient(145deg, rgba(16, 35, 30, .96), rgba(8, 20, 17, .72));
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .hero-panel::after {
+      content: "";
+      position: absolute;
+      width: 240px;
+      height: 240px;
+      right: -100px;
+      bottom: -100px;
+      border-radius: 50%;
+      border: 46px solid rgba(103, 240, 178, .06);
+    }
+    .signal-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; margin-bottom: 18px; }
+    .signal {
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(0,0,0,.12);
+      font-size: .7rem;
+      color: var(--muted);
+    }
+    .signal strong { display: block; margin-top: 3px; color: var(--text); font-size: .92rem; }
+    .mini-flow { display: grid; gap: 10px; margin-top: 18px; position: relative; z-index: 1; }
+    .mini-node {
+      display: flex;
+      align-items: center;
+      gap: 13px;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(4, 13, 10, .55);
+    }
+    .mini-node:nth-child(2) { margin-left: 28px; }
+    .mini-node:nth-child(3) { margin-left: 56px; }
+    .mini-node:nth-child(4) { margin-left: 28px; }
+    .mini-icon { width: 34px; height: 34px; flex: none; border-radius: 9px; display: grid; place-items: center; background: rgba(103, 240, 178, .11); color: var(--green); font-weight: 900; }
+    .mini-node b { display: block; font-size: .83rem; }
+    .mini-node small { color: var(--muted); }
+
+    .truth-strip {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      margin: 10px 0 74px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(10, 25, 21, .65);
+      overflow: hidden;
+    }
+    .truth { padding: 22px; border-right: 1px solid var(--line); }
+    .truth:last-child { border-right: 0; }
+    .truth b { display: block; margin-bottom: 5px; }
+    .truth span { color: var(--muted); font-size: .9rem; }
+
+    section { padding: 46px 0; scroll-margin-top: 90px; }
+    .section-head { display: flex; align-items: end; justify-content: space-between; gap: 28px; margin-bottom: 24px; }
+    .section-head h2 { margin: 5px 0 0; font-size: clamp(1.85rem, 3.4vw, 3.4rem); line-height: 1.05; letter-spacing: -.045em; }
+    .section-head p { max-width: 640px; color: var(--muted); margin: 0; }
+    .kicker { color: var(--green); font-size: .73rem; font-weight: 850; letter-spacing: .13em; text-transform: uppercase; }
+    .note { color: var(--muted); font-size: .82rem; }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+      box-shadow: 0 16px 50px rgba(0,0,0,.16);
+    }
+
+    .planner-grid { display: grid; grid-template-columns: 390px minmax(0, 1fr); gap: 18px; }
+    .controls { padding: 22px; }
+    .control { margin-bottom: 21px; }
+    .control:last-child { margin-bottom: 0; }
+    .control-top { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 9px; }
+    .control label { font-size: .85rem; font-weight: 750; }
+    .control output { color: var(--green); font-family: var(--mono); font-size: .82rem; }
+    input[type="range"] { width: 100%; accent-color: var(--green); }
+    .range-labels { display: flex; justify-content: space-between; color: #779086; font-size: .67rem; }
+    .mode-switch {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 5px;
+      padding: 5px;
+      margin-bottom: 22px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(0,0,0,.18);
+    }
+    .mode-switch button {
+      border: 0;
+      border-radius: 8px;
+      padding: .62rem;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: .78rem;
+      font-weight: 850;
+    }
+    .mode-switch button.active { color: #04100c; background: var(--green); }
+
+    .estimate { padding: 22px; display: grid; grid-template-rows: auto 1fr; gap: 19px; }
+    .stage-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 17px;
+      border: 1px solid rgba(103, 240, 178, .25);
+      border-radius: 16px;
+      background: linear-gradient(90deg, rgba(103, 240, 178, .11), rgba(103, 240, 178, .02));
+    }
+    .stage-banner small { color: var(--green); text-transform: uppercase; font-weight: 850; letter-spacing: .1em; }
+    .stage-banner h3 { margin: 3px 0 0; font-size: 1.35rem; }
+    .stage-index { font: 800 2rem/1 var(--mono); color: rgba(103, 240, 178, .7); }
+    .metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+    .metric { padding: 15px; border: 1px solid var(--line); border-radius: 14px; background: rgba(0,0,0,.13); }
+    .metric span { color: var(--muted); font-size: .72rem; }
+    .metric strong { display: block; margin-top: 6px; font-size: 1.13rem; font-family: var(--mono); color: var(--text); }
+    .metric em { display: block; margin-top: 3px; color: #789087; font-size: .68rem; font-style: normal; }
+
+    .stage-tabs { display: flex; gap: 8px; margin: 22px 0 16px; overflow-x: auto; padding-bottom: 4px; }
+    .stage-tab {
+      min-width: 150px;
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      padding: 12px;
+      background: rgba(255,255,255,.025);
+      cursor: pointer;
+      text-align: left;
+    }
+    .stage-tab span { display: block; color: var(--muted); font-size: .67rem; }
+    .stage-tab b { display: block; margin-top: 3px; font-size: .82rem; }
+    .stage-tab.active { border-color: var(--green); background: rgba(103, 240, 178, .1); }
+
+    .arch-layout { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(280px, .6fr); gap: 18px; }
+    .architecture { padding: 20px; min-height: 560px; }
+    .architecture-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+    .architecture-toolbar h3 { margin: 0; }
+    .legend { display: flex; flex-wrap: wrap; gap: 9px; font-size: .68rem; color: var(--muted); }
+    .legend span { display: inline-flex; align-items: center; gap: 5px; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+    .dot.amber { background: var(--amber); }
+    .dot.blue { background: var(--blue); }
+    .dot.violet { background: var(--violet); }
+
+    .arch-canvas { position: relative; display: grid; gap: 11px; }
+    .arch-layer {
+      display: grid;
+      grid-template-columns: 118px minmax(0, 1fr);
+      gap: 11px;
+      align-items: stretch;
+    }
+    .layer-label {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 13px;
+      border-radius: 13px;
+      background: rgba(255,255,255,.025);
+      border: 1px solid var(--line);
+      color: var(--muted);
+      font-size: .7rem;
+      text-transform: uppercase;
+      letter-spacing: .09em;
+      font-weight: 850;
+    }
+    .layer-label b { margin-top: 3px; color: var(--text); font-size: .72rem; letter-spacing: 0; text-transform: none; }
+    .nodes { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 8px; }
+    .arch-node {
+      position: relative;
+      min-height: 82px;
+      padding: 11px;
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      background: rgba(4, 13, 10, .54);
+      overflow: hidden;
+      transition: opacity .2s, transform .2s, border-color .2s;
+    }
+    .arch-node::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--node-color, var(--green)); }
+    .arch-node b { display: block; font-size: .78rem; }
+    .arch-node small { display: block; margin-top: 4px; color: var(--muted); font-size: .65rem; line-height: 1.35; }
+    .arch-node .place { display: inline-block; margin-top: 8px; color: var(--node-color, var(--green)); font: 700 .59rem/1 var(--mono); text-transform: uppercase; }
+    .arch-node.future { opacity: .22; filter: grayscale(.8); }
+    .arch-node.current { border-color: color-mix(in srgb, var(--node-color, var(--green)) 42%, transparent); transform: translateY(-1px); }
+    .arch-node[data-kind="trust"] { --node-color: var(--amber); }
+    .arch-node[data-kind="data"] { --node-color: var(--blue); }
+    .arch-node[data-kind="external"] { --node-color: var(--violet); }
+
+    .recommendation { padding: 20px; }
+    .recommendation h3 { margin: 0 0 4px; }
+    .recommendation > p { color: var(--muted); font-size: .85rem; }
+    .rec-group { margin-top: 19px; }
+    .rec-group h4 { margin: 0 0 9px; color: var(--green); font-size: .72rem; text-transform: uppercase; letter-spacing: .1em; }
+    .rec-list { display: grid; gap: 7px; }
+    .rec-item { display: flex; gap: 9px; color: var(--muted); font-size: .78rem; }
+    .rec-item::before { content: "↳"; color: var(--green); font-weight: 900; }
+    .trigger { margin-top: 19px; padding: 14px; border: 1px solid rgba(255,200,105,.23); border-radius: 13px; background: rgba(255,200,105,.055); }
+    .trigger b { color: var(--amber); font-size: .76rem; text-transform: uppercase; letter-spacing: .08em; }
+    .trigger p { margin: 7px 0 0; color: var(--muted); font-size: .78rem; }
+
+    .decision-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    .decision-card { padding: 20px; }
+    .decision-card .icon { font: 850 1.5rem/1 var(--mono); color: var(--green); }
+    .decision-card h3 { margin: 15px 0 6px; }
+    .decision-card p { color: var(--muted); font-size: .82rem; min-height: 62px; }
+    .decision-list { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 8px; }
+    .decision-list li { position: relative; padding-left: 17px; color: var(--muted); font-size: .75rem; }
+    .decision-list li::before { content: "+"; position: absolute; left: 0; color: var(--green); font-weight: 900; }
+    .decision-card .avoid li::before { content: "−"; color: var(--red); }
+    .decision-tag { display: inline-block; margin-top: 16px; padding: 5px 8px; border-radius: 8px; background: rgba(103,240,178,.09); color: var(--green); font-size: .64rem; font-weight: 850; text-transform: uppercase; letter-spacing: .06em; }
+
+    .oss-boundary { display: grid; grid-template-columns: 1fr 100px 1fr; gap: 16px; align-items: stretch; }
+    .boundary-side { padding: 24px; }
+    .boundary-side h3 { margin: 4px 0 5px; font-size: 1.35rem; }
+    .boundary-side > p { color: var(--muted); font-size: .85rem; }
+    .boundary-label { color: var(--green); font: 800 .68rem/1 var(--mono); text-transform: uppercase; }
+    .boundary-items { display: grid; gap: 9px; margin-top: 18px; }
+    .boundary-item { padding: 10px 12px; border: 1px solid var(--line); border-radius: 11px; background: rgba(0,0,0,.12); }
+    .boundary-item b { display: block; font-size: .78rem; }
+    .boundary-item span { color: var(--muted); font-size: .69rem; }
+    .boundary-link { display: grid; place-items: center; position: relative; }
+    .boundary-link::before { content: ""; position: absolute; width: 100%; height: 1px; background: linear-gradient(90deg, var(--green), var(--amber)); }
+    .boundary-link span { z-index: 1; padding: 8px; border-radius: 999px; background: var(--bg); border: 1px solid var(--line-strong); font: 800 .62rem/1 var(--mono); color: var(--text); text-align: center; }
+    .oss-rule { margin-top: 16px; padding: 15px; border-radius: 13px; border: 1px solid rgba(255,113,107,.22); background: rgba(255,113,107,.05); color: var(--muted); font-size: .8rem; }
+    .oss-rule strong { color: var(--red); }
+
+    .route-tools { display: grid; grid-template-columns: minmax(220px, 1fr) auto; gap: 12px; margin-bottom: 14px; }
+    .search {
+      width: 100%;
+      padding: .8rem .9rem;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      background: rgba(0,0,0,.18);
+      color: var(--text);
+      outline: none;
+    }
+    .search:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(103,240,178,.08); }
+    .route-filters { display: flex; gap: 6px; flex-wrap: wrap; }
+    .filter-btn { border: 1px solid var(--line); border-radius: 9px; background: rgba(255,255,255,.025); color: var(--muted); padding: .6rem .72rem; cursor: pointer; font-size: .72rem; font-weight: 800; }
+    .filter-btn.active { border-color: var(--green); color: var(--green); background: rgba(103,240,178,.08); }
+    .route-summary { display: flex; gap: 9px; align-items: center; color: var(--muted); font-size: .75rem; margin-bottom: 10px; }
+    .route-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 16px; }
+    table { width: 100%; border-collapse: collapse; min-width: 860px; }
+    th, td { padding: 12px 14px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { position: sticky; top: 0; background: #10231e; color: var(--muted); font-size: .65rem; text-transform: uppercase; letter-spacing: .09em; }
+    td { font-size: .75rem; }
+    tbody tr:last-child td { border-bottom: 0; }
+    tbody tr:hover { background: rgba(255,255,255,.025); }
+    .method { font: 850 .68rem/1 var(--mono); color: var(--green); }
+    .route-path { font: 700 .71rem/1.4 var(--mono); color: var(--text); }
+    .pill { display: inline-flex; padding: 4px 7px; border-radius: 999px; font-size: .61rem; font-weight: 850; text-transform: uppercase; letter-spacing: .04em; background: rgba(117,191,255,.09); color: var(--blue); }
+    .pill.critical { color: var(--red); background: rgba(255,113,107,.09); }
+    .pill.low { color: var(--muted); background: rgba(255,255,255,.05); }
+
+    .checklist { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .check-card { padding: 20px; }
+    .check-card h3 { margin: 0 0 14px; font-size: 1rem; }
+    .check-card ol { margin: 0; padding-left: 20px; display: grid; gap: 9px; color: var(--muted); font-size: .78rem; }
+    .check-card strong { color: var(--text); }
+    .status-chip { display: inline-block; margin-bottom: 12px; padding: 5px 8px; border-radius: 7px; color: var(--amber); background: rgba(255,200,105,.08); font-size: .63rem; text-transform: uppercase; font-weight: 850; letter-spacing: .07em; }
+
+    .source-note { margin: 32px 0 72px; padding: 18px 20px; color: var(--muted); font-size: .77rem; }
+    footer { padding: 28px 0 46px; border-top: 1px solid var(--line); color: var(--muted); font-size: .75rem; }
+    footer .shell { display: flex; justify-content: space-between; gap: 18px; flex-wrap: wrap; }
+
+    .toast {
+      position: fixed;
+      right: 20px;
+      bottom: 20px;
+      z-index: 60;
+      padding: 12px 15px;
+      border: 1px solid rgba(103,240,178,.35);
+      border-radius: 12px;
+      background: #10231e;
+      box-shadow: var(--shadow);
+      color: var(--text);
+      font-size: .78rem;
+      opacity: 0;
+      transform: translateY(15px);
+      pointer-events: none;
+      transition: .2s ease;
+    }
+    .toast.show { opacity: 1; transform: translateY(0); }
+
+    @media (max-width: 1120px) {
+      .hero { grid-template-columns: 1fr; }
+      .hero-panel { min-height: auto; }
+      .planner-grid, .arch-layout { grid-template-columns: 1fr; }
+      .decision-grid { grid-template-columns: repeat(2, 1fr); }
+      .nodes { grid-template-columns: repeat(2, minmax(0,1fr)); }
+      .metric-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 780px) {
+      .shell { width: min(100% - 20px, 1440px); }
+      .topbar-inner { gap: 10px; }
+      .brand small { display: none; }
+      .nav a { font-size: .75rem; padding-inline: .5rem; }
+      .hero { padding-top: 46px; }
+      .hero-panel { padding: 16px; }
+      .truth-strip, .decision-grid, .checklist { grid-template-columns: 1fr; }
+      .truth { border-right: 0; border-bottom: 1px solid var(--line); }
+      .truth:last-child { border-bottom: 0; }
+      .section-head { display: block; }
+      .section-head p { margin-top: 12px; }
+      .oss-boundary { grid-template-columns: 1fr; }
+      .boundary-link { min-height: 64px; }
+      .boundary-link::before { width: 1px; height: 100%; background: linear-gradient(var(--green), var(--amber)); }
+      .route-tools { grid-template-columns: 1fr; }
+      .arch-layer { grid-template-columns: 1fr; }
+      .layer-label { display: block; }
+    }
+    @media (max-width: 520px) {
+      .nav { display: none; }
+      .signal-row, .metric-grid, .nodes { grid-template-columns: 1fr; }
+      .mini-node:nth-child(n) { margin-left: 0; }
+      h1 { font-size: 2.65rem; }
+      .hero-actions .btn { width: 100%; text-align: center; }
+      .stage-banner { align-items: flex-start; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main">Pular para o conteúdo</a>
+  <header class="topbar">
+    <div class="shell topbar-inner">
+      <a class="brand" href="/" aria-label="Voltar para a documentação MAIVW">
+        <span class="brand-mark">M</span>
+        <span>MAIVW <small>/ architecture planner</small></span>
+      </a>
+      <nav class="nav" aria-label="Navegação da página">
+        <a href="#dimensionamento">Dimensionamento</a>
+        <a href="#arquitetura">Arquitetura</a>
+        <a href="#opensource">Open source</a>
+        <a href="#rotas">Rotas</a>
+        <a href="#proximos-passos">Plano</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <div class="shell">
+      <section class="hero" aria-labelledby="hero-title">
+        <div>
+          <span class="eyebrow">Mapa de decisão · arquitetura 2026</span>
+          <h1 id="hero-title">Separar pelo <span>tipo de carga</span>, não pelo organograma.</h1>
+          <p class="hero-copy">Uma leitura operacional do arquivo <code>ROTAS_POR_RESPONSABILIDADE.md</code>: o que roda junto no início, o que nasce isolado, quando migrar para GKE e como um nó open source usa o oráculo central sem receber as chaves globais.</p>
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="#dimensionamento">Simular uma operação</a>
+            <button class="btn" id="copy-plan" type="button">Copiar resumo da arquitetura</button>
+          </div>
+        </div>
+        <aside class="hero-panel" aria-label="Resumo visual da arquitetura">
+          <div class="signal-row">
+            <div class="signal">Plano de dados<strong>Regional</strong></div>
+            <div class="signal">Plano de confiança<strong>Global</strong></div>
+            <div class="signal">Escala por<strong>Mensagens</strong></div>
+          </div>
+          <div class="mini-flow">
+            <div class="mini-node"><span class="mini-icon">01</span><div><b>Edge & interfaces</b><small>CDN, WAF, Webmail e Dashboard</small></div></div>
+            <div class="mini-node"><span class="mini-icon">02</span><div><b>Gateway & filas</b><small>P2P ingress, envio e jobs</small></div></div>
+            <div class="mini-node"><span class="mini-icon">03</span><div><b>Dados do cliente</b><small>Postgres, Redis e object storage</small></div></div>
+            <div class="mini-node"><span class="mini-icon">04</span><div><b>Confiança global</b><small>Oráculo, relayer, KMS e ledgers</small></div></div>
+          </div>
+        </aside>
+      </section>
+
+      <div class="truth-strip" aria-label="Princípios de arquitetura">
+        <div class="truth"><b>Clientes não são capacidade</b><span>Use volume, pico, anexos, retenção e SLO para decidir quando escalar.</span></div>
+        <div class="truth"><b>Oráculo separado desde produção</b><span>A chave global nunca deve compartilhar processo, imagem ou segredo com Gateways de clientes.</span></div>
+        <div class="truth"><b>Storage não é um detalhe</b><span>Anexos saem do filesystem do Gateway antes que a primeira réplica horizontal seja criada.</span></div>
+      </div>
+
+      <section id="dimensionamento" aria-labelledby="sizing-title">
+        <div class="section-head">
+          <div><span class="kicker">01 · Carga</span><h2 id="sizing-title">Dimensione antes de escolher a plataforma.</h2></div>
+          <p>“Cliente” abaixo significa uma empresa/tenant. Ajuste usuários, mensagens e anexos para revelar quando uma faixa comercial esconde uma carga muito maior.</p>
+        </div>
+        <div class="planner-grid">
+          <div class="panel controls">
+            <div class="mode-switch" role="group" aria-label="Modelo de operação">
+              <button type="button" class="active" data-mode="managed" aria-pressed="true">Cloud gerenciada</button>
+              <button type="button" data-mode="oss" aria-pressed="false">Open source</button>
+            </div>
+            <div class="control">
+              <div class="control-top"><label for="clients">Empresas clientes</label><output id="clients-out">100</output></div>
+              <input id="clients" type="range" min="0" max="1000" value="400" step="1" aria-describedby="clients-scale" />
+              <div class="range-labels" id="clients-scale"><span>1</span><span>100</span><span>1 mil</span><span>10 mil</span><span>100 mil</span></div>
+            </div>
+            <div class="control">
+              <div class="control-top"><label for="users">Usuários por empresa</label><output id="users-out">25</output></div>
+              <input id="users" type="range" min="1" max="1000" value="25" step="1" />
+              <div class="range-labels"><span>1</span><span>100</span><span>500</span><span>1.000</span></div>
+            </div>
+            <div class="control">
+              <div class="control-top"><label for="messages">Mensagens por usuário/dia</label><output id="messages-out">18</output></div>
+              <input id="messages" type="range" min="1" max="250" value="18" step="1" />
+              <div class="range-labels"><span>1</span><span>50</span><span>125</span><span>250</span></div>
+            </div>
+            <div class="control">
+              <div class="control-top"><label for="attachments">Mensagens com anexo</label><output id="attachments-out">22%</output></div>
+              <input id="attachments" type="range" min="0" max="100" value="22" step="1" />
+              <div class="range-labels"><span>0%</span><span>25%</span><span>50%</span><span>100%</span></div>
+            </div>
+            <div class="control">
+              <div class="control-top"><label for="peak">Fator de pico</label><output id="peak-out">8×</output></div>
+              <input id="peak" type="range" min="2" max="30" value="8" step="1" />
+              <div class="range-labels"><span>2×</span><span>10×</span><span>20×</span><span>30×</span></div>
+            </div>
+          </div>
+
+          <div class="panel estimate">
+            <div class="stage-banner">
+              <div><small>Faixa recomendada</small><h3 id="stage-title">0–100 clientes · VPS redundante</h3></div>
+              <span class="stage-index" id="stage-index">S1</span>
+            </div>
+            <div>
+              <div class="metric-grid">
+                <div class="metric"><span>Usuários ativos</span><strong id="metric-users">2.500</strong><em>estimativa</em></div>
+                <div class="metric"><span>Mensagens/dia</span><strong id="metric-daily">45 mil</strong><em>entrada + saída assumidas</em></div>
+                <div class="metric"><span>Pico calculado</span><strong id="metric-rps">4,2 rps</strong><em>não é benchmark</em></div>
+                <div class="metric"><span>Storage/mês</span><strong id="metric-storage">352 GB</strong><em>anexo médio de 1 MB</em></div>
+              </div>
+              <p class="note" id="model-note">Estimativa de capacidade para a nuvem gerenciada. A faixa sobe automaticamente por clientes ou carga, o que acontecer primeiro.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="arquitetura" aria-labelledby="architecture-title">
+        <div class="section-head">
+          <div><span class="kicker">02 · Topologia</span><h2 id="architecture-title">Um caminho evolutivo, sem Kubernetes precoce.</h2></div>
+          <p>Escolha uma faixa manualmente ou use a calculadora. Blocos esmaecidos pertencem a estágios posteriores; blocos destacados compõem o desenho recomendado agora.</p>
+        </div>
+        <div class="stage-tabs" id="stage-tabs" role="tablist" aria-label="Faixas de crescimento"></div>
+        <div class="arch-layout">
+          <div class="panel architecture">
+            <div class="architecture-toolbar">
+              <h3 id="diagram-title">Arquitetura alvo</h3>
+              <div class="legend"><span><i class="dot"></i>compute</span><span><i class="dot blue"></i>dados</span><span><i class="dot amber"></i>confiança</span><span><i class="dot violet"></i>externo</span></div>
+            </div>
+            <div class="arch-canvas" id="arch-canvas"></div>
+          </div>
+          <aside class="panel recommendation" id="recommendation" aria-live="polite"></aside>
+        </div>
+      </section>
+
+      <section aria-labelledby="choices-title">
+        <div class="section-head">
+          <div><span class="kicker">03 · Separação</span><h2 id="choices-title">Onde cada responsabilidade deve rodar.</h2></div>
+          <p>GKE, serverless, VPS e storage não são alternativas equivalentes. Cada um resolve um perfil de carga diferente.</p>
+        </div>
+        <div class="decision-grid">
+          <article class="panel decision-card">
+            <span class="icon">VPS</span><h3>VPS / VM</h3><p>Melhor ponto de partida para carga previsível, equipe pequena e necessidade de controlar mTLS e rede.</p>
+            <ul class="decision-list"><li>Gateway e workers no início</li><li>Docker Compose reproduzível</li><li>IP estável e troubleshooting simples</li></ul>
+            <ul class="decision-list avoid"><li>Não concentre banco, anexos e chaves globais na mesma VM</li></ul>
+            <span class="decision-tag">Ideal: 0–100</span>
+          </article>
+          <article class="panel decision-card">
+            <span class="icon">GKE</span><h3>GKE / Kubernetes</h3><p>Entra quando há múltiplos workers, HPA, filas particionadas, zonas e deploy independente.</p>
+            <ul class="decision-list"><li>P2P ingress stateless</li><li>Send workers escaláveis</li><li>Relayers e indexadores isolados</li></ul>
+            <ul class="decision-list avoid"><li>Não use para esconder um monólito sem observabilidade</li></ul>
+            <span class="decision-tag">Ideal: 500+</span>
+          </article>
+          <article class="panel decision-card">
+            <span class="icon">ƒ()</span><h3>Serverless</h3><p>Ótimo para interfaces, webhooks e APIs esporádicas; inadequado para tudo que exige conexão duradoura.</p>
+            <ul class="decision-list"><li>Webmail e Dashboard estáticos</li><li>Webhooks de Payment</li><li>Admin API de baixa frequência</li></ul>
+            <ul class="decision-list avoid"><li>Evite P2P mTLS, watchers WebSocket e workers contínuos</li></ul>
+            <span class="decision-tag">Complementar</span>
+          </article>
+          <article class="panel decision-card">
+            <span class="icon">S3</span><h3>Storage gerenciado</h3><p>É uma camada própria: objetos, dados relacionais, cache e segredos possuem durabilidade diferente.</p>
+            <ul class="decision-list"><li>S3/R2 para anexos e backups</li><li>Postgres HA para metadados</li><li>Redis para cache e filas descartáveis</li></ul>
+            <ul class="decision-list avoid"><li>Segredos ficam em KMS/HSM, nunca em bucket ou banco</li></ul>
+            <span class="decision-tag">Desde o início</span>
+          </article>
+        </div>
+      </section>
+
+      <section id="opensource" aria-labelledby="oss-title">
+        <div class="section-head">
+          <div><span class="kicker">04 · Federação</span><h2 id="oss-title">Open source local. Confiança global consumida.</h2></div>
+          <p>O nó soberano continua dono dos e-mails, caixas, chaves de domínio e infraestrutura. Apenas operações globais de confiança atravessam a fronteira do oráculo.</p>
+        </div>
+        <div class="oss-boundary">
+          <article class="panel boundary-side">
+            <span class="boundary-label">Instalação do cliente</span><h3>Nó soberano / open source</h3><p>Pode rodar em uma VPS ou ambiente privado. Escala conforme a própria organização, não conforme toda a rede MAIVW.</p>
+            <div class="boundary-items">
+              <div class="boundary-item"><b>Gateway + Webmail</b><span>Envio, recepção P2P, autenticação e administração local.</span></div>
+              <div class="boundary-item"><b>Postgres + anexos</b><span>Dados e conteúdo sob custódia da organização.</span></div>
+              <div class="boundary-item"><b>KMS local do domínio</b><span>Assina mensagens; não é a chave mestre do protocolo.</span></div>
+              <div class="boundary-item"><b>Cache de Registry</b><span>Continua validando identidades durante indisponibilidade temporária do oráculo.</span></div>
+            </div>
+          </article>
+          <div class="boundary-link" aria-label="Canal autenticado entre nó e oráculo"><span>mTLS<br />+ assinatura<br />+ idempotência</span></div>
+          <article class="panel boundary-side">
+            <span class="boundary-label">Operação MAIVW</span><h3>Oráculo central</h3><p>Serviço global isolado, com HSM/KMS, política de rate limit e trilha de auditoria. Não recebe acesso administrativo ao nó.</p>
+            <div class="boundary-items">
+              <div class="boundary-item"><b>Provas de domínio</b><span>Atesta posse após desafio DNS e regras anti-replay.</span></div>
+              <div class="boundary-item"><b>Atestação cross-chain</b><span>Assina estado finalizado para os mirrors suportados.</span></div>
+              <div class="boundary-item"><b>Disputas e denúncias</b><span>Pipeline global com evidência, timelock e decisão auditável.</span></div>
+              <div class="boundary-item"><b>Relayer autorizado</b><span>Publica operações que exigem autoridade on-chain.</span></div>
+            </div>
+          </article>
+        </div>
+        <div class="oss-rule"><strong>Regra de segurança:</strong> o pacote open source nunca contém <code>oracleSignerPrivateKey</code>, autoridade de upgrade global ou credenciais de tesouraria. Se o oráculo cair, novas provas, mirrors e julgamentos aguardam; a entrega P2P normal deve continuar com estado finalizado em cache.</div>
+      </section>
+
+      <section id="rotas" aria-labelledby="routes-title">
+        <div class="section-head">
+          <div><span class="kicker">05 · Responsabilidade</span><h2 id="routes-title">Rotas agrupadas pela unidade que escala.</h2></div>
+          <p>O inventário deixa de ser uma lista de URLs e passa a responder: quem consome, onde roda e qual perfil de escala orienta o deploy.</p>
+        </div>
+        <div class="route-tools">
+          <input class="search" id="route-search" type="search" placeholder="Buscar rota, responsabilidade ou serviço…" aria-label="Buscar rotas" />
+          <div class="route-filters" id="route-filters" role="group" aria-label="Filtrar rotas por responsabilidade"></div>
+        </div>
+        <div class="route-summary"><strong id="route-count">0</strong><span>rotas exibidas · origem: ROTAS_POR_RESPONSABILIDADE.md</span></div>
+        <div class="route-table-wrap">
+          <table>
+            <thead><tr><th>Método</th><th>Rota</th><th>Responsabilidade</th><th>Unidade de deploy</th><th>Escala</th></tr></thead>
+            <tbody id="route-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="proximos-passos" aria-labelledby="next-title">
+        <div class="section-head">
+          <div><span class="kicker">06 · Execução</span><h2 id="next-title">O caminho realista a partir do código atual.</h2></div>
+          <p>A ordem reduz risco e custo. Cada etapa cria a condição operacional necessária para a próxima.</p>
+        </div>
+        <div class="checklist">
+          <article class="panel check-card"><span class="status-chip">Agora · fundação</span><h3>1. Tornar o básico substituível</h3><ol><li><strong>Extrair o oráculo</strong> do processo do Gateway e definir API autenticada.</li><li><strong>Trocar anexos locais</strong> por interface S3/R2/MinIO com URLs pré-assinadas.</li><li><strong>Formalizar jobs</strong> de envio, relayer e indexação com idempotência e DLQ.</li><li><strong>Segregar segredos</strong> de domínio, relayer, oracle e upgrade.</li></ol></article>
+          <article class="panel check-card"><span class="status-chip">Depois · 101–2.000</span><h3>2. Escalar processos, não o monólito</h3><ol><li><strong>Separar P2P ingress</strong> e responder 202 após validação mínima.</li><li><strong>Escalar send workers</strong> por profundidade da fila e latência.</li><li><strong>Adotar Postgres HA</strong>, Redis gerenciado e object storage.</li><li><strong>Medir SLOs</strong> por rota crítica, tenant e região.</li></ol></article>
+          <article class="panel check-card"><span class="status-chip">Maturidade · 2.000+</span><h3>3. Regionalizar e limitar blast radius</h3><ol><li><strong>Criar células regionais</strong> de Gateway, fila e storage.</li><li><strong>Particionar tenants</strong> com roteamento determinístico.</li><li><strong>Executar canário on-chain</strong> e failover de RPC contínuos.</li><li><strong>Evoluir o oráculo</strong> de chave única para multisig/TSS.</li></ol></article>
+        </div>
+      </section>
+
+      <aside class="panel source-note"><strong>Leitura honesta do estado atual:</strong> o repositório já possui Gateway, WebMaivw, Dashboard, Payment, Console, Postgres e Redis; porém as rotas do oráculo ainda vivem no Gateway e os anexos usam filesystem/Base64. A página descreve a estrutura-alvo e marca essas duas extrações como trabalho necessário — não como capacidade já entregue. As estimativas são parâmetros de planejamento, não benchmark nem promessa de SLO.</aside>
+    </div>
+  </main>
+
+  <footer><div class="shell"><span>MAIVW · Architecture Planner</span><span>Fonte técnica: ROTAS_POR_RESPONSABILIDADE.md · atualizado em 18/10/2026</span></div></footer>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    const stages = [
+      {
+        id: "s1", code: "S1", range: "0–100", title: "VPS redundante", maxClients: 100, maxPeak: 30,
+        summary: "Comece simples, mas retire dados pesados e confiança global da VM.",
+        compute: ["Edge/CDN", "Web + Gateway", "Worker assíncrono"],
+        data: ["Postgres gerenciado", "Redis/queue", "S3/R2/MinIO"],
+        ops: ["1 VPS de aplicação + réplica quente opcional", "Backups testados e métricas básicas", "Payment isolado; frontends no CDN/serverless"],
+        trigger: "Avance ao sustentar >30 rps de pico, fila >1 minuto, deploys concorrentes ou indisponibilidade causada por um único processo.",
+        active: 1
+      },
+      {
+        id: "s2", code: "S2", range: "101–500", title: "Serviços separados", maxClients: 500, maxPeak: 120,
+        summary: "Separe entrada, saída e controle; ainda é possível operar sem Kubernetes.",
+        compute: ["2+ Gateways atrás de LB", "P2P ingress separado", "Pool de send workers", "Payment e admin independentes"],
+        data: ["Postgres HA", "Redis gerenciado", "Object storage + CDN"],
+        ops: ["Deploy independente por responsabilidade", "DLQ, retry e idempotência", "Observabilidade centralizada"],
+        trigger: "Avance com >120 rps, três ou mais pools de workers, necessidade de HPA/zonas ou plantão consumido por deploy manual.",
+        active: 2
+      },
+      {
+        id: "s3", code: "S3", range: "501–2.000", title: "GKE regional", maxClients: 2000, maxPeak: 500,
+        summary: "Kubernetes passa a pagar o custo operacional: workloads têm escalas e ciclos distintos.",
+        compute: ["GKE multi-zona", "Ingress P2P HPA", "Send workers HPA", "Relayer/indexer isolados"],
+        data: ["Postgres HA + réplica", "Redis HA/Streams", "Object storage regional"],
+        ops: ["Autoscaling por fila e latência", "Pod disruption budgets", "Canários, tracing e SLOs"],
+        trigger: "Avance quando latência geográfica, residência de dados ou blast radius regional virarem riscos comerciais.",
+        active: 3
+      },
+      {
+        id: "s4", code: "S4", range: "2.001–10.000", title: "Pools regionais", maxClients: 10000, maxPeak: 2500,
+        summary: "Regionalize o plano de dados e mantenha o plano global de confiança separado.",
+        compute: ["GKE por região", "Global load balancer", "Workers regionais", "RPC pools por rede"],
+        data: ["Filas regionais", "Storage por residência", "Catálogo global mínimo"],
+        ops: ["Roteamento por tenant/região", "Failover exercitado", "SLO e orçamento de erro por célula"],
+        trigger: "Avance quando uma região já não puder compartilhar banco/fila sem contenção, ou quando uma falha afetar tenants demais.",
+        active: 4
+      },
+      {
+        id: "s5", code: "S5", range: "10.001–50.000", title: "Multi-região celular", maxClients: 50000, maxPeak: 10000,
+        summary: "Células independentes limitam impacto e permitem expansão geográfica previsível.",
+        compute: ["Células por coorte", "Edge global", "Pools dedicados", "Control plane global"],
+        data: ["Banco por célula", "Event log global", "Storage multi-região"],
+        ops: ["Tenant placement automático", "Capacity planning contínuo", "Disaster recovery entre células"],
+        trigger: "Avance quando tenants muito grandes exigirem isolamento físico, limites próprios e contratos de capacidade dedicados.",
+        active: 5
+      },
+      {
+        id: "s6", code: "S6", range: "50.000+", title: "Plataforma federada", maxClients: Infinity, maxPeak: Infinity,
+        summary: "Não existe um cluster maior: existem células, operadores e confiança por quórum.",
+        compute: ["Federação de operadores", "Células autônomas", "Control planes redundantes", "TSS/multisig oracle"],
+        data: ["Catálogos particionados", "Replicação orientada a eventos", "Arquivos por jurisdição"],
+        ops: ["Admission control", "SLO por operador", "Chaos engineering e auditoria externa"],
+        trigger: "O próximo passo é governança e interoperabilidade, não apenas adicionar máquinas.",
+        active: 6
+      }
+    ];
+
+    const layers = [
+      { label: "Borda", hint: "entrada pública", nodes: [
+        ["CDN / WAF", "TLS, rate limit e ativos estáticos", "edge", "compute", 1],
+        ["Global LB", "Roteamento por região e saúde", "edge", "compute", 4],
+        ["DDoS protection", "Proteção volumétrica antes do cluster", "edge", "external", 2],
+        ["DNS / DANE", "Descoberta e identidade do endpoint", "externo", "external", 1]
+      ]},
+      { label: "Experiência", hint: "frontends", nodes: [
+        ["WebMaivw", "Webmail e onboarding", "CDN/serverless", "compute", 1],
+        ["Dashboard", "Explorer e telemetria pública", "CDN/serverless", "compute", 1],
+        ["Console", "Operação cloud e governança", "serverless/container", "compute", 1],
+        ["Payment", "Pix, cartão e webhooks", "serviço isolado", "trust", 1]
+      ]},
+      { label: "Plano de dados", hint: "mensagens", nodes: [
+        ["Gateway API", "Auth, admin e onboarding local", "VPS → GKE", "compute", 1],
+        ["P2P ingress", "mTLS, validação e enqueue", "pods sem estado", "compute", 2],
+        ["Send workers", "KMS, retry e circuit breaker", "workers", "compute", 1],
+        ["Attachment service", "Presigned PUT/GET; sem Base64", "object storage", "data", 1]
+      ]},
+      { label: "Persistência", hint: "estado durável", nodes: [
+        ["PostgreSQL", "Contas, domínios e metadados", "managed HA", "data", 1],
+        ["Redis / Streams", "Cache, fila, locks e idempotência", "managed", "data", 1],
+        ["S3 / R2", "Anexos, exportações e backups", "object storage", "data", 1],
+        ["Observabilidade", "Logs, métricas, traces e alertas", "plataforma", "data", 2]
+      ]},
+      { label: "Confiança", hint: "global isolado", nodes: [
+        ["Oracle API", "Provas, disputas e atestações", "serviço dedicado", "trust", 1],
+        ["HSM / KMS", "Chaves globais e políticas de assinatura", "managed", "trust", 1],
+        ["Relayer / Indexer", "Eventos finalizados e broadcasts", "workers isolados", "trust", 2],
+        ["TSS committee", "Quórum de operadores independentes", "federado", "trust", 6]
+      ]},
+      { label: "Ledgers", hint: "estado público", nodes: [
+        ["Solana", "Origem ou mirror por domínio", "on-chain", "external", 1],
+        ["Base", "Origem ou mirror EVM", "on-chain", "external", 1],
+        ["Arbitrum", "Mirror Registry", "on-chain", "external", 1],
+        ["Polygon", "Origem legada ou mirror", "on-chain", "external", 1]
+      ]}
+    ];
+
+    const routes = [
+      ["POST", "/api/v1/auth/login", "webmail", "Sessão do usuário corporativo", "Gateway control API", "low"],
+      ["POST", "/api/v1/auth/register", "webmail", "Administrador inicial e convite", "Gateway control API", "low"],
+      ["POST", "/api/v1/auth/google", "webmail", "Login social", "Gateway control API", "low"],
+      ["GET", "/api/v1/auth/me", "webmail", "Contexto da sessão ativa", "Gateway control API", "medium"],
+      ["GET", "/api/v1/inbox/messages", "webmail", "Listagem e busca da caixa", "Mailbox read API", "medium"],
+      ["PATCH", "/api/v1/inbox/messages/:id", "webmail", "Estado da mensagem", "Mailbox write API", "medium"],
+      ["DELETE", "/api/v1/inbox/messages/:id", "webmail", "Exclusão de mensagem", "Mailbox write API", "medium"],
+      ["POST", "/api/v1/send", "p2p", "Assinar, rotear e enviar", "Send API + workers", "critical"],
+      ["POST", "/api/v1/inbox", "p2p", "Receber envelope federado", "P2P ingress", "critical"],
+      ["GET", "/health/live", "p2p", "Liveness do processo", "Cada workload", "critical"],
+      ["GET", "/health", "p2p", "Saúde de dependências", "Gateway / ingress", "medium"],
+      ["POST", "/api/v1/webhooks/inbound-legacy", "p2p", "Ponte de e-mail legado", "Legacy ingress", "medium"],
+      ["POST", "/api/v1/attachments/upload", "storage", "Upload de anexo", "Attachment service", "critical"],
+      ["GET", "/api/v1/attachments/:id/download", "storage", "Download autorizado", "Object storage + CDN", "critical"],
+      ["GET", "/api/v1/contacts/autocomplete", "webmail", "Sugestão de destinatários", "Gateway read API", "medium"],
+      ["POST", "/api/v1/report-spam", "oracle", "Registrar denúncia", "Gateway → Oracle API", "medium"],
+      ["GET", "/api/v1/onboarding/node-mode", "onboarding", "Detectar cloud ou soberano", "Gateway control API", "low"],
+      ["GET", "/api/v1/onboarding/origin-networks", "onboarding", "Redes disponíveis", "Gateway control API", "low"],
+      ["POST", "/api/v1/onboarding/challenge", "onboarding", "Criar desafio DNS", "Gateway control API", "low"],
+      ["POST", "/api/v1/onboarding/check-dns", "onboarding", "Validar propagação DNS", "DNS verifier", "medium"],
+      ["POST", "/api/v1/onboarding/origin-claim", "onboarding", "Reservar origem", "Gateway + catalog", "low"],
+      ["POST", "/api/v1/onboarding/claim-proof", "oracle", "Solicitar atestação de posse", "Oracle API", "medium"],
+      ["POST", "/api/v1/onboarding/verify-and-register", "onboarding", "Registrar on-chain via relayer", "Relayer jobs", "medium"],
+      ["POST", "/api/v1/onboarding/complete", "onboarding", "Criar primeira caixa e KMS", "Gateway control API", "low"],
+      ["GET", "/api/v1/domains", "admin", "Listar domínios locais", "Gateway control API", "low"],
+      ["GET", "/api/v1/auth/accounts", "admin", "Listar caixas", "Gateway control API", "low"],
+      ["POST", "/api/v1/auth/accounts", "admin", "Criar caixa", "Gateway control API", "low"],
+      ["GET", "/api/v1/api-keys", "admin", "Auditar integrações", "Gateway control API", "low"],
+      ["POST", "/api/v1/api-keys", "admin", "Emitir credencial restrita", "Gateway control API", "low"],
+      ["GET", "/api/v1/developer/logs", "admin", "Auditoria operacional", "Observability query API", "medium"],
+      ["GET", "/api/v1/economics/provider/:domain", "admin", "Tier, saldo e strikes", "Gateway read API", "low"],
+      ["PUT", "/api/v1/economics/endpoint", "admin", "Atualizar endpoint on-chain", "Relayer jobs", "low"],
+      ["POST", "/api/v1/economics/topup", "admin", "Recompor caução", "Relayer jobs", "low"],
+      ["GET", "/api/v1/multichain/status/:domain", "multichain", "Estado consolidado por rede", "Catalog read API + cache", "critical"],
+      ["POST", "/api/v1/multichain/attest-mirror", "oracle", "Atestar e publicar mirror", "Oracle + relayer", "medium"],
+      ["GET", "/api/v1/stealth/config/:domain", "admin", "Postura de recepção", "Gateway control API", "low"],
+      ["PUT", "/api/v1/stealth/config/:domain", "admin", "Atualizar modo stealth", "Gateway + relayer", "low"],
+      ["GET", "/api/v1/stealth/routes", "admin", "Rotas privadas bilaterais", "Gateway control API", "low"],
+      ["POST", "/api/v1/settings/smtp", "admin", "Configurar saída legada", "Gateway control API", "low"],
+      ["POST", "/api/v1/settings/smtp/test", "admin", "Testar provedor SMTP", "Send worker", "low"],
+      ["POST", "/api/v1/settings/tls/:domain", "admin", "Ancorar fingerprint mTLS", "Gateway + relayer", "low"],
+      ["GET", "/api/v1/companies/stats", "dashboard", "Contadores públicos", "Public read API + cache", "medium"],
+      ["GET", "/api/v1/companies", "dashboard", "Diretório verificado", "Public read API + cache", "medium"],
+      ["GET", "/api/v1/companies/:domain", "dashboard", "Ficha pública do domínio", "Public read API + cache", "medium"],
+      ["GET", "/api/v1/reputation/:domain", "dashboard", "Reputação consolidada", "Public read API + cache", "medium"],
+      ["GET", "/api/v1/node/telemetry", "dashboard", "Saúde do nó", "Observability query API", "medium"],
+      ["GET", "/api/v1/multichain/metrics", "dashboard", "Latência e volume cross-chain", "Metrics API", "medium"],
+      ["GET", "/api/v1/multichain/timeline/:domain", "dashboard", "Linha do tempo on-chain", "Indexer read API", "medium"],
+      ["POST", "/api/v1/checkout/create", "payment", "Criar ordem Pix/cartão", "Payment service", "medium"],
+      ["GET", "/api/v1/checkout/status/:orderId", "payment", "Acompanhar liquidação", "Payment service + cache", "medium"],
+      ["POST", "/api/v1/webhooks/asaas", "payment", "Consumir evento Pix", "Payment webhook", "medium"],
+      ["POST", "/api/v1/webhooks/stripe", "payment", "Consumir evento de cartão", "Payment webhook", "medium"],
+      ["POST", "/api/v1/licenses/validate", "payment", "Validar voucher/licença", "Payment service", "medium"],
+      ["GET", "/api/v1/economics/governance", "cloud", "Tesouraria e taxas", "Cloud control plane", "low"],
+      ["GET", "/api/v1/routing/pools", "cloud", "Pools regionais", "Routing control plane", "low"],
+      ["POST", "/api/v1/routing/pools/:poolId/nodes", "cloud", "Registrar nó no pool", "Routing control plane", "low"],
+      ["GET", "/api/v1/routing/rules", "cloud", "Regras corporativas", "Routing control plane", "low"],
+      ["POST", "/api/v1/routing/test-resolve", "cloud", "Simular resolução", "Routing control plane", "low"],
+      ["GET", "/api/v1/oracle/status", "oracle", "Saúde e saldo do operador", "Oracle API privada", "low"],
+      ["GET", "/api/v1/oracle/reports", "oracle", "Fila global de denúncias", "Oracle API privada", "medium"],
+      ["POST", "/api/v1/oracle/reports/:id/human-action", "oracle", "Decisão humana auditada", "Oracle API privada", "low"],
+      ["POST", "/api/v1/oracle/reclaim-proof", "oracle", "Prova de recuperação", "Oracle API", "low"],
+      ["POST", "/api/v1/dispute", "oracle", "Abrir disputa", "Gateway → Oracle API", "medium"]
+    ];
+
+    const categoryLabels = {
+      all: "Todas", webmail: "Webmail", onboarding: "Onboarding", p2p: "P2P", storage: "Storage",
+      admin: "Admin", dashboard: "Dashboard", payment: "Payment", cloud: "Cloud", oracle: "Oráculo", multichain: "Multichain"
+    };
+    const state = { mode: "managed", selectedStage: 0, autoStage: true, routeCategory: "all" };
+    const $ = (selector) => document.querySelector(selector);
+    const $$ = (selector) => [...document.querySelectorAll(selector)];
+    const nf = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 });
+    const compact = new Intl.NumberFormat("pt-BR", { notation: "compact", maximumFractionDigits: 1 });
+
+    function stageFor(clients, peakRps) {
+      return stages.findIndex((stage) => clients <= stage.maxClients && peakRps <= stage.maxPeak);
+    }
+
+    function workload() {
+      const clientsPosition = +$("#clients").value / 1000;
+      const clients = Math.max(1, Math.round(Math.exp(Math.log(100000) * clientsPosition)));
+      const users = +$("#users").value;
+      const messages = +$("#messages").value;
+      const attachments = +$("#attachments").value / 100;
+      const peakFactor = +$("#peak").value;
+      const activeUsers = clients * users;
+      const daily = activeUsers * messages;
+      const peakRps = daily / 86400 * peakFactor;
+      const storageGb = daily * 30 * ((attachments * 1) + .015) * 1.2 / 1024;
+      return { clients, users, messages, attachments, peakFactor, activeUsers, daily, peakRps, storageGb };
+    }
+
+    function updateSizing() {
+      const load = workload();
+      $("#clients-out").textContent = nf.format(load.clients);
+      $("#users-out").textContent = nf.format(load.users);
+      $("#messages-out").textContent = nf.format(load.messages);
+      $("#attachments-out").textContent = `${Math.round(load.attachments * 100)}%`;
+      $("#peak-out").textContent = `${load.peakFactor}×`;
+      $("#metric-users").textContent = compact.format(load.activeUsers);
+      $("#metric-daily").textContent = compact.format(load.daily);
+      $("#metric-rps").textContent = `${nf.format(load.peakRps)} rps`;
+      $("#metric-storage").textContent = load.storageGb > 1024 ? `${nf.format(load.storageGb / 1024)} TB` : `${nf.format(load.storageGb)} GB`;
+
+      if (state.autoStage) state.selectedStage = Math.max(0, stageFor(load.clients, load.peakRps));
+      const stage = stages[state.selectedStage];
+      $("#stage-title").textContent = `${stage.range} clientes · ${stage.title}`;
+      $("#stage-index").textContent = stage.code;
+      $("#model-note").textContent = state.mode === "managed"
+        ? "Estimativa para a nuvem gerenciada. A faixa sobe por número de clientes ou carga, o que acontecer primeiro."
+        : "No open source, aplique a carga de uma instalação soberana; o oráculo central escala separadamente para a federação inteira.";
+      renderStages();
+      renderArchitecture();
+    }
+
+    function renderStages() {
+      $("#stage-tabs").innerHTML = stages.map((stage, index) => `
+        <button class="stage-tab ${index === state.selectedStage ? "active" : ""}" type="button" role="tab" aria-selected="${index === state.selectedStage}" data-stage="${index}">
+          <span>${stage.code} · ${stage.range} clientes</span><b>${stage.title}</b>
+        </button>`).join("");
+      $$(".stage-tab").forEach((button) => button.addEventListener("click", () => {
+        state.selectedStage = +button.dataset.stage;
+        state.autoStage = false;
+        renderStages();
+        renderArchitecture();
+      }));
+    }
+
+    function renderArchitecture() {
+      const stage = stages[state.selectedStage];
+      const level = stage.active;
+      $("#diagram-title").textContent = state.mode === "oss" ? `Nó open source · ${stage.code}` : `Cloud gerenciada · ${stage.code}`;
+      $("#arch-canvas").innerHTML = layers.map((layer) => `
+        <div class="arch-layer">
+          <div class="layer-label">${layer.label}<b>${layer.hint}</b></div>
+          <div class="nodes">${layer.nodes.map((node) => {
+            const [name, description, place, kind, required] = node;
+            const hiddenForOss = state.mode === "oss" && ["Console", "Payment", "Global LB", "TSS committee"].includes(name);
+            const remoteForOss = state.mode === "oss" && ["Oracle API", "HSM / KMS", "Relayer / Indexer"].includes(name);
+            const active = required <= level && !hiddenForOss;
+            return `<div class="arch-node ${active ? "current" : "future"}" data-kind="${kind}">
+              <b>${name}${remoteForOss ? " ↗" : ""}</b><small>${hiddenForOss ? "Responsabilidade da nuvem MAIVW, não da instalação." : description}</small>
+              <span class="place">${remoteForOss ? "consumido remotamente" : place}</span>
+            </div>`;
+          }).join("")}</div>
+        </div>`).join("");
+
+      const ossLead = state.mode === "oss"
+        ? "Dimensione Gateway, banco e anexos para uma organização. O oráculo, relayer global e chaves do protocolo permanecem fora do deploy."
+        : stage.summary;
+      $("#recommendation").innerHTML = `
+        <h3>${stage.range} clientes</h3><p>${ossLead}</p>
+        <div class="rec-group"><h4>Compute</h4><div class="rec-list">${stage.compute.map((item) => `<div class="rec-item">${item}</div>`).join("")}</div></div>
+        <div class="rec-group"><h4>Dados</h4><div class="rec-list">${stage.data.map((item) => `<div class="rec-item">${item}</div>`).join("")}</div></div>
+        <div class="rec-group"><h4>Operação</h4><div class="rec-list">${stage.ops.map((item) => `<div class="rec-item">${item}</div>`).join("")}</div></div>
+        <div class="trigger"><b>Gatilho de evolução</b><p>${stage.trigger}</p></div>`;
+    }
+
+    function renderRouteFilters() {
+      $("#route-filters").innerHTML = Object.entries(categoryLabels).map(([key, label]) => `<button type="button" class="filter-btn ${state.routeCategory === key ? "active" : ""}" data-category="${key}">${label}</button>`).join("");
+      $$(".filter-btn").forEach((button) => button.addEventListener("click", () => {
+        state.routeCategory = button.dataset.category;
+        renderRouteFilters();
+        renderRoutes();
+      }));
+    }
+
+    function renderRoutes() {
+      const query = $("#route-search").value.trim().toLocaleLowerCase("pt-BR");
+      const filtered = routes.filter((route) => {
+        const categoryMatch = state.routeCategory === "all" || route[2] === state.routeCategory;
+        const queryMatch = !query || route.join(" ").toLocaleLowerCase("pt-BR").includes(query);
+        return categoryMatch && queryMatch;
+      });
+      $("#route-count").textContent = filtered.length;
+      $("#route-body").innerHTML = filtered.map(([method, path, category, purpose, unit, scale]) => `
+        <tr><td><span class="method">${method}</span></td><td><span class="route-path">${path}</span></td><td><span class="pill">${categoryLabels[category]}</span><br /><span class="note">${purpose}</span></td><td>${unit}</td><td><span class="pill ${scale}">${scale === "critical" ? "crítica" : scale === "medium" ? "média" : "baixa"}</span></td></tr>`).join("") || `<tr><td colspan="5">Nenhuma rota encontrada.</td></tr>`;
+    }
+
+    function copyPlan() {
+      const load = workload();
+      const stage = stages[state.selectedStage];
+      const text = [
+        `MAIVW — resumo de arquitetura (${state.mode === "managed" ? "cloud gerenciada" : "open source"})`,
+        `Faixa: ${stage.code} · ${stage.range} clientes · ${stage.title}`,
+        `Carga estimada: ${nf.format(load.activeUsers)} usuários; ${nf.format(load.daily)} mensagens/dia; ${nf.format(load.peakRps)} rps de pico; ${nf.format(load.storageGb)} GB/mês.`,
+        `Compute: ${stage.compute.join("; ")}.`,
+        `Dados: ${stage.data.join("; ")}.`,
+        `Próximo gatilho: ${stage.trigger}`,
+        state.mode === "oss" ? "Fronteira: Oracle API, relayer global e chaves mestras permanecem operados centralmente." : "Fronteira: dados regionais; confiança global isolada em Oracle API + HSM/KMS."
+      ].join("\n");
+      navigator.clipboard.writeText(text).then(() => showToast("Resumo copiado."), () => showToast("Não foi possível copiar automaticamente."));
+    }
+
+    let toastTimer;
+    function showToast(message) {
+      const toast = $("#toast");
+      toast.textContent = message;
+      toast.classList.add("show");
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toast.classList.remove("show"), 2400);
+    }
+
+    $$("input[type=range]").forEach((input) => input.addEventListener("input", () => { state.autoStage = true; updateSizing(); }));
+    $$(".mode-switch button").forEach((button) => button.addEventListener("click", () => {
+      state.mode = button.dataset.mode;
+      $$(".mode-switch button").forEach((item) => { const active = item === button; item.classList.toggle("active", active); item.setAttribute("aria-pressed", active); });
+      updateSizing();
+    }));
+    $("#route-search").addEventListener("input", renderRoutes);
+    $("#copy-plan").addEventListener("click", copyPlan);
+
+    renderRouteFilters();
+    updateSizing();
+    renderRoutes();
+  </script>
+</body>
+</html>

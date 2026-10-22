@@ -57,6 +57,7 @@ export default defineConfig({
 				] },
 				{ label: 'Arquitetura e protocolo', items: [
 					{ label: 'Visão geral', slug: 'architecture/overview' },
+					{ label: 'Planejador de implantação', slug: 'architecture/deployment-planner' },
 					{ label: 'Origem e espelhamento multichain', slug: 'architecture/multichain-origin-and-mirroring' },
 					{ label: 'Economia do Registry Solana', slug: 'architecture/solana-economics' },
 					{ label: 'Catálogo de origem e concorrência', slug: 'architecture/origin-catalog-and-concurrency' },
