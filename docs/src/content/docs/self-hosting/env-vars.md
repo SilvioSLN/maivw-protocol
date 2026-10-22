@@ -30,6 +30,10 @@ O Compose local declara sua configuração diretamente e funciona sem `.env`. O 
 | `DATABASE_URL` | PostgreSQL local, banco `maivw_reputation` | Prisma; Compose usa host `postgres` |
 | `POSTGRES_PASSWORD` | `postgres` no Compose | Inicialização do banco; trocar env não altera senha de banco existente |
 | `REDIS_URL` | `redis://localhost:6379` | Cache/coordenação; Compose usa host `redis` |
+| `QUEUE_DRIVER` | `bullmq` | Seleciona o driver de fila durável: `bullmq` (Redis) ou `memory` (testes locais) |
+| `QUEUE_CONCURRENCY` | `5` | Quantidade máxima de jobs processados simultaneamente por worker |
+| `QUEUE_DEFAULT_MAX_ATTEMPTS` | `3` | Número máximo de retentativas antes de enviar o job à DLQ |
+| `QUEUE_DEFAULT_BACKOFF_MS` | `1000` | Intervalo base em milissegundos para cálculo de backoff exponencial |
 | `ADMIN_REGISTRATION_TOKEN` | Ausente: cadastro administrativo público | Quando configurado, exige convite privado de pelo menos 32 caracteres em novos cadastros por senha ou social |
 | `JWT_SECRET` | Obrigatório, mínimo 16 caracteres | Assinatura de sessão; use alta entropia |
 | `MASTER_SECRET_KEY` | Obrigatório, mínimo 16 caracteres | Entrada para derivação SHA-256 da chave AES do cofre; não exige formato hex, mas recomenda-se gerar segredo aleatório |

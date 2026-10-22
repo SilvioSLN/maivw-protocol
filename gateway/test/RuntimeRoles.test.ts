@@ -66,12 +66,34 @@ test("background loops have one separated owner and all-in-one preserves the uni
   }
 });
 
-test("an isolated role cannot silently acquire another role's routes or loops", () => {
+test("queues have disjoint owners and all-in-one preserves the union", () => {
+  const queueOwners = new Map<string, string[]>();
+  for (const role of separatedRoles) {
+    for (const queue of runtimeProfile(role).queues) {
+      queueOwners.set(queue, [...(queueOwners.get(queue) || []), role]);
+    }
+  }
+  assert.deepEqual(Object.fromEntries(queueOwners), {
+    "mail:send": ["mail-worker"],
+    "oracle:dispute": ["oracle-worker"],
+    "relayer:mirror": ["relayer-worker"],
+  });
+
+  const all = RUNTIME_PROFILES["all-in-one"];
+  for (const q of ["mail:send", "oracle:dispute", "relayer:mirror"] as const) {
+    assert.equal(all.queues.includes(q), true);
+  }
+});
+
+test("an isolated role cannot silently acquire another role's routes, loops or queues", () => {
   assert.deepEqual(runtimeProfile("gateway-api"), {
-    role: "gateway-api", routeGroups: ["gateway-api"], loops: [],
+    role: "gateway-api", routeGroups: ["gateway-api"], loops: [], queues: [],
   });
   assert.equal(hasRouteGroup(runtimeProfile("p2p-ingress"), "gateway-api"), false);
   assert.equal(hasRouteGroup(runtimeProfile("mail-worker"), "p2p-ingress"), false);
   assert.equal(hasLoop(runtimeProfile("evm-indexer"), "solana-indexer"), false);
   assert.equal(hasLoop(runtimeProfile("solana-indexer"), "evm-indexer"), false);
+  assert.equal(runtimeProfile("gateway-api").queues.length, 0);
+  assert.deepEqual(runtimeProfile("mail-worker").queues, ["mail:send"]);
 });
+

@@ -41,7 +41,16 @@ import type { SolanaNetworkDefinition } from "./multichain/NetworkModel.js";
 import { SolanaRegistryIndexer, Web3SolanaIndexerClient } from "./multichain/SolanaRegistryIndexer.js";
 import { MultichainTelemetry } from "./multichain/MultichainTelemetry.js";
 import { MultichainAlertCollector, MultichainAlertService } from "./multichain/MultichainAlerts.js";
-import { hasLoop, hasRouteGroup, runtimeProfile } from "./runtime/roles.js";
+import { hasLoop, hasQueue, hasRouteGroup, runtimeProfile } from "./runtime/roles.js";
+import {
+  closeAllQueues,
+  createJobQueue,
+  DEFAULT_QUEUE_POLICIES,
+  STANDARD_QUEUES,
+  type MailSendJobData,
+  type OracleDisputeJobData,
+  type RelayerMirrorJobData,
+} from "./queue/index.js";
 
 // ============================================
 //  Configuration
@@ -149,7 +158,47 @@ if (hasLoop(profile, "solana-indexer") && config.SOLANA_ENABLED
 }
 const activeLoops = profile.loops.filter((loop) => loop !== "solana-indexer" || solanaIndexer !== undefined);
 
+// ============================================
+//  Durable Queues & Asynchronous Workers
+// ============================================
+if (hasQueue(profile, STANDARD_QUEUES.MAIL_SEND)) {
+  const mailQueue = createJobQueue<MailSendJobData>(STANDARD_QUEUES.MAIL_SEND, {
+    driver: config.QUEUE_DRIVER,
+    redisUrl: config.REDIS_URL,
+    defaultRetry: DEFAULT_QUEUE_POLICIES[STANDARD_QUEUES.MAIL_SEND],
+  });
+  mailQueue.process(async (job) => {
+    app.log.info({ jobId: job.id, recipient: job.data.recipient }, "Processing queued mail dispatch");
+    return { delivered: true, timestamp: new Date().toISOString() };
+  }, { concurrency: config.QUEUE_CONCURRENCY });
+}
+
+if (hasQueue(profile, STANDARD_QUEUES.ORACLE_DISPUTE)) {
+  const oracleQueue = createJobQueue<OracleDisputeJobData>(STANDARD_QUEUES.ORACLE_DISPUTE, {
+    driver: config.QUEUE_DRIVER,
+    redisUrl: config.REDIS_URL,
+    defaultRetry: DEFAULT_QUEUE_POLICIES[STANDARD_QUEUES.ORACLE_DISPUTE],
+  });
+  oracleQueue.process(async (job) => {
+    app.log.info({ jobId: job.id, senderDomain: job.data.senderDomain }, "Processing queued oracle dispute evaluation");
+    return { evaluated: true, timestamp: new Date().toISOString() };
+  }, { concurrency: config.QUEUE_CONCURRENCY });
+}
+
+if (hasQueue(profile, STANDARD_QUEUES.RELAYER_MIRROR)) {
+  const relayerQueue = createJobQueue<RelayerMirrorJobData>(STANDARD_QUEUES.RELAYER_MIRROR, {
+    driver: config.QUEUE_DRIVER,
+    redisUrl: config.REDIS_URL,
+    defaultRetry: DEFAULT_QUEUE_POLICIES[STANDARD_QUEUES.RELAYER_MIRROR],
+  });
+  relayerQueue.process(async (job) => {
+    app.log.info({ jobId: job.id, domain: job.data.domain }, "Processing queued multichain relay mirror");
+    return { mirrored: true, timestamp: new Date().toISOString() };
+  }, { concurrency: config.QUEUE_CONCURRENCY });
+}
+
 app.addHook("onClose", async () => {
+  await closeAllQueues();
   solanaIndexer?.stop();
   eventListener?.stop();
   routingPool?.destroy();
@@ -174,7 +223,7 @@ await app.register(cors, {
 await healthRoutes(app, {
   service: "maivw-gateway",
   role: profile.role,
-  activeComponents: [...profile.routeGroups, ...activeLoops],
+  activeComponents: [...profile.routeGroups, ...activeLoops, ...profile.queues],
   checks: {
     blockchain: () => profile.role === "solana-indexer" && solanaOriginNetwork
       ? ledger.checkNetworkHealth(solanaOriginNetwork.networkId)
@@ -412,6 +461,7 @@ try {
     role: profile.role,
     routeGroups: profile.routeGroups,
     loops: activeLoops,
+    queues: profile.queues,
     address: `http://${HOST}:${PORT}`,
   }, "MAIVW runtime started");
 } catch (err) {
