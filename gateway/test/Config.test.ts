@@ -203,3 +203,14 @@ test("empty optional Docker values use defaults without bypassing required secre
   }
   assert.equal(parseEnvironment({ ...env, JWT_SECRET: "" }).success, false);
 });
+
+test("queue driver validates options and defaults to bullmq", () => {
+  assert.equal(EnvSchema.safeParse({ ...required, QUEUE_DRIVER: "invalid" }).success, false);
+  assert.equal(EnvSchema.safeParse({ ...required, QUEUE_CONCURRENCY: 0 }).success, false);
+  const parsed = EnvSchema.parse({ ...required, QUEUE_DRIVER: "memory" });
+  assert.equal(parsed.QUEUE_DRIVER, "memory");
+  const defaultParsed = EnvSchema.parse(required);
+  assert.equal(defaultParsed.QUEUE_DRIVER, "bullmq");
+  assert.equal(defaultParsed.QUEUE_CONCURRENCY, 5);
+});
+

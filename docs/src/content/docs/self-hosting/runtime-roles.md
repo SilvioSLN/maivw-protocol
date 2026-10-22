@@ -21,9 +21,10 @@ distribuída pode replicar e escalar cada papel de forma independente.
 | `evm-indexer` | observa eventos do Registry EVM | observer EVM |
 | `solana-indexer` | indexa eventos finalizados do programa Solana | observer Solana |
 
-Os papéis `oracle-worker` e `relayer-worker` isolam hoje seus endpoints e
-dependências de assinatura. O consumo assíncrono de fila, retry e DLQ entra no
-contrato durável da AWS-007; não existe um loop fictício nesta versão.
+Os papéis `mail-worker`, `oracle-worker` e `relayer-worker` operam sobre filas
+duráveis (`mail:send`, `oracle:dispute` e `relayer:mirror`), suportando retentativas
+com backoff exponencial, Dead-Letter Queue (DLQ) e deduplicação idempotente
+pelo contrato unificado de `JobQueue`.
 
 ## Inicialização
 
