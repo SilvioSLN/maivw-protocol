@@ -67,8 +67,11 @@ test("local demo is restricted to chain 31337 on a loopback or Docker Anvil RPC"
 
 test("external networks reject local demo secrets, keys, endpoints and missing Registry", () => {
   const config = EnvSchema.parse({
+    MAIVW_ENVIRONMENT: "testnet",
     CHAIN_ID: 84532,
     RPC_URL: "https://sepolia.base.org",
+    GATEWAY_PUBLIC_URL: "https://gateway.example.com",
+    MAIVW_ORACLE_URL: "https://oracle.example.com",
     JWT_SECRET: "local-demo-jwt-secret-change-before-testnet-2026",
     MASTER_SECRET_KEY: "local-demo-master-key-change-before-testnet-2026",
     INTERNAL_SERVICE_KEY: "local-demo-internal-key-change-before-testnet-2026",
@@ -77,10 +80,61 @@ test("external networks reject local demo secrets, keys, endpoints and missing R
     DEFAULT_P2P_ENDPOINT: "http://gateway:3001/api/v1/inbox",
   });
   const errors = environmentSafetyErrors(config);
-  assert.equal(errors.length, 7);
+  assert.ok(errors.length >= 7);
   assert.ok(errors.some((error) => error.includes("REGISTRY_CONTRACT_ADDRESS")));
   assert.ok(errors.some((error) => error.includes("ORACLE_PRIVATE_KEY")));
   assert.ok(errors.some((error) => error.includes("HTTPS")));
+});
+
+test("environment mode cannot silently cross local and external network boundaries", () => {
+  const externalInLocal = EnvSchema.parse({
+    ...required,
+    CHAIN_ID: 84532,
+    RPC_URL: "https://sepolia.base.org",
+  });
+  assert.ok(environmentSafetyErrors(externalInLocal).some((error) => error.includes("MAIVW_ENVIRONMENT=local")));
+
+  const localInStaging = EnvSchema.parse({
+    ...required,
+    MAIVW_ENVIRONMENT: "staging",
+    REGISTRY_CONTRACT_ADDRESS: "0x1111111111111111111111111111111111111111",
+    GATEWAY_PUBLIC_URL: "https://gateway.example.com",
+    MAIVW_ORACLE_URL: "https://oracle.example.com",
+  });
+  assert.ok(environmentSafetyErrors(localInStaging).some((error) => error.includes("não pode usar Anvil")));
+});
+
+test("non-local environments require encrypted public transports and reject placeholders", () => {
+  const config = EnvSchema.parse({
+    ...required,
+    MAIVW_ENVIRONMENT: "production",
+    CHAIN_ID: 8453,
+    RPC_URL: "http://rpc.example.com",
+    REGISTRY_CONTRACT_ADDRESS: "0x1111111111111111111111111111111111111111",
+    GATEWAY_PUBLIC_URL: "http://gateway.example.com",
+    MAIVW_ORACLE_URL: "http://oracle.example.com",
+    BASE_REGISTRY_ADDRESS: "0x2222222222222222222222222222222222222222",
+    BASE_RPC_URL: "http://base.example.com",
+    BASE_WS_URL: "ws://base.example.com",
+    JWT_SECRET: "CHANGE_ME_JWT_SECRET_VALUE",
+  });
+  const errors = environmentSafetyErrors(config);
+  for (const field of ["RPC_URL", "GATEWAY_PUBLIC_URL", "MAIVW_ORACLE_URL", "BASE_RPC_URL", "BASE_WS_URL", "JWT_SECRET"]) {
+    assert.ok(errors.some((error) => error.includes(field)), `esperava erro para ${field}`);
+  }
+});
+
+test("secure testnet configuration passes environment safety checks", () => {
+  const config = EnvSchema.parse({
+    ...required,
+    MAIVW_ENVIRONMENT: "testnet",
+    CHAIN_ID: 84532,
+    RPC_URL: "https://sepolia.base.org",
+    REGISTRY_CONTRACT_ADDRESS: "0x1111111111111111111111111111111111111111",
+    GATEWAY_PUBLIC_URL: "https://gateway.example.com",
+    MAIVW_ORACLE_URL: "https://oracle.example.com",
+  });
+  assert.deepEqual(environmentSafetyErrors(config), []);
 });
 
 test("empty optional Docker values use defaults without bypassing required secrets", () => {

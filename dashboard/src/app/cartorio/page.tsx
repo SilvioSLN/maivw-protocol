@@ -48,7 +48,7 @@ export default function CartorioPage() {
   const [health, setHealth] = useState<ServiceHealth>({ gateway: "loading", blockchain: "loading" });
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
-  const gatewayUrl = (process.env.NEXT_PUBLIC_GATEWAY_URL || "https://api-test.maivw.com").replace(/\/+$/, "");
+  const gatewayUrl = (process.env.NEXT_PUBLIC_GATEWAY_URL || "http://localhost:51443").replace(/\/+$/, "");
   const chainId = process.env.NEXT_PUBLIC_CHAIN_ID || "84532";
   const chainName = chainId === "84532" ? "Base Sepolia" : chainId === "31337" ? "Anvil Local" : `Chain ${chainId}`;
 

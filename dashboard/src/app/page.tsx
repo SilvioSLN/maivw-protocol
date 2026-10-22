@@ -71,7 +71,7 @@ export default function OverviewPage() {
   const [copiedKey, setCopiedKey] = useState(false);
   const [copiedContract, setCopiedContract] = useState(false);
 
-  const gatewayUrl = (process.env.NEXT_PUBLIC_GATEWAY_URL || "https://api-test.maivw.com").replace(/\/+$/, "");
+  const gatewayUrl = (process.env.NEXT_PUBLIC_GATEWAY_URL || "http://localhost:51443").replace(/\/+$/, "");
 
   const fetchTelemetry = useCallback(async () => {
     try {

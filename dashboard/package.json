@@ -5,7 +5,9 @@
   "description": "MAIVW Dashboard — Painel de controle da rede",
   "scripts": {
     "dev": "next dev --port 3000",
+    "prebuild": "node scripts/validate-environment.mjs",
     "build": "next build",
+    "validate:env": "node scripts/validate-environment.mjs",
     "start": "next start --port 3000"
   },
   "dependencies": {

@@ -244,7 +244,7 @@ export default function ComposerModal({
     }
 
     try {
-      const baseUrl = (gatewayUrl || process.env.NEXT_PUBLIC_GATEWAY_URL || "https://api-test.maivw.com").replace(/\/+$/, "");
+      const baseUrl = (gatewayUrl || process.env.NEXT_PUBLIC_GATEWAY_URL || "http://localhost:51443").replace(/\/+$/, "");
       const token = user?.token || (typeof window !== "undefined" ? localStorage.getItem("maivw_token") : null);
       const headers: Record<string, string> = {};
       if (token) headers["Authorization"] = `Bearer ${token}`;
@@ -296,7 +296,7 @@ export default function ComposerModal({
       const reader = new FileReader();
       reader.onload = async () => {
         const base64Data = reader.result as string;
-        const baseUrl = (gatewayUrl || process.env.NEXT_PUBLIC_GATEWAY_URL || "https://api-test.maivw.com").replace(/\/+$/, "");
+        const baseUrl = (gatewayUrl || process.env.NEXT_PUBLIC_GATEWAY_URL || "http://localhost:51443").replace(/\/+$/, "");
         const token = user?.token || (typeof window !== "undefined" ? localStorage.getItem("maivw_token") : null);
 
         const res = await fetch(`${baseUrl}/api/v1/attachments/upload`, {
@@ -346,7 +346,7 @@ export default function ComposerModal({
     setErrorMsg(null);
     setSuccessMsg(null);
 
-    const baseUrl = (gatewayUrl || process.env.NEXT_PUBLIC_GATEWAY_URL || "https://api-test.maivw.com").replace(/\/+$/, "");
+    const baseUrl = (gatewayUrl || process.env.NEXT_PUBLIC_GATEWAY_URL || "http://localhost:51443").replace(/\/+$/, "");
     const token = user?.token || (typeof window !== "undefined" ? localStorage.getItem("maivw_token") : null);
 
     // Assinatura selecionada

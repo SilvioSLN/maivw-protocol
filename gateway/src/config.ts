@@ -3,6 +3,10 @@ import { readFileSync } from "node:fs";
 import { Keypair, PublicKey } from "@solana/web3.js";
 
 const optionalEvmAddress = z.string().regex(/^0x[0-9a-fA-F]{40}$/).optional();
+const optionalEvmPrivateKey = z.string().regex(/^0x[0-9a-fA-F]{64}$/).optional();
+const httpUrl = z.string().url().refine((value) => value.startsWith("http://") || value.startsWith("https://"), {
+  message: "deve usar http:// ou https://",
+});
 const optionalWsUrl = z.string().url().refine((value) => value.startsWith("ws://") || value.startsWith("wss://"), {
   message: "deve usar ws:// ou wss://",
 }).optional();
@@ -42,33 +46,35 @@ function solanaKeypairPublicKey(value: string): string | null {
  * Validada com Zod para fail-fast em caso de configuração incorreta.
  */
 const EnvObjectSchema = z.object({
-  GATEWAY_PORT: z.coerce.number().default(3001),
+  MAIVW_ENVIRONMENT: z.enum(["local", "testnet", "staging", "production"]).default("local"),
+  GATEWAY_PORT: z.coerce.number().int().min(1).max(65535).default(3001),
   GATEWAY_HOST: z.string().default("0.0.0.0"),
-  RPC_URL: z.string().url().default("http://localhost:8545"),
-  CHAIN_ID: z.coerce.number().default(31337),
+  GATEWAY_PUBLIC_URL: httpUrl.default("http://localhost:3001"),
+  RPC_URL: httpUrl.default("http://localhost:8545"),
+  CHAIN_ID: z.coerce.number().int().positive().default(31337),
   REDIS_URL: z.string().default("redis://localhost:6379"),
   DATABASE_URL: z.string().default("postgresql://postgres:postgres@localhost:5432/maivw_reputation?schema=public"),
   REGISTRY_CONTRACT_ADDRESS: optionalEvmAddress,
   MIRROR_REGISTRY_V2_ADDRESS: optionalEvmAddress,
   // ATENÇÃO: Chaves padrão abaixo são contas de teste públicas do Anvil/Hardhat (Account #0, #1, #2).
-  DEPLOYER_PRIVATE_KEY: z.string().optional(),
-  ORACLE_PRIVATE_KEY: z.string().optional(),
-  COMPANY_A_PRIVATE_KEY: z.string().optional(),
-  COMPANY_B_PRIVATE_KEY: z.string().optional(),
-  PROVIDER_PRIVATE_KEY: z.string().optional(),
+  DEPLOYER_PRIVATE_KEY: optionalEvmPrivateKey,
+  ORACLE_PRIVATE_KEY: optionalEvmPrivateKey,
+  COMPANY_A_PRIVATE_KEY: optionalEvmPrivateKey,
+  COMPANY_B_PRIVATE_KEY: optionalEvmPrivateKey,
+  PROVIDER_PRIVATE_KEY: optionalEvmPrivateKey,
   SENDER_DOMAIN: z.string().default("empresaA.com"),
   MASTER_SECRET_KEY: z.string().min(16, "MASTER_SECRET_KEY deve ser configurada no ambiente"),
   LEGACY_WEBHOOK_SECRET: z.string().optional().default(""),
   RESEND_API_KEY: z.string().optional(),
   ADMIN_REGISTRATION_TOKEN: z.string().min(32).optional(),
   JWT_SECRET: z.string().min(16, "JWT_SECRET deve ser configurado no ambiente"),
-  BASE_RPC_URL: z.string().url().default("http://localhost:8545"),
+  BASE_RPC_URL: httpUrl.default("http://localhost:8545"),
   BASE_WS_URL: optionalWsUrl,
   BASE_REGISTRY_ADDRESS: optionalEvmAddress,
-  ARBITRUM_RPC_URL: z.string().url().default("https://sepolia-rollup.arbitrum.io/rpc"),
+  ARBITRUM_RPC_URL: httpUrl.default("https://sepolia-rollup.arbitrum.io/rpc"),
   ARBITRUM_WS_URL: optionalWsUrl,
   ARBITRUM_REGISTRY_ADDRESS: optionalEvmAddress,
-  POLYGON_RPC_URL: z.string().url().default("https://rpc-amoy.polygon.technology"),
+  POLYGON_RPC_URL: httpUrl.default("https://rpc-amoy.polygon.technology"),
   POLYGON_WS_URL: optionalWsUrl,
   POLYGON_REGISTRY_ADDRESS: optionalEvmAddress,
   MULTICHAIN_RELAY_ENABLED: booleanFlag.default(false),
@@ -108,7 +114,7 @@ const EnvObjectSchema = z.object({
   ORACLE_AI_JUDGE_TOKEN: z.string().optional(),
   MAIVW_CORE_DOMAIN: z.string().default("maivw.org"),
   PLATFORM_INGRESS_HOSTS: z.string().default(""),
-  MAIVW_ORACLE_URL: z.string().url().default("https://api-test.maivw.com"),
+  MAIVW_ORACLE_URL: httpUrl.default("http://localhost:3001"),
   IS_CLOUD: booleanFlag.default(false),
   DEFAULT_P2P_ENDPOINT: z.string().url().optional(),
   TLS_CERT_PATH: z.string().optional(),
@@ -184,16 +190,28 @@ export function isLocalDemoConfig(config: Pick<EnvConfig, "CHAIN_ID" | "RPC_URL"
 }
 
 export function environmentSafetyErrors(config: EnvConfig): string[] {
-  if (isLocalDemoConfig(config)) return [];
-
   const errors: string[] = [];
+  const localNetwork = isLocalDemoConfig(config);
+
+  if (config.MAIVW_ENVIRONMENT === "local") {
+    if (!localNetwork) {
+      errors.push("MAIVW_ENVIRONMENT=local exige Anvil 31337 em anvil, localhost ou loopback");
+    }
+    return errors;
+  }
+
+  if (localNetwork) {
+    errors.push(`MAIVW_ENVIRONMENT=${config.MAIVW_ENVIRONMENT} não pode usar Anvil local`);
+  }
   if (!config.REGISTRY_CONTRACT_ADDRESS || !/^0x[a-fA-F0-9]{40}$/.test(config.REGISTRY_CONTRACT_ADDRESS)) {
     errors.push("REGISTRY_CONTRACT_ADDRESS válido é obrigatório fora do Anvil local");
   }
 
   for (const name of ["JWT_SECRET", "MASTER_SECRET_KEY", "INTERNAL_SERVICE_KEY", "ADMIN_REGISTRATION_TOKEN"] as const) {
     const value = config[name];
-    if (value?.startsWith("local-demo-")) errors.push(`${name} usa um valor público reservado à demonstração local`);
+    if (value && /^(local-demo-|change_me|changeme|substitua)|maivw_internal_sec_service_key_2026/i.test(value)) {
+      errors.push(`${name} usa placeholder ou valor público reservado à demonstração local`);
+    }
   }
 
   if (config.ORACLE_PRIVATE_KEY?.toLowerCase() === ANVIL_ACCOUNT_ZERO_PRIVATE_KEY) {
@@ -202,8 +220,35 @@ export function environmentSafetyErrors(config: EnvConfig): string[] {
   if (config.DEPLOYER_PRIVATE_KEY?.toLowerCase() === ANVIL_ACCOUNT_ZERO_PRIVATE_KEY) {
     errors.push("DEPLOYER_PRIVATE_KEY usa a conta pública #0 do Anvil");
   }
-  if (config.DEFAULT_P2P_ENDPOINT && new URL(config.DEFAULT_P2P_ENDPOINT).protocol !== "https:") {
-    errors.push("DEFAULT_P2P_ENDPOINT deve usar HTTPS fora do Anvil local");
+  for (const [name, value] of [
+    ["GATEWAY_PUBLIC_URL", config.GATEWAY_PUBLIC_URL],
+    ["MAIVW_ORACLE_URL", config.MAIVW_ORACLE_URL],
+    ["DEFAULT_P2P_ENDPOINT", config.DEFAULT_P2P_ENDPOINT],
+    ["RPC_URL", config.RPC_URL],
+    ["SOLANA_RPC_URL", config.SOLANA_RPC_URL],
+  ] as const) {
+    if (value && new URL(value).protocol !== "https:") {
+      errors.push(`${name} deve usar HTTPS fora do ambiente local`);
+    }
+  }
+  for (const [name, value] of [
+    ["BASE_WS_URL", config.BASE_WS_URL],
+    ["ARBITRUM_WS_URL", config.ARBITRUM_WS_URL],
+    ["POLYGON_WS_URL", config.POLYGON_WS_URL],
+    ["SOLANA_WS_URL", config.SOLANA_WS_URL],
+  ] as const) {
+    if (value && new URL(value).protocol !== "wss:") {
+      errors.push(`${name} deve usar WSS fora do ambiente local`);
+    }
+  }
+  for (const [registry, name, value] of [
+    [config.BASE_REGISTRY_ADDRESS, "BASE_RPC_URL", config.BASE_RPC_URL],
+    [config.ARBITRUM_REGISTRY_ADDRESS, "ARBITRUM_RPC_URL", config.ARBITRUM_RPC_URL],
+    [config.POLYGON_REGISTRY_ADDRESS, "POLYGON_RPC_URL", config.POLYGON_RPC_URL],
+  ] as const) {
+    if (registry && new URL(value).protocol !== "https:") {
+      errors.push(`${name} deve usar HTTPS quando seu Registry estiver configurado fora do ambiente local`);
+    }
   }
   return errors;
 }
