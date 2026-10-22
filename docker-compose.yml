@@ -80,6 +80,7 @@ services:
       - deploy-output:/deploy-output:ro
     environment:
       MAIVW_EDITION: community
+      MAIVW_ENVIRONMENT: local
       GATEWAY_PORT: "3001"
       GATEWAY_HOST: 0.0.0.0
       GATEWAY_PUBLIC_URL: ${NEXT_PUBLIC_GATEWAY_URL:-http://localhost:51443}
@@ -119,6 +120,7 @@ services:
       context: ./webmaivw
       dockerfile: Dockerfile
       args:
+        MAIVW_ENVIRONMENT: local
         NEXT_PUBLIC_GATEWAY_URL: ${NEXT_PUBLIC_GATEWAY_URL:-http://localhost:51443}
         NEXT_PUBLIC_RPC_URL: ${NEXT_PUBLIC_RPC_URL:-http://localhost:55443}
         NEXT_PUBLIC_CHAIN_ID: "31337"
@@ -142,6 +144,7 @@ services:
       context: ./dashboard
       dockerfile: Dockerfile
       args:
+        MAIVW_ENVIRONMENT: local
         NEXT_PUBLIC_GATEWAY_URL: ${NEXT_PUBLIC_GATEWAY_URL:-http://localhost:51443}
         NEXT_PUBLIC_RPC_URL: ${NEXT_PUBLIC_RPC_URL:-http://localhost:55443}
         NEXT_PUBLIC_CHAIN_ID: "31337"

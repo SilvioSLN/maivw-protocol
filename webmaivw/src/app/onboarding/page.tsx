@@ -413,7 +413,7 @@ export default function OnboardingPage() {
         return "http://localhost:3003";
       }
     }
-    return (process.env.NEXT_PUBLIC_PAYMENT_API_URL || "https://api-payment.maivw.com").replace(/\/+$/, "");
+    return (process.env.NEXT_PUBLIC_PAYMENT_API_URL || "http://localhost:3003").replace(/\/+$/, "");
   };
 
   const getExplorerInfo = (chainId: number, txHash: string) => {

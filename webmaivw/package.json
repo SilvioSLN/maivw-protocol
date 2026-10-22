@@ -5,7 +5,9 @@
   "description": "WebMaivw — Modern B2B Webmail, Onboarding & Developer Dashboard",
   "scripts": {
     "dev": "next dev --port 3002",
+    "prebuild": "node scripts/validate-environment.mjs",
     "build": "next build",
+    "validate:env": "node scripts/validate-environment.mjs",
     "start": "next start --port 3002"
   },
   "dependencies": {

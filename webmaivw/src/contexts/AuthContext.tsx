@@ -75,7 +75,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [domains, setDomains] = useState<DomainSummary[]>([]);
   const [selectedDomainId, setSelectedDomainId] = useState<number | null>(null);
-  const gatewayUrl = (process.env.NEXT_PUBLIC_GATEWAY_URL || "https://api-test.maivw.com").replace(/\/+$/, "");
+  const gatewayUrl = (process.env.NEXT_PUBLIC_GATEWAY_URL || "http://localhost:51443").replace(/\/+$/, "");
 
   const refreshDomains = useCallback(async () => {
     const token = localStorage.getItem("maivw_token");

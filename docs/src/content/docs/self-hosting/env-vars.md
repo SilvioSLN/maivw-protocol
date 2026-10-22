@@ -7,12 +7,25 @@ A referência cobre o schema em `gateway/src/config.ts` e variáveis lidas diret
 
 O Compose local declara sua configuração diretamente e funciona sem `.env`. O Compose de Testnet recebe valores com `--env-file .env.testnet`. O modo dev do Gateway carrega `../.env`. Interfaces usam `.env.local` ou argumentos de build. Valores opcionais vazios são tratados como ausentes por `loadConfig`.
 
+## Modos de ambiente e segurança
+
+| `MAIVW_ENVIRONMENT` | Uso | Regras de inicialização |
+| --- | --- | --- |
+| `local` | demonstração Community | exige Anvil `31337` em `anvil`, `localhost` ou loopback; permite HTTP e os segredos públicos `local-demo-*` |
+| `testnet` | ensaio em redes públicas de teste | rejeita Anvil, exige Registry e HTTPS/WSS nos endpoints públicos |
+| `staging` | release candidate isolado | mesmas barreiras de transporte e rede de `testnet`, com dados sintéticos |
+| `production` | clientes e redes aprovadas | mesmas barreiras fail-closed, sem placeholders ou contas públicas do Anvil |
+
+`NODE_ENV` controla o runtime JavaScript, mas não seleciona o nível de segurança. O processo usa `MAIVW_ENVIRONMENT` para impedir que uma configuração local seja promovida silenciosamente. Gateway e Payment encerram a inicialização quando o ambiente, a rede, os endpoints públicos ou os placeholders não são coerentes. Os frontends aplicam a mesma verificação em qualquer build, inclusive Docker e Vercel; na Vercel o modo deve ser declarado explicitamente.
+
 ## Gateway, dados e segredos
 
 | Variável | Padrão / exigência | Uso |
 | --- | --- | --- |
+| `MAIVW_ENVIRONMENT` | `local`; obrigatório declarar nos manifests | Fronteira de segurança entre demonstração, Testnet, staging e produção |
 | `GATEWAY_PORT` | `3001` | Porta do processo; Compose fixa em 3001 |
 | `GATEWAY_HOST` | `0.0.0.0` | Bind interno; a publicação do Compose é no loopback do host |
+| `GATEWAY_PUBLIC_URL` | `http://localhost:3001` | Base pública usada em anexos e respostas; HTTPS é obrigatório fora de `local` |
 | `DATABASE_URL` | PostgreSQL local, banco `maivw_reputation` | Prisma; Compose usa host `postgres` |
 | `POSTGRES_PASSWORD` | `postgres` no Compose | Inicialização do banco; trocar env não altera senha de banco existente |
 | `REDIS_URL` | `redis://localhost:6379` | Cache/coordenação; Compose usa host `redis` |
@@ -76,7 +89,7 @@ Não troque `MASTER_SECRET_KEY` em banco existente sem recifrar chaves e credenc
 | `GCP_KMS_KEY_VERSION` | Obrigatória para `gcp-kms` | Recurso da versão de chave compatível |
 | `GCP_KMS_CREDENTIALS_BASE64` | Opcional | JSON de credenciais codificado; caso contrário usa autenticação do ambiente |
 | `ORACLE_MIN_BALANCE_WEI` | `10000000000000000` | Limiar informativo de saldo baixo |
-| `MAIVW_ORACLE_URL` | `https://api-test.maivw.com` | Dependência remota em caminhos do onboarding |
+| `MAIVW_ORACLE_URL` | `http://localhost:3001`; Testnet exige valor explícito | Dependência remota em caminhos do onboarding; HTTPS é obrigatório fora de `local` |
 | `DEPLOYER_PRIVATE_KEY` | Opcional no Gateway | Scripts de implantação e alguns caminhos de carteira/telemetria; não é chave pública |
 | `COMPANY_A_PRIVATE_KEY` | Opcional | Assinante de fallback; sem ela o Gateway gera chave efêmera |
 | `COMPANY_B_PRIVATE_KEY` | Opcional | Campo legado/teste; não é pré-requisito do piloto |
@@ -95,7 +108,6 @@ Não troque `MASTER_SECRET_KEY` em banco existente sem recifrar chaves e credenc
 | `FIREBASE_SERVICE_ACCOUNT_PATH` | Caminho da credencial no processo/container; montar arquivo separadamente, nunca no build público |
 | `INGRESS_PROXY_ENABLED` | Leitura direta; somente string `true` ativa o proxy de ingresso |
 | `DEFAULT_SECONDARY_INGRESS_URL` | Rota secundária; código tem fallback remoto MAIVW |
-| `GATEWAY_PUBLIC_URL` | Base pública usada ao processar anexos SMTP |
 | `NODE_ENV` | Ambiente do processo; container usa `production`, sem significar validação de segurança concluída |
 
 O processador de anexos também usa `NEXT_PUBLIC_GATEWAY_URL` como fallback. Para instalação independente, configure os endpoints concretos e revise rotas criadas automaticamente.

@@ -753,7 +753,7 @@ function AdminConsole() {
     typeof window !== "undefined" &&
     (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
       ? "http://localhost:3003"
-      : process.env.NEXT_PUBLIC_PAYMENT_API_URL || "https://api-payment.maivw.com";
+      : process.env.NEXT_PUBLIC_PAYMENT_API_URL || "http://localhost:3003";
 
   const handleOpenMirrorPayment = (net: MultiChainNetwork) => {
     setPendingMirrorTargetNet(net);

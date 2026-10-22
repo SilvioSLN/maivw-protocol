@@ -43,6 +43,7 @@ services:
       - ./data/certs:/app/data/certs
     environment:
       MAIVW_EDITION: community
+      MAIVW_ENVIRONMENT: testnet
       GATEWAY_PORT: "3001"
       GATEWAY_HOST: 0.0.0.0
       GATEWAY_PUBLIC_URL: ${NEXT_PUBLIC_GATEWAY_URL:?configure NEXT_PUBLIC_GATEWAY_URL em .env.testnet}
@@ -98,6 +99,7 @@ services:
       SENDER_DOMAIN: ${SENDER_DOMAIN:?configure SENDER_DOMAIN em .env.testnet}
       MAIVW_CORE_DOMAIN: ${MAIVW_CORE_DOMAIN:?configure MAIVW_CORE_DOMAIN em .env.testnet}
       DEFAULT_P2P_ENDPOINT: ${DEFAULT_P2P_ENDPOINT:?configure DEFAULT_P2P_ENDPOINT em .env.testnet}
+      MAIVW_ORACLE_URL: ${MAIVW_ORACLE_URL:?configure MAIVW_ORACLE_URL em .env.testnet}
       PLATFORM_INGRESS_HOSTS: ${PLATFORM_INGRESS_HOSTS:-}
       IS_CLOUD: "false"
     depends_on:
@@ -117,6 +119,7 @@ services:
       context: ./webmaivw
       dockerfile: Dockerfile
       args:
+        MAIVW_ENVIRONMENT: testnet
         NEXT_PUBLIC_GATEWAY_URL: ${NEXT_PUBLIC_GATEWAY_URL:?configure NEXT_PUBLIC_GATEWAY_URL em .env.testnet}
         NEXT_PUBLIC_RPC_URL: ${NEXT_PUBLIC_RPC_URL:-${RPC_URL}}
         NEXT_PUBLIC_CHAIN_ID: ${CHAIN_ID}
@@ -140,6 +143,7 @@ services:
       context: ./dashboard
       dockerfile: Dockerfile
       args:
+        MAIVW_ENVIRONMENT: testnet
         NEXT_PUBLIC_GATEWAY_URL: ${NEXT_PUBLIC_GATEWAY_URL}
         NEXT_PUBLIC_RPC_URL: ${NEXT_PUBLIC_RPC_URL:-${RPC_URL}}
         NEXT_PUBLIC_CHAIN_ID: ${CHAIN_ID}

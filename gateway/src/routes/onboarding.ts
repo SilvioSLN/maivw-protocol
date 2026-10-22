@@ -214,7 +214,7 @@ export async function onboardingRoutes(app: FastifyInstance, options: Onboarding
       isOracleAuthority,
       oracleAddress: myOracleAddress,
       contractOracleAddress: contractOracle,
-      remoteOracleUrl: config.MAIVW_ORACLE_URL || "https://api-test.maivw.com",
+      remoteOracleUrl: config.MAIVW_ORACLE_URL,
       defaultEndpoint: DEFAULT_P2P_ENDPOINT,
       defaultEndpointPattern: isLocalDemo ? DEFAULT_P2P_ENDPOINT : "https://mw-p2p.{domain}/api/v1/inbox",
       dnsMode: isLocalDemo ? "local-demo" : "public-dns",

@@ -105,7 +105,7 @@ export function Navigation({ contractAddress }: NavigationProps) {
 
       <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
         <a
-          href={`${(process.env.NEXT_PUBLIC_WEBMAIVW_URL || "https://webmail-test.maivw.com").replace(/\/+$/, "")}/admin`}
+          href={`${(process.env.NEXT_PUBLIC_WEBMAIVW_URL || "http://localhost:52443").replace(/\/+$/, "")}/admin`}
           target="_blank"
           rel="noreferrer"
           style={{
