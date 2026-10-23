@@ -37,6 +37,8 @@ services:
       context: ./gateway
       dockerfile: Dockerfile
       target: migrator
+    security_opt:
+      - no-new-privileges:true
     environment:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:?configure POSTGRES_PASSWORD em .env.testnet}@postgres:5432/maivw_reputation?schema=public
     depends_on:
@@ -51,6 +53,8 @@ services:
       target: runner
     ports:
       - "127.0.0.1:51443:3001"
+    security_opt:
+      - no-new-privileges:true
     volumes:
       - ./data/attachments:/app/data/attachments
       - ./data/certs:/app/data/certs
@@ -150,6 +154,8 @@ services:
         NEXT_PUBLIC_DEFAULT_ORIGIN_NETWORK: ${NEXT_PUBLIC_DEFAULT_ORIGIN_NETWORK:-base}
     ports:
       - "127.0.0.1:52443:3002"
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       gateway:
         condition: service_healthy
@@ -167,6 +173,8 @@ services:
         NEXT_PUBLIC_WEBMAIVW_URL: ${NEXT_PUBLIC_WEBMAIVW_URL:?configure NEXT_PUBLIC_WEBMAIVW_URL em .env.testnet}
     ports:
       - "127.0.0.1:50443:3000"
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       gateway:
         condition: service_healthy

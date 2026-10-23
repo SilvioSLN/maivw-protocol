@@ -36,4 +36,8 @@ RUN pnpm run build
 ENV NODE_ENV=production
 EXPOSE 3000
 
+USER node
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD wget -qO- http://127.0.0.1:3000/ || exit 1
+
 CMD ["pnpm", "run", "start"]
