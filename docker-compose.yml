@@ -68,10 +68,23 @@ services:
       timeout: 3s
       retries: 10
 
+  gateway-migration:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+      target: migrator
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/maivw_reputation?schema=public
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   gateway:
     build:
       context: ./gateway
       dockerfile: Dockerfile
+      target: runner
     ports:
       - "127.0.0.1:51443:3001"
     volumes:
@@ -103,6 +116,8 @@ services:
       BASE_RPC_URL: http://anvil:8545
       IS_CLOUD: "false"
     depends_on:
+      gateway-migration:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       postgres:
