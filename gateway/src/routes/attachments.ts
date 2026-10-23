@@ -1,26 +1,25 @@
 import type { FastifyInstance } from "fastify";
-import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import type { PrismaClient } from "@prisma/client";
 import type { KeyManagementService } from "../services/KeyManagementService.js";
 import { getCurrentUser } from "./auth.js";
-
-const DEFAULT_ATTACHMENTS_DIR = path.resolve(process.cwd(), "data/attachments");
+import type { ObjectStorage } from "../storage/types.js";
+import {
+  StorageError,
+  StorageHashMismatchError,
+  StorageInvalidKeyError,
+  StorageSizeExceededError,
+} from "../storage/types.js";
+import { FilesystemStorageAdapter } from "../storage/FilesystemStorageAdapter.js";
+import { getStorage } from "../storage/StorageFactory.js";
 
 export interface AttachmentRouteOptions {
   prisma?: PrismaClient;
   kms?: KeyManagementService;
   attachmentsDir?: string;
-}
-
-interface AttachmentMetadata {
-  id: string;
-  filename: string;
-  size: number;
-  mimeType: string;
-  sha256: string;
-  uploadedAt: string;
+  storage?: ObjectStorage;
+  maxFileSizeBytes?: number;
 }
 
 async function requireAttachmentAuth(
@@ -68,15 +67,32 @@ async function requireAttachmentAuth(
 
 export async function attachmentRoutes(app: FastifyInstance, options: AttachmentRouteOptions = {}) {
   const { prisma, kms } = options;
-  const ATTACHMENTS_DIR = options.attachmentsDir || process.env.ATTACHMENTS_DIR || DEFAULT_ATTACHMENTS_DIR;
 
-  if (!fs.existsSync(ATTACHMENTS_DIR)) {
-    fs.mkdirSync(ATTACHMENTS_DIR, { recursive: true });
+  const storage: ObjectStorage =
+    options.storage ||
+    (options.attachmentsDir
+      ? new FilesystemStorageAdapter({
+          baseDir: options.attachmentsDir,
+          maxFileSizeBytes: options.maxFileSizeBytes,
+        })
+      : getStorage());
+
+  /**
+   * Content parser para permitir upload binário em requisições de presigned URL locais
+   */
+  if (!app.hasContentTypeParser("application/octet-stream")) {
+    app.addContentTypeParser(
+      ["application/octet-stream", "application/pdf", "image/png", "image/jpeg", "text/plain"],
+      { parseAs: "buffer" },
+      (_req, body, done) => {
+        done(null, body);
+      }
+    );
   }
 
   /**
    * POST /api/v1/attachments/upload
-   * Recebe anexo em Base64, computa SHA-256 e persiste no storage seguro.
+   * Recebe anexo em Base64, computa SHA-256 e persiste via ObjectStorage.
    * Suporta até 25MB de arquivo binário (requer bodyLimit de 35MB para acomodar overhead do Base64).
    */
   app.post(
@@ -91,6 +107,7 @@ export async function attachmentRoutes(app: FastifyInstance, options: Attachment
             filename: { type: "string", maxLength: 255 },
             mimeType: { type: "string", maxLength: 128 },
             dataBase64: { type: "string" },
+            expectedSha256: { type: "string", maxLength: 64 },
           },
         },
       },
@@ -99,10 +116,11 @@ export async function attachmentRoutes(app: FastifyInstance, options: Attachment
       const isAuth = await requireAttachmentAuth(request, reply, prisma, kms);
       if (!isAuth) return;
 
-      const { filename, mimeType, dataBase64 } = request.body as {
+      const { filename, mimeType, dataBase64, expectedSha256 } = request.body as {
         filename: string;
         mimeType?: string;
         dataBase64: string;
+        expectedSha256?: string;
       };
 
       if (!filename || !dataBase64) {
@@ -112,7 +130,7 @@ export async function attachmentRoutes(app: FastifyInstance, options: Attachment
       try {
         const base64Clean = dataBase64.replace(/^data:[^;]+;base64,/, "");
 
-        // Pre-check de tamanho do payload
+        // Pre-check de tamanho do payload base64
         if (base64Clean.length > 35 * 1024 * 1024) {
           return reply.status(413).send({ error: "Arquivo excede o limite máximo permitido de 25MB" });
         }
@@ -124,43 +142,40 @@ export async function attachmentRoutes(app: FastifyInstance, options: Attachment
           return reply.status(413).send({ error: "Arquivo excede o limite máximo permitido de 25MB" });
         }
 
-        // Hash de integridade criptográfica SHA-256
-        const sha256 = crypto.createHash("sha256").update(buffer).digest("hex");
         const id = `att_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`;
         const safeFilename = path.basename(filename).replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 100);
-        const storageFilename = `${id}__${safeFilename}`;
-        const filePath = path.resolve(ATTACHMENTS_DIR, storageFilename);
+        const storageKey = `${id}__${safeFilename}`;
 
-        if (!filePath.startsWith(ATTACHMENTS_DIR)) {
-          return reply.status(400).send({ error: "Nome de arquivo inválido" });
-        }
-
-        await fs.promises.writeFile(filePath, buffer);
-
-        // Salvar metadados
-        const metaPath = path.resolve(ATTACHMENTS_DIR, `${id}__meta.json`);
-        const meta: AttachmentMetadata = {
-          id,
-          filename: path.basename(filename).replace(/[\r\n]/g, ""),
-          size: buffer.length,
+        const result = await storage.put({
+          key: storageKey,
+          data: buffer,
           mimeType: mimeType || "application/octet-stream",
-          sha256,
-          uploadedAt: new Date().toISOString(),
-        };
-        await fs.promises.writeFile(metaPath, JSON.stringify(meta, null, 2), "utf-8");
+          expectedSha256,
+          customMetadata: {
+            id,
+            filename: path.basename(filename).replace(/[\r\n]/g, ""),
+          },
+        });
 
         return reply.status(201).send({
           success: true,
           attachment: {
             id,
-            filename: meta.filename,
-            size: buffer.length,
-            mimeType: meta.mimeType,
-            sha256,
+            filename: safeFilename,
+            size: result.size,
+            mimeType: mimeType || "application/octet-stream",
+            sha256: result.sha256,
             url: `/api/v1/attachments/${id}/download`,
           },
         });
       } catch (err: any) {
+        if (err instanceof StorageSizeExceededError) {
+          return reply.status(413).send({ error: err.message });
+        }
+        if (err instanceof StorageHashMismatchError || err instanceof StorageInvalidKeyError) {
+          return reply.status(400).send({ error: err.message });
+        }
+
         app.log.error(err, "[ATTACHMENTS] Erro no upload de anexo:");
         return reply.status(500).send({
           error: "Falha ao processar upload do anexo",
@@ -172,7 +187,7 @@ export async function attachmentRoutes(app: FastifyInstance, options: Attachment
 
   /**
    * GET /api/v1/attachments/:id/download
-   * Faz o download seguro do anexo persistido com proteção contra path traversal.
+   * Faz o download seguro do anexo persistido via ObjectStorage com proteção contra path traversal.
    */
   app.get("/api/v1/attachments/:id/download", async (request, reply) => {
     const { id } = request.params as { id: string };
@@ -182,34 +197,16 @@ export async function attachmentRoutes(app: FastifyInstance, options: Attachment
     }
 
     try {
-      const files = await fs.promises.readdir(ATTACHMENTS_DIR);
-      const targetFile = files.find((f) => f.startsWith(`${id}__`) && !f.endsWith("__meta.json"));
-
-      if (!targetFile) {
+      const obj = await storage.get(id);
+      if (!obj) {
         return reply.status(404).send({ error: "Anexo não encontrado" });
       }
 
-      const filePath = path.resolve(ATTACHMENTS_DIR, targetFile);
-      if (!filePath.startsWith(ATTACHMENTS_DIR)) {
-        return reply.status(403).send({ error: "Acesso a anexo não autorizado" });
-      }
-
-      const metaPath = path.resolve(ATTACHMENTS_DIR, `${id}__meta.json`);
-
-      let meta: AttachmentMetadata | null = null;
-      if (fs.existsSync(metaPath)) {
-        try {
-          meta = JSON.parse(await fs.promises.readFile(metaPath, "utf-8"));
-        } catch {
-          // ignore corrupted metadata
-        }
-      }
-
-      const originalName = meta?.filename || targetFile.replace(`${id}__`, "");
+      const originalName =
+        obj.metadata.customMetadata?.filename ||
+        (obj.key.includes("__") ? obj.key.split("__").slice(1).join("__") : obj.key);
       const safeDownloadName = originalName.replace(/[\r\n"']/g, "_");
-      const mime = meta?.mimeType || "application/octet-stream";
-
-      const fileBuffer = await fs.promises.readFile(filePath);
+      const mime = obj.metadata.mimeType || "application/octet-stream";
 
       reply
         .header("Content-Type", mime)
@@ -217,12 +214,203 @@ export async function attachmentRoutes(app: FastifyInstance, options: Attachment
           "Content-Disposition",
           `attachment; filename="${encodeURIComponent(safeDownloadName)}"; filename*=UTF-8''${encodeURIComponent(safeDownloadName)}`
         )
-        .header("x-maivw-sha256", meta?.sha256 || "")
+        .header("x-maivw-sha256", obj.metadata.sha256 || "")
         .header("X-Content-Type-Options", "nosniff")
-        .send(fileBuffer);
+        .send(obj.data);
     } catch (err: any) {
+      if (err instanceof StorageInvalidKeyError) {
+        return reply.status(400).send({ error: err.message });
+      }
       app.log.error(err, "[ATTACHMENTS] Erro ao baixar anexo:");
       return reply.status(500).send({ error: "Falha ao recuperar anexo" });
     }
+  });
+
+  /**
+   * POST /api/v1/attachments/signed-upload
+   * Gera uma URL pré-assinada para upload direto ao ObjectStorage (S3, R2 ou Filesystem).
+   */
+  app.post(
+    "/api/v1/attachments/signed-upload",
+    {
+      schema: {
+        body: {
+          type: "object",
+          required: ["filename"],
+          properties: {
+            filename: { type: "string", maxLength: 255 },
+            mimeType: { type: "string", maxLength: 128 },
+            expectedSha256: { type: "string", maxLength: 64 },
+            maxSizeBytes: { type: "number" },
+            expiresInSeconds: { type: "number" },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const isAuth = await requireAttachmentAuth(request, reply, prisma, kms);
+      if (!isAuth) return;
+
+      const { filename, mimeType, expectedSha256, maxSizeBytes, expiresInSeconds } = request.body as {
+        filename: string;
+        mimeType?: string;
+        expectedSha256?: string;
+        maxSizeBytes?: number;
+        expiresInSeconds?: number;
+      };
+
+      const id = `att_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`;
+      const safeFilename = path.basename(filename).replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 100);
+      const storageKey = `${id}__${safeFilename}`;
+
+      const signedResult = await storage.createSignedUploadUrl(storageKey, {
+        contentType: mimeType,
+        expectedSha256,
+        maxSizeBytes: maxSizeBytes || 25 * 1024 * 1024,
+        expiresInSeconds: expiresInSeconds || 900,
+      });
+
+      return reply.status(200).send({
+        success: true,
+        id,
+        attachmentId: id,
+        key: storageKey,
+        uploadUrl: signedResult.uploadUrl,
+        method: signedResult.method,
+        headers: signedResult.headers,
+        expiresAt: signedResult.expiresAt.toISOString(),
+      });
+    }
+  );
+
+  /**
+   * GET /api/v1/attachments/:id/signed-download
+   * Gera uma URL pré-assinada temporária para download direto.
+   */
+  app.get("/api/v1/attachments/:id/signed-download", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { filename, expiresInSeconds } = request.query as { filename?: string; expiresInSeconds?: string };
+
+    if (!id || !/^[a-zA-Z0-9_-]+$/.test(id)) {
+      return reply.status(400).send({ error: "Identificador de anexo inválido" });
+    }
+
+    const downloadUrl = await storage.createSignedDownloadUrl(id, {
+      downloadFilename: filename,
+      expiresInSeconds: expiresInSeconds ? Number(expiresInSeconds) : 900,
+    });
+
+    return reply.status(200).send({
+      success: true,
+      attachmentId: id,
+      downloadUrl,
+    });
+  });
+
+  /**
+   * PUT /api/v1/attachments/signed-upload-target
+   * Endpoint de destino para uploads assinados no modo Filesystem
+   */
+  app.put("/api/v1/attachments/signed-upload-target", async (request, reply) => {
+    const query = request.query as {
+      key: string;
+      expires: string;
+      token: string;
+      contentType?: string;
+      expectedSha256?: string;
+    };
+
+    const { key, expires, token, contentType, expectedSha256 } = query;
+
+    if (!key || !expires || !token) {
+      return reply.status(400).send({ error: "Parâmetros de assinatura ausentes" });
+    }
+
+    if (storage instanceof FilesystemStorageAdapter) {
+      const isValid = storage.verifyToken({
+        key,
+        type: "upload",
+        expires: Number(expires),
+        token,
+      });
+      if (!isValid) {
+        return reply.status(403).send({ error: "URL de upload assinada inválida ou expirada" });
+      }
+    }
+
+    const buffer = Buffer.isBuffer(request.body) ? request.body : Buffer.from(request.body as any);
+
+    try {
+      const result = await storage.put({
+        key,
+        data: buffer,
+        mimeType: contentType,
+        expectedSha256,
+      });
+
+      return reply.status(201).send({
+        success: true,
+        key: result.key,
+        size: result.size,
+        sha256: result.sha256,
+      });
+    } catch (err: any) {
+      if (err instanceof StorageSizeExceededError) {
+        return reply.status(413).send({ error: err.message });
+      }
+      if (err instanceof StorageHashMismatchError || err instanceof StorageInvalidKeyError) {
+        return reply.status(400).send({ error: err.message });
+      }
+      return reply.status(500).send({ error: "Falha ao gravar arquivo assinado" });
+    }
+  });
+
+  /**
+   * GET /api/v1/attachments/signed-download-target
+   * Endpoint de destino para downloads assinados no modo Filesystem
+   */
+  app.get("/api/v1/attachments/signed-download-target", async (request, reply) => {
+    const query = request.query as {
+      key: string;
+      expires: string;
+      token: string;
+      filename?: string;
+    };
+
+    const { key, expires, token, filename } = query;
+
+    if (!key || !expires || !token) {
+      return reply.status(400).send({ error: "Parâmetros de assinatura ausentes" });
+    }
+
+    if (storage instanceof FilesystemStorageAdapter) {
+      const isValid = storage.verifyToken({
+        key,
+        type: "download",
+        expires: Number(expires),
+        token,
+      });
+      if (!isValid) {
+        return reply.status(403).send({ error: "URL assinada inválida ou expirada" });
+      }
+    }
+
+    const obj = await storage.get(key);
+    if (!obj) {
+      return reply.status(404).send({ error: "Anexo não encontrado" });
+    }
+
+    const originalName = filename || obj.metadata.customMetadata?.filename || path.basename(key);
+    const safeDownloadName = originalName.replace(/[\r\n"']/g, "_");
+
+    reply
+      .header("Content-Type", obj.metadata.mimeType || "application/octet-stream")
+      .header(
+        "Content-Disposition",
+        `attachment; filename="${encodeURIComponent(safeDownloadName)}"; filename*=UTF-8''${encodeURIComponent(safeDownloadName)}`
+      )
+      .header("x-maivw-sha256", obj.metadata.sha256 || "")
+      .header("X-Content-Type-Options", "nosniff")
+      .send(obj.data);
   });
 }

@@ -59,6 +59,16 @@ const EnvObjectSchema = z.object({
   QUEUE_CONCURRENCY: z.coerce.number().int().min(1).max(100).default(5),
   QUEUE_DEFAULT_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(20).default(3),
   QUEUE_DEFAULT_BACKOFF_MS: z.coerce.number().int().min(50).max(60000).default(1000),
+  STORAGE_DRIVER: z.enum(["filesystem", "s3"]).default("filesystem"),
+  ATTACHMENTS_DIR: z.string().default("data/attachments"),
+  STORAGE_MAX_FILE_SIZE_BYTES: z.coerce.number().int().positive().default(25 * 1024 * 1024),
+  STORAGE_SIGNED_URL_EXPIRES_SECONDS: z.coerce.number().int().positive().default(900),
+  S3_ENDPOINT: z.string().optional(),
+  S3_BUCKET: z.string().optional(),
+  S3_REGION: z.string().default("auto"),
+  S3_ACCESS_KEY_ID: z.string().optional(),
+  S3_SECRET_ACCESS_KEY: z.string().optional(),
+  S3_FORCE_PATH_STYLE: booleanFlag.default(true),
   DATABASE_URL: z.string().default("postgresql://postgres:postgres@localhost:5432/maivw_reputation?schema=public"),
   REGISTRY_CONTRACT_ADDRESS: optionalEvmAddress,
   MIRROR_REGISTRY_V2_ADDRESS: optionalEvmAddress,
@@ -275,6 +285,19 @@ export function environmentSafetyErrors(config: EnvConfig): string[] {
       errors.push(`${name} deve usar HTTPS quando seu Registry estiver configurado fora do ambiente local`);
     }
   }
+
+  if (config.STORAGE_DRIVER === "s3") {
+    if (!config.S3_BUCKET) {
+      errors.push("STORAGE_DRIVER=s3 exige S3_BUCKET configurado");
+    }
+    if (!config.S3_ACCESS_KEY_ID || !config.S3_SECRET_ACCESS_KEY) {
+      errors.push("STORAGE_DRIVER=s3 exige S3_ACCESS_KEY_ID e S3_SECRET_ACCESS_KEY");
+    }
+    if (config.S3_ENDPOINT && new URL(config.S3_ENDPOINT).protocol !== "https:") {
+      errors.push("S3_ENDPOINT deve usar HTTPS fora do ambiente local");
+    }
+  }
+
   return errors;
 }
 
