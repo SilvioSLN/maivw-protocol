@@ -619,7 +619,7 @@ export class OracleService {
     return this.account.address;
   }
 
-  getSignerType(): "local" | "gcp-kms" {
+  getSignerType(): "local" | "gcp-kms" | "aws-kms" {
     return this.config.ORACLE_SIGNER_TYPE;
   }
 

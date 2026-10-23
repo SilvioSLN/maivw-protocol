@@ -105,10 +105,11 @@ Não troque `MASTER_SECRET_KEY` em banco existente sem recifrar chaves e credenc
 | `RELAY_ATTESTATION_TTL_SECONDS` | `900` | Entre 60 e 86400 segundos |
 | `RELAY_LEASE_SECONDS` / `RELAY_FAILURE_THRESHOLD` | `60` / `3` | Lease do worker e limiar do circuit breaker |
 | `MULTICHAIN_ALERT_INDEXER_LAG_SLOTS` | `128` | Limiar de slots de atraso para disparar alerta INDEXER_LAG |
-| `ORACLE_SIGNER_TYPE` | `local` | `local` ou `gcp-kms` |
+| `ORACLE_SIGNER_TYPE` | `local` | `local`, `gcp-kms` ou `aws-kms` |
 | `ORACLE_PRIVATE_KEY` | Obrigatória para signer local | Chave EVM, prefixo `0x` e 32 bytes; autoridade depende do contrato |
 | `GCP_KMS_KEY_VERSION` | Obrigatória para `gcp-kms` | Recurso da versão de chave compatível |
 | `GCP_KMS_CREDENTIALS_BASE64` | Opcional | JSON de credenciais codificado; caso contrário usa autenticação do ambiente |
+| `AWS_KMS_KEY_ID` | Opcional | Identificador ou ARN de chave assimétrica secp256k1 no AWS KMS |
 | `ORACLE_MIN_BALANCE_WEI` | `10000000000000000` | Limiar informativo de saldo baixo |
 | `MAIVW_ORACLE_URL` | `http://localhost:3001`; Testnet exige valor explícito | Dependência remota em caminhos do onboarding; HTTPS é obrigatório fora de `local` |
 | `DEPLOYER_PRIVATE_KEY` | Opcional no Gateway | Scripts de implantação e alguns caminhos de carteira/telemetria; não é chave pública |
