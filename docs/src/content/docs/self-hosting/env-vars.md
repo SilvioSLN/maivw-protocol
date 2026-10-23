@@ -34,6 +34,7 @@ O Compose local declara sua configuração diretamente e funciona sem `.env`. O 
 | `QUEUE_CONCURRENCY` | `5` | Quantidade máxima de jobs processados simultaneamente por worker |
 | `QUEUE_DEFAULT_MAX_ATTEMPTS` | `3` | Número máximo de retentativas antes de enviar o job à DLQ |
 | `QUEUE_DEFAULT_BACKOFF_MS` | `1000` | Intervalo base em milissegundos para cálculo de backoff exponencial |
+| `GRACEFUL_SHUTDOWN_TIMEOUT_MS` | `15000` | Timeout total em milissegundos para encerramento gracioso e drenagem de HTTP/jobs |
 | `ADMIN_REGISTRATION_TOKEN` | Ausente: cadastro administrativo público | Quando configurado, exige convite privado de pelo menos 32 caracteres em novos cadastros por senha ou social |
 | `JWT_SECRET` | Obrigatório, mínimo 16 caracteres | Assinatura de sessão; use alta entropia |
 | `MASTER_SECRET_KEY` | Obrigatório, mínimo 16 caracteres | Entrada para derivação SHA-256 da chave AES do cofre; não exige formato hex, mas recomenda-se gerar segredo aleatório |

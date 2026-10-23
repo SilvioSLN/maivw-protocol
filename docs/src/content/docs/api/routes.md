@@ -3,7 +3,7 @@ title: Inventário de rotas
 description: Métodos e caminhos registrados no código do Gateway, agrupados por módulo.
 ---
 
-Inventário estático de **96 rotas**. Gerado por `npm run docs:routes`; não equivale a uma especificação OpenAPI nem a uma auditoria de autorização. O link de cada módulo aponta para seu código no repositório.
+Inventário estático de **98 rotas**. Gerado por `npm run docs:routes`; não equivale a uma especificação OpenAPI nem a uma auditoria de autorização. O link de cada módulo aponta para seu código no repositório.
 
 Consulte [mensagens e anexos](/api/gateway/), [contas e onboarding](/api/accounts/) e [SMTP e administração](/api/operations/) para entradas e limites.
 
@@ -110,7 +110,9 @@ Consulte [mensagens e anexos](/api/gateway/), [contas e onboarding](/api/account
 | Método | Caminho |
 | --- | --- |
 | `GET` | `/health` |
+| `GET` | `/health/diag` |
 | `GET` | `/health/live` |
+| `GET` | `/health/ready` |
 
 ## inbox.ts
 

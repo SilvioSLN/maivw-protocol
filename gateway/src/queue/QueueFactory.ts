@@ -49,6 +49,41 @@ export function listQueues(): readonly JobQueue<any, any>[] {
   return Array.from(queueRegistry.values());
 }
 
+export async function pauseAllQueues(): Promise<void> {
+  for (const queue of queueRegistry.values()) {
+    try {
+      await queue.pause();
+    } catch {
+      // Ignore cleanup error on pause
+    }
+  }
+}
+
+export async function getActiveJobsCount(): Promise<number> {
+  let total = 0;
+  for (const queue of queueRegistry.values()) {
+    try {
+      const metrics = await queue.getMetrics();
+      total += metrics.active;
+    } catch {
+      // Ignore metric fetch error
+    }
+  }
+  return total;
+}
+
+export async function drainQueues(timeoutMs: number = 5000): Promise<{ drained: boolean; remainingActive: number }> {
+  const start = Date.now();
+  const pollInterval = 50;
+  while (Date.now() - start < timeoutMs) {
+    const active = await getActiveJobsCount();
+    if (active === 0) return { drained: true, remainingActive: 0 };
+    await new Promise((r) => setTimeout(r, pollInterval));
+  }
+  const remaining = await getActiveJobsCount();
+  return { drained: remaining === 0, remainingActive: remaining };
+}
+
 export async function closeAllQueues(): Promise<void> {
   for (const queue of queueRegistry.values()) {
     try {
