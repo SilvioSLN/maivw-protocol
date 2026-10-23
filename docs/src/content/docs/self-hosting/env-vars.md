@@ -50,6 +50,21 @@ O Compose local declara sua configuração diretamente e funciona sem `.env`. O 
 
 Não troque `MASTER_SECRET_KEY` em banco existente sem recifrar chaves e credenciais. Não há ferramenta de migração pronta para isso.
 
+## Armazenamento de objetos e anexos
+
+| Variável | Padrão / exigência | Uso |
+| --- | --- | --- |
+| `STORAGE_DRIVER` | `filesystem` | Seleciona o driver de armazenamento de objetos: `filesystem` (local) ou `s3` (compatível com AWS S3, Cloudflare R2 e MinIO) |
+| `ATTACHMENTS_DIR` | `data/attachments` | Diretório base para persistência local de anexos quando `STORAGE_DRIVER=filesystem` |
+| `STORAGE_MAX_FILE_SIZE_BYTES` | `26214400` (25MB) | Limite máximo em bytes para uploads de arquivos binários no ObjectStorage |
+| `STORAGE_SIGNED_URL_EXPIRES_SECONDS` | `900` (15 min) | Tempo de vida padrão em segundos para URLs pré-assinadas de upload e download |
+| `S3_ENDPOINT` | Opcional | Endpoint S3 customizado (obrigatório para Cloudflare R2 ou MinIO, ex: `https://<id>.r2.cloudflarestorage.com`) |
+| `S3_BUCKET` | Obrigatório se `STORAGE_DRIVER=s3` | Nome do bucket S3 ou R2 de destino |
+| `S3_REGION` | `auto` | Região do bucket (ex: `us-east-1` para AWS ou `auto` para Cloudflare R2) |
+| `S3_ACCESS_KEY_ID` | Obrigatório se `STORAGE_DRIVER=s3` | Chave de acesso (Access Key ID) para autenticação AWS SigV4 nativa |
+| `S3_SECRET_ACCESS_KEY` | Obrigatório se `STORAGE_DRIVER=s3` | Segredo de acesso (Secret Access Key) para autenticação AWS SigV4 nativa |
+| `S3_FORCE_PATH_STYLE` | `true` | Se `true`, utiliza URLs no formato path-style (`endpoint/bucket/key`), ideal para MinIO e R2 |
+
 ## Blockchain e assinantes
 
 | Variável | Padrão / exigência | Uso |

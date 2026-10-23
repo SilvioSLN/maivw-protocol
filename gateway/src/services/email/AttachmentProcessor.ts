@@ -1,8 +1,6 @@
-import fs from "node:fs";
-import path from "node:path";
 import type { AttachmentItem, NativeEmailAttachment, PreparedEmailMessage } from "./types.js";
+import { getStorage } from "../../storage/index.js";
 
-const ATTACHMENTS_DIR = path.resolve(process.cwd(), "data/attachments");
 const MAX_NATIVE_TOTAL_BYTES = 25 * 1024 * 1024; // 25 MB limite padrão para anexos em provedores SMTP/Resend
 
 function formatBytes(bytes: number): string {
@@ -22,7 +20,7 @@ export class AttachmentProcessor {
   /**
    * Prepara o e-mail e processa seus anexos de forma inteligente (híbrido):
    * - Arquivos até 25MB no total: Carregados da storage e anexados como binários nativos MIME.
-   * - Arquivos acima de 25MB (ou se faltar no disco): Recebem card HTML responsivo com link de download direto e hash SHA-256.
+   * - Arquivos acima de 25MB (ou se faltar na storage): Recebem card HTML responsivo com link de download direto e hash SHA-256.
    */
   static async processMessage(
     to: string,
@@ -57,26 +55,19 @@ export class AttachmentProcessor {
     if (totalBytes <= MAX_NATIVE_TOTAL_BYTES) {
       let allFound = true;
       const loaded: NativeEmailAttachment[] = [];
+      const storage = getStorage();
 
       for (const att of attachments) {
         try {
-          if (!fs.existsSync(ATTACHMENTS_DIR)) {
-            allFound = false;
-            break;
-          }
-          const files = await fs.promises.readdir(ATTACHMENTS_DIR);
-          const target = files.find((f) => f.startsWith(`${att.id}__`) && !f.endsWith("__meta.json"));
-
-          if (target) {
-            const filePath = path.join(ATTACHMENTS_DIR, target);
-            const buffer = await fs.promises.readFile(filePath);
+          const item = await storage.get(att.id);
+          if (item) {
             loaded.push({
               filename: att.filename,
-              content: buffer,
-              contentType: att.mimeType,
+              content: item.data,
+              contentType: att.mimeType || item.metadata.mimeType,
             });
           } else {
-            console.warn(`[AttachmentProcessor] ⚠️ Arquivo de anexo não encontrado em disco para id: ${att.id}`);
+            console.warn(`[AttachmentProcessor] ⚠️ Arquivo de anexo não encontrado na storage para id: ${att.id}`);
             allFound = false;
             break;
           }
