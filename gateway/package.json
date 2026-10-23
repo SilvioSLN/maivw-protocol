@@ -34,6 +34,9 @@
     "test:sm087": "node --import tsx scripts/run-sm087-golive-slo.ts",
     "test:sm088": "node --import tsx scripts/run-sm088-doc-demo-check.ts",
     "solana:init:registry": "node --env-file-if-exists=../.env.testnet --import tsx scripts/initialize-solana-registry.ts",
+    "db:migrate": "prisma migrate deploy",
+    "db:migrate:status": "prisma migrate status",
+    "db:migrate:check": "node --import tsx scripts/check-migration-policy.ts",
     "test": "node --import tsx --test test/*.test.ts"
   },
   "dependencies": {
