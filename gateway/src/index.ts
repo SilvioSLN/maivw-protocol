@@ -42,8 +42,13 @@ import { SolanaRegistryIndexer, Web3SolanaIndexerClient } from "./multichain/Sol
 import { MultichainTelemetry } from "./multichain/MultichainTelemetry.js";
 import { MultichainAlertCollector, MultichainAlertService } from "./multichain/MultichainAlerts.js";
 import { hasLoop, hasQueue, hasRouteGroup, runtimeProfile } from "./runtime/roles.js";
+import { GracefulShutdownManager } from "./runtime/shutdown.js";
 import {
   closeAllQueues,
+  pauseAllQueues,
+  drainQueues,
+  getActiveJobsCount,
+  listQueues,
   createJobQueue,
   DEFAULT_QUEUE_POLICIES,
   STANDARD_QUEUES,
@@ -197,12 +202,44 @@ if (hasQueue(profile, STANDARD_QUEUES.RELAYER_MIRROR)) {
   }, { concurrency: config.QUEUE_CONCURRENCY });
 }
 
+const shutdownManager = new GracefulShutdownManager({
+  app,
+  pauseQueues: async () => {
+    await pauseAllQueues();
+  },
+  drainJobs: async (jobDrainTimeoutMs) => {
+    return await drainQueues(jobDrainTimeoutMs);
+  },
+  closeQueues: async () => {
+    await closeAllQueues();
+  },
+  stopLoops: () => {
+    solanaIndexer?.stop();
+    eventListener?.stop();
+    routingPool?.destroy();
+  },
+  disconnectPrisma: async () => {
+    await prisma.$disconnect();
+  },
+  log: app.log,
+}, {
+  timeoutMs: config.GRACEFUL_SHUTDOWN_TIMEOUT_MS,
+});
+
+if (process.env.NODE_ENV !== "test") {
+  shutdownManager.bindSignals(["SIGTERM", "SIGINT"]);
+}
+
 app.addHook("onClose", async () => {
-  await closeAllQueues();
-  solanaIndexer?.stop();
-  eventListener?.stop();
-  routingPool?.destroy();
-  await prisma.$disconnect();
+  if (!shutdownManager.isShuttingDown()) {
+    await pauseAllQueues();
+    await drainQueues(3000);
+    await closeAllQueues();
+    solanaIndexer?.stop();
+    eventListener?.stop();
+    routingPool?.destroy();
+    await prisma.$disconnect();
+  }
 });
 
 // ============================================
@@ -220,16 +257,41 @@ await app.register(cors, {
 // ============================================
 //  Health Check
 // ============================================
+const roleNeedsBlockchain = profile.role === "all-in-one"
+  || profile.role === "gateway-api"
+  || profile.role === "oracle-worker"
+  || profile.role === "relayer-worker"
+  || profile.role === "evm-indexer"
+  || profile.role === "solana-indexer";
+
 await healthRoutes(app, {
   service: "maivw-gateway",
   role: profile.role,
   activeComponents: [...profile.routeGroups, ...activeLoops, ...profile.queues],
   checks: {
-    blockchain: () => profile.role === "solana-indexer" && solanaOriginNetwork
-      ? ledger.checkNetworkHealth(solanaOriginNetwork.networkId)
-      : ledger.checkBlockchainHealth(),
+    ...(roleNeedsBlockchain ? {
+      blockchain: () => profile.role === "solana-indexer" && solanaOriginNetwork
+        ? ledger.checkNetworkHealth(solanaOriginNetwork.networkId)
+        : ledger.checkBlockchainHealth(),
+    } : {}),
     database: () => prisma.$queryRaw`SELECT 1`,
     ...(routingPool ? { redis: () => routingPool.checkRedisHealth() } : {}),
+  },
+  isShuttingDown: () => shutdownManager.isShuttingDown(),
+  getDiagnostics: async () => {
+    const queueMetrics: Record<string, unknown> = {};
+    for (const q of listQueues()) {
+      try {
+        queueMetrics[q.name] = await q.getMetrics();
+      } catch {
+        queueMetrics[q.name] = "error";
+      }
+    }
+    return {
+      activeJobs: await getActiveJobsCount(),
+      queues: queueMetrics,
+      lifecycle: shutdownManager.getStatus(),
+    };
   },
   oracleBalance: oracle ? () => oracle.getBalance() : undefined,
   oracleMinBalance: config.ORACLE_MIN_BALANCE_WEI,
@@ -457,6 +519,7 @@ const HOST = config.GATEWAY_HOST;
 
 try {
   await app.listen({ port: PORT, host: HOST });
+  shutdownManager.setReady();
   app.log.info({
     role: profile.role,
     routeGroups: profile.routeGroups,
@@ -468,3 +531,5 @@ try {
   app.log.error(err);
   process.exit(1);
 }
+
+export { app, shutdownManager };

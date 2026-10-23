@@ -59,6 +59,7 @@ const EnvObjectSchema = z.object({
   QUEUE_CONCURRENCY: z.coerce.number().int().min(1).max(100).default(5),
   QUEUE_DEFAULT_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(20).default(3),
   QUEUE_DEFAULT_BACKOFF_MS: z.coerce.number().int().min(50).max(60000).default(1000),
+  GRACEFUL_SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120000).default(15000),
   STORAGE_DRIVER: z.enum(["filesystem", "s3"]).default("filesystem"),
   ATTACHMENTS_DIR: z.string().default("data/attachments"),
   STORAGE_MAX_FILE_SIZE_BYTES: z.coerce.number().int().positive().default(25 * 1024 * 1024),
