@@ -79,7 +79,19 @@ test("signing roles fail closed while non-signing workers do not inherit oracle 
   assert.equal(EnvSchema.safeParse({ ...withoutOracle, MAIVW_RUNTIME_ROLE: "gateway-api" }).success, false);
   assert.equal(EnvSchema.safeParse({ ...withoutOracle, MAIVW_RUNTIME_ROLE: "oracle-worker" }).success, false);
   assert.equal(EnvSchema.safeParse({ ...withoutOracle, MAIVW_RUNTIME_ROLE: "mail-worker" }).success, true);
-  assert.equal(EnvSchema.safeParse({ ...withoutOracle, MAIVW_RUNTIME_ROLE: "p2p-ingress" }).success, true);
+  assert.equal(EnvSchema.safeParse({
+    ...withoutOracle,
+    MAIVW_RUNTIME_ROLE: "p2p-ingress",
+    MTLS_STRICT_MODE: true,
+    TRUST_PROXY: false,
+  }).success, true);
+  assert.equal(EnvSchema.safeParse({ ...withoutOracle, MAIVW_RUNTIME_ROLE: "p2p-ingress" }).success, false);
+  assert.equal(EnvSchema.safeParse({
+    ...withoutOracle,
+    MAIVW_RUNTIME_ROLE: "gateway-api",
+    ORACLE_SIGNER_TYPE: "aws-kms",
+    AWS_KMS_KEY_ID: "alias/your-oracle-evm-signer",
+  }).success, true);
 });
 
 test("validated configuration constructs only explicitly enabled EVM and Solana adapters", () => {
@@ -213,4 +225,3 @@ test("queue driver validates options and defaults to bullmq", () => {
   assert.equal(defaultParsed.QUEUE_DRIVER, "bullmq");
   assert.equal(defaultParsed.QUEUE_CONCURRENCY, 5);
 });
-

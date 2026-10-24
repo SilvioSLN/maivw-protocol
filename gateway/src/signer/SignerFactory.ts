@@ -47,7 +47,7 @@ export class SignerFactory {
   }
 
   static createOracleSigner(
-    config: Pick<EnvConfig, "ORACLE_SIGNER_TYPE" | "ORACLE_PRIVATE_KEY" | "GCP_KMS_KEY_VERSION" | "GCP_KMS_CREDENTIALS_BASE64">,
+    config: Pick<EnvConfig, "ORACLE_SIGNER_TYPE" | "ORACLE_PRIVATE_KEY" | "GCP_KMS_KEY_VERSION" | "GCP_KMS_CREDENTIALS_BASE64" | "AWS_KMS_KEY_ID">,
     options?: SignerFactoryOptions,
   ): ISigner {
     if (config.ORACLE_SIGNER_TYPE === "gcp-kms") {
@@ -61,12 +61,15 @@ export class SignerFactory {
       );
     }
 
-    if (config.ORACLE_SIGNER_TYPE === ("aws-kms" as any)) {
+    if (config.ORACLE_SIGNER_TYPE === "aws-kms") {
+      if (!config.AWS_KMS_KEY_ID) {
+        throw new Error("AWS_KMS_KEY_ID is required when ORACLE_SIGNER_TYPE is 'aws-kms'");
+      }
       if (!options?.awsKmsTransport) {
         throw new Error("awsKmsTransport is required when ORACLE_SIGNER_TYPE is 'aws-kms'");
       }
       return SignerFactory.createAwsKms(
-        config.GCP_KMS_KEY_VERSION || "alias/maivw-oracle",
+        config.AWS_KMS_KEY_ID,
         options.awsKmsTransport,
         "oracle",
       );
