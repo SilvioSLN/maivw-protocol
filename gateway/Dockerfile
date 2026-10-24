@@ -25,7 +25,7 @@ CMD ["sh", "-c", "exec npx prisma migrate deploy"]
 
 # Target para o runtime dos serviços do Gateway (API, workers, indexadores)
 FROM base AS runner
-EXPOSE 3001
+EXPOSE 3001 8443
 USER node
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD wget -qO- http://127.0.0.1:3001/health/live || exit 1

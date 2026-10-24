@@ -37,13 +37,16 @@
     "db:migrate": "prisma migrate deploy",
     "db:migrate:status": "prisma migrate status",
     "db:migrate:check": "node --import tsx scripts/check-migration-policy.ts",
+    "kms:address": "node --import tsx scripts/resolve-aws-kms-address.ts",
     "test": "node --import tsx --test test/*.test.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.0.1",
     "@google-cloud/kms": "^6.2.1",
+    "@aws-sdk/client-kms": "^3.920.0",
     "@prisma/client": "^5.22.0",
     "@solana/web3.js": "^1.98.4",
+    "@aws-sdk/client-sesv2": "^3.920.0",
     "asn1.js": "^5.4.1",
     "bullmq": "^5.52.3",
     "fastify": "^5.3.3",

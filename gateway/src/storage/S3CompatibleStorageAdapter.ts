@@ -361,7 +361,7 @@ export class S3CompatibleStorageAdapter implements ObjectStorage {
     const cleanKey = this.validateKey(key);
     const { url, canonicalPath } = this.getObjectUrl(cleanKey);
 
-    const expiresInSeconds = options.expiresInSeconds || 900;
+    const expiresInSeconds = Math.min(900, Math.max(60, options.expiresInSeconds || 900));
     const date = new Date();
     const amzDate = date.toISOString().replace(/[:-]|\.\d{3}/g, "");
     const dateStamp = amzDate.substring(0, 8);
@@ -414,7 +414,7 @@ export class S3CompatibleStorageAdapter implements ObjectStorage {
     const cleanKey = this.validateKey(key);
     const { url, canonicalPath } = this.getObjectUrl(cleanKey);
 
-    const expiresInSeconds = options.expiresInSeconds || 900;
+    const expiresInSeconds = Math.min(900, Math.max(60, options.expiresInSeconds || 900));
     const date = new Date();
     const amzDate = date.toISOString().replace(/[:-]|\.\d{3}/g, "");
     const dateStamp = amzDate.substring(0, 8);

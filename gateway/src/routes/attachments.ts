@@ -67,6 +67,8 @@ async function requireAttachmentAuth(
 
 export async function attachmentRoutes(app: FastifyInstance, options: AttachmentRouteOptions = {}) {
   const { prisma, kms } = options;
+  const maxFileSizeBytes = options.maxFileSizeBytes ?? 25 * 1024 * 1024;
+  const clampExpiry = (value: unknown) => Math.min(900, Math.max(60, Number(value) || 900));
 
   const storage: ObjectStorage =
     options.storage ||
@@ -241,7 +243,6 @@ export async function attachmentRoutes(app: FastifyInstance, options: Attachment
             filename: { type: "string", maxLength: 255 },
             mimeType: { type: "string", maxLength: 128 },
             expectedSha256: { type: "string", maxLength: 64 },
-            maxSizeBytes: { type: "number" },
             expiresInSeconds: { type: "number" },
           },
         },
@@ -251,13 +252,16 @@ export async function attachmentRoutes(app: FastifyInstance, options: Attachment
       const isAuth = await requireAttachmentAuth(request, reply, prisma, kms);
       if (!isAuth) return;
 
-      const { filename, mimeType, expectedSha256, maxSizeBytes, expiresInSeconds } = request.body as {
+      const { filename, mimeType, expectedSha256, expiresInSeconds } = request.body as {
         filename: string;
         mimeType?: string;
         expectedSha256?: string;
-        maxSizeBytes?: number;
         expiresInSeconds?: number;
       };
+
+      if (expectedSha256 && !/^[a-fA-F0-9]{64}$/.test(expectedSha256)) {
+        return reply.status(400).send({ error: "expectedSha256 deve ser um SHA-256 hexadecimal" });
+      }
 
       const id = `att_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`;
       const safeFilename = path.basename(filename).replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 100);
@@ -266,8 +270,8 @@ export async function attachmentRoutes(app: FastifyInstance, options: Attachment
       const signedResult = await storage.createSignedUploadUrl(storageKey, {
         contentType: mimeType,
         expectedSha256,
-        maxSizeBytes: maxSizeBytes || 25 * 1024 * 1024,
-        expiresInSeconds: expiresInSeconds || 900,
+        maxSizeBytes: maxFileSizeBytes,
+        expiresInSeconds: clampExpiry(expiresInSeconds),
       });
 
       return reply.status(200).send({
@@ -288,16 +292,30 @@ export async function attachmentRoutes(app: FastifyInstance, options: Attachment
    * Gera uma URL pré-assinada temporária para download direto.
    */
   app.get("/api/v1/attachments/:id/signed-download", async (request, reply) => {
-    const { id } = request.params as { id: string };
-    const { filename, expiresInSeconds } = request.query as { filename?: string; expiresInSeconds?: string };
+    const isAuth = await requireAttachmentAuth(request, reply, prisma, kms);
+    if (!isAuth) return;
 
-    if (!id || !/^[a-zA-Z0-9_-]+$/.test(id)) {
+    const { id } = request.params as { id: string };
+    const { key, filename, expiresInSeconds } = request.query as {
+      key?: string;
+      filename?: string;
+      expiresInSeconds?: string;
+    };
+
+    const storageKey = key || id;
+    if (!id || !/^att_[a-zA-Z0-9_-]+$/.test(id) || !storageKey.startsWith(`${id}__`)) {
       return reply.status(400).send({ error: "Identificador de anexo inválido" });
     }
 
-    const downloadUrl = await storage.createSignedDownloadUrl(id, {
+    const metadata = await storage.getMetadata(storageKey);
+    if (!metadata) return reply.status(404).send({ error: "Anexo não encontrado" });
+    if (metadata.size > maxFileSizeBytes) {
+      return reply.status(413).send({ error: "Anexo excede o limite configurado" });
+    }
+
+    const downloadUrl = await storage.createSignedDownloadUrl(storageKey, {
       downloadFilename: filename,
-      expiresInSeconds: expiresInSeconds ? Number(expiresInSeconds) : 900,
+      expiresInSeconds: clampExpiry(expiresInSeconds),
     });
 
     return reply.status(200).send({

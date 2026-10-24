@@ -50,6 +50,7 @@ const EnvObjectSchema = z.object({
   MAIVW_ENVIRONMENT: z.enum(["local", "testnet", "staging", "production"]).default("local"),
   MAIVW_RUNTIME_ROLE: z.enum(RUNTIME_ROLES).default("all-in-one"),
   GATEWAY_PORT: z.coerce.number().int().min(1).max(65535).default(3001),
+  P2P_PORT: z.coerce.number().int().min(1).max(65535).default(8443),
   GATEWAY_HOST: z.string().default("0.0.0.0"),
   GATEWAY_PUBLIC_URL: httpUrl.default("http://localhost:3001"),
   RPC_URL: httpUrl.default("http://localhost:8545"),
@@ -83,6 +84,10 @@ const EnvObjectSchema = z.object({
   MASTER_SECRET_KEY: z.string().min(16, "MASTER_SECRET_KEY deve ser configurada no ambiente"),
   LEGACY_WEBHOOK_SECRET: z.string().optional().default(""),
   RESEND_API_KEY: z.string().optional(),
+  SES_ENABLED: booleanFlag.default(false),
+  SES_REGION: z.string().default("us-east-1"),
+  SES_CONFIGURATION_SET: z.string().optional(),
+  SES_FROM_EMAIL: z.string().email().optional(),
   ADMIN_REGISTRATION_TOKEN: z.string().min(32).optional(),
   JWT_SECRET: z.string().min(16, "JWT_SECRET deve ser configurado no ambiente"),
   BASE_RPC_URL: httpUrl.default("http://localhost:8545"),
@@ -147,6 +152,10 @@ export const EnvSchema = EnvObjectSchema.superRefine((config, context) => {
     .includes(config.MAIVW_RUNTIME_ROLE);
   const needsSolanaRelayerSigner = config.SOLANA_ENABLED && config.MULTICHAIN_RELAY_ENABLED
     && ["all-in-one", "relayer-worker"].includes(config.MAIVW_RUNTIME_ROLE);
+  if (config.MAIVW_RUNTIME_ROLE === "p2p-ingress") {
+    if (!config.MTLS_STRICT_MODE) add("MTLS_STRICT_MODE", "p2p-ingress exige MTLS_STRICT_MODE=true");
+    if (config.TRUST_PROXY) add("TRUST_PROXY", "p2p-ingress direto não aceita identidade por proxy/header");
+  }
   if (config.SOLANA_ENABLED) {
     for (const field of ["SOLANA_RPC_URL", "SOLANA_WS_URL", "SOLANA_GENESIS_HASH", "SOLANA_PROGRAM_ID"] as const) {
       if (!config[field]) add(field, `${field} é obrigatório quando SOLANA_ENABLED=true`);
@@ -178,6 +187,9 @@ export const EnvSchema = EnvObjectSchema.superRefine((config, context) => {
   if (needsOracleSigner && config.ORACLE_SIGNER_TYPE === "gcp-kms" && !config.GCP_KMS_KEY_VERSION) {
     add("GCP_KMS_KEY_VERSION", `papel ${config.MAIVW_RUNTIME_ROLE} exige signer KMS do oráculo`);
   }
+  if (needsOracleSigner && config.ORACLE_SIGNER_TYPE === "aws-kms" && !config.AWS_KMS_KEY_ID) {
+    add("AWS_KMS_KEY_ID", `papel ${config.MAIVW_RUNTIME_ROLE} exige signer AWS KMS do oráculo`);
+  }
   if (config.MULTICHAIN_RELAY_ENABLED && needsSolanaRelayerSigner) {
     const deployments = [config.BASE_REGISTRY_ADDRESS, config.ARBITRUM_REGISTRY_ADDRESS, config.POLYGON_REGISTRY_ADDRESS]
       .filter(Boolean).length + (config.SOLANA_ENABLED ? 1 : 0);
@@ -187,6 +199,9 @@ export const EnvSchema = EnvObjectSchema.superRefine((config, context) => {
     }
     if (config.ORACLE_SIGNER_TYPE === "gcp-kms" && !config.GCP_KMS_KEY_VERSION) {
       add("GCP_KMS_KEY_VERSION", "signer gcp-kms exige GCP_KMS_KEY_VERSION");
+    }
+    if (config.ORACLE_SIGNER_TYPE === "aws-kms" && !config.AWS_KMS_KEY_ID) {
+      add("AWS_KMS_KEY_ID", "signer aws-kms exige AWS_KMS_KEY_ID");
     }
   }
   for (const [registry, ws] of [

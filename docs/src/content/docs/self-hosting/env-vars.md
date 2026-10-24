@@ -25,6 +25,7 @@ O Compose local declara sua configuração diretamente e funciona sem `.env`. O 
 | `MAIVW_ENVIRONMENT` | `local`; obrigatório declarar nos manifests | Fronteira de segurança entre demonstração, Testnet, staging e produção |
 | `MAIVW_RUNTIME_ROLE` | `all-in-one` | Seleciona API, ingresso, worker ou indexador; veja [papéis de runtime](/self-hosting/runtime-roles/) |
 | `GATEWAY_PORT` | `3001` | Porta do processo; Compose fixa em 3001 |
+| `P2P_PORT` | `8443` | Porta HTTPS dedicada do papel `p2p-ingress`; deve receber conexões mTLS diretas |
 | `GATEWAY_HOST` | `0.0.0.0` | Bind interno; a publicação do Compose é no loopback do host |
 | `GATEWAY_PUBLIC_URL` | `http://localhost:3001` | Base pública usada em anexos e respostas; HTTPS é obrigatório fora de `local` |
 | `DATABASE_URL` | PostgreSQL local, banco `maivw_reputation` | Prisma; Compose usa host `postgres` |
@@ -124,6 +125,10 @@ Não troque `MASTER_SECRET_KEY` em banco existente sem recifrar chaves e credenc
 | Variável | Uso |
 | --- | --- |
 | `RESEND_API_KEY` | Provedor de saída padrão opcional; configuração por domínio também existe no banco |
+| `SES_ENABLED` | Ativa o adaptador Amazon SESv2 para a ponte SMTP legada; usa credenciais temporárias da task role |
+| `SES_REGION` | Região da identidade SES e do configuration set |
+| `SES_CONFIGURATION_SET` | Configuration set usado para eventos de envio, entrega, bounce e complaint |
+| `SES_FROM_EMAIL` | Remetente fixo e verificado usado pela ponte SES; quando ausente, usa o remetente da mensagem |
 | `LEGACY_WEBHOOK_SECRET` | Proteção do webhook legado; vazio desabilita a exigência no handler atual |
 | `ORACLE_AI_JUDGE_URL` | Endpoint opcional do juiz semântico remoto |
 | `ORACLE_AI_JUDGE_TOKEN` | Credencial do juiz remoto |

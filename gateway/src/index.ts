@@ -43,6 +43,7 @@ import { MultichainTelemetry } from "./multichain/MultichainTelemetry.js";
 import { MultichainAlertCollector, MultichainAlertService } from "./multichain/MultichainAlerts.js";
 import { hasLoop, hasQueue, hasRouteGroup, runtimeProfile } from "./runtime/roles.js";
 import { GracefulShutdownManager } from "./runtime/shutdown.js";
+import { TlsCertService } from "./services/TlsCertService.js";
 import {
   closeAllQueues,
   pauseAllQueues,
@@ -63,7 +64,25 @@ import {
 const config = loadConfig();
 const profile = runtimeProfile(config.MAIVW_RUNTIME_ROLE);
 
-const app = Fastify({ logger: { level: "info" } });
+const p2pTlsCredentials = profile.role === "p2p-ingress"
+  ? TlsCertService.getOrProvisionNodeCredentials({
+      certPath: config.TLS_CERT_PATH,
+      keyPath: config.TLS_KEY_PATH,
+      domain: config.SENDER_DOMAIN,
+    })
+  : null;
+const app = Fastify({
+  logger: { level: "info" },
+  ...(p2pTlsCredentials ? {
+    https: {
+      cert: p2pTlsCredentials.certPem,
+      key: p2pTlsCredentials.keyPem,
+      requestCert: true,
+      rejectUnauthorized: false,
+      minVersion: "TLSv1.2" as const,
+    },
+  } : {}),
+});
 const multichainTelemetry = new MultichainTelemetry(app.log);
 
 function required<T>(value: T | undefined, name: string): T {
@@ -93,7 +112,16 @@ const kms = needsKms ? new KeyManagementService(prisma, config.MASTER_SECRET_KEY
 const signer = needsSigner
   ? new SignatureService((config.COMPANY_A_PRIVATE_KEY || generatePrivateKey()) as Hex)
   : undefined;
-const smtp = needsSmtp ? new SmtpService(config.RESEND_API_KEY, prisma, config.MASTER_SECRET_KEY) : undefined;
+const smtp = needsSmtp ? new SmtpService(
+  config.RESEND_API_KEY,
+  prisma,
+  config.MASTER_SECRET_KEY,
+  config.SES_ENABLED ? {
+    region: config.SES_REGION,
+    configurationSet: config.SES_CONFIGURATION_SET,
+    fromEmail: config.SES_FROM_EMAIL,
+  } : undefined,
+) : undefined;
 const reputation = needsReputation ? new ReputationService() : undefined;
 const oracle = needsOracle ? await OracleService.create(config, ledger) : undefined;
 const oracleReportService = oracleWorkerEnabled ? new OracleReportService() : undefined;
@@ -124,7 +152,7 @@ const originOnboarding = gatewayApiEnabled && solanaOriginNetwork && solanaOrigi
         prisma,
         new QuorumDnsTxtVerifier(),
         await createAttestationSigner(config, undefined, (error) => {
-          if (config.ORACLE_SIGNER_TYPE === "gcp-kms") {
+          if (config.ORACLE_SIGNER_TYPE === "gcp-kms" || config.ORACLE_SIGNER_TYPE === "aws-kms") {
             multichainTelemetry.record("kms.failed", {}, {
               signerType: config.ORACLE_SIGNER_TYPE,
               errorType: error instanceof Error ? error.name : "UnknownError",
@@ -514,8 +542,9 @@ if (gatewayApiEnabled) await nodeRoutes(app, {
 // ============================================
 //  Start Server
 // ============================================
-const PORT = config.GATEWAY_PORT;
+const PORT = profile.role === "p2p-ingress" ? config.P2P_PORT : config.GATEWAY_PORT;
 const HOST = config.GATEWAY_HOST;
+const protocol = profile.role === "p2p-ingress" ? "https" : "http";
 
 try {
   await app.listen({ port: PORT, host: HOST });
@@ -525,7 +554,7 @@ try {
     routeGroups: profile.routeGroups,
     loops: activeLoops,
     queues: profile.queues,
-    address: `http://${HOST}:${PORT}`,
+    address: `${protocol}://${HOST}:${PORT}`,
   }, "MAIVW runtime started");
 } catch (err) {
   app.log.error(err);

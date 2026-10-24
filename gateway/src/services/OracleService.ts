@@ -15,6 +15,7 @@ import { foundry, baseSepolia, arbitrumSepolia, polygonAmoy } from "viem/chains"
 import { REGISTRY_ABI, type EnvConfig } from "../config.js";
 import { LedgerService } from "./LedgerService.js";
 import { createGcpKmsAccount } from "./GcpKmsAccount.js";
+import { createAwsKmsAccount } from "./AwsKmsAccount.js";
 import {
   type ISemanticJudge,
   type SemanticJudgeVerdict,
@@ -89,6 +90,17 @@ export class OracleService {
       account = await createGcpKmsAccount({
         keyVersionName: config.GCP_KMS_KEY_VERSION,
         credentialsJsonBase64: config.GCP_KMS_CREDENTIALS_BASE64,
+      });
+    } else if (config.ORACLE_SIGNER_TYPE === "aws-kms") {
+      if (!config.AWS_KMS_KEY_ID) {
+        throw new Error(
+          "[ORACLE] Configuração inválida: ORACLE_SIGNER_TYPE='aws-kms' exige que AWS_KMS_KEY_ID seja definido."
+        );
+      }
+      console.log(`[ORACLE] Initializing AWS KMS Signer (Key: ${config.AWS_KMS_KEY_ID})...`);
+      account = await createAwsKmsAccount({
+        keyId: config.AWS_KMS_KEY_ID,
+        region: config.SES_REGION,
       });
     } else {
       console.log("[ORACLE] Initializing Local Private Key Signer...");

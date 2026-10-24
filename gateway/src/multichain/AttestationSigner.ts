@@ -3,6 +3,7 @@ import { recoverAddress, type Address, type Hex } from "viem";
 import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
 import type { EnvConfig } from "../config.js";
 import { GcpKmsOracleSigner, type KmsKeyMetadata } from "../services/GcpKmsAccount.js";
+import { AwsKmsOracleSigner } from "../services/AwsKmsAccount.js";
 import {
   AttestationKind,
   encodeAttestationV1,
@@ -127,7 +128,7 @@ export class AttestationSigner implements OriginClaimSigner {
 
 export type AttestationSignerConfig = Pick<
   EnvConfig,
-  "ORACLE_SIGNER_TYPE" | "ORACLE_PRIVATE_KEY" | "GCP_KMS_KEY_VERSION" | "GCP_KMS_CREDENTIALS_BASE64"
+  "ORACLE_SIGNER_TYPE" | "ORACLE_PRIVATE_KEY" | "GCP_KMS_KEY_VERSION" | "GCP_KMS_CREDENTIALS_BASE64" | "AWS_KMS_KEY_ID" | "SES_REGION"
 >;
 
 export async function createAttestationSigner(
@@ -143,6 +144,15 @@ export async function createAttestationSigner(
       keyVersionName: config.GCP_KMS_KEY_VERSION,
       credentialsJsonBase64: config.GCP_KMS_CREDENTIALS_BASE64,
       client: kmsClient,
+    }), onBackendFailure);
+  }
+  if (config.ORACLE_SIGNER_TYPE === "aws-kms") {
+    if (!config.AWS_KMS_KEY_ID) {
+      throw new Error("AWS_KMS_KEY_ID is required for the attestation signer");
+    }
+    return new AttestationSigner(new AwsKmsOracleSigner({
+      keyId: config.AWS_KMS_KEY_ID,
+      region: config.SES_REGION,
     }), onBackendFailure);
   }
   if (!config.ORACLE_PRIVATE_KEY || !/^0x[0-9a-fA-F]{64}$/.test(config.ORACLE_PRIVATE_KEY)) {

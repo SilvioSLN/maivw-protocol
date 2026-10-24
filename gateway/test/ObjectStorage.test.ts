@@ -478,7 +478,7 @@ test("Attachment routes: signed upload and download endpoints with validation", 
     // 4. GET /api/v1/attachments/:id/signed-download
     const resSignedDl = await app.inject({
       method: "GET",
-      url: `/api/v1/attachments/${signedJson.id}/signed-download`,
+      url: `/api/v1/attachments/${signedJson.id}/signed-download?key=${encodeURIComponent(signedJson.key)}`,
     });
     assert.equal(resSignedDl.statusCode, 200);
     const dlJson = JSON.parse(resSignedDl.payload);

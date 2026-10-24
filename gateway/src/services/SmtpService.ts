@@ -4,6 +4,7 @@ import type { AttachmentItem } from "../schemas/payload.js";
 import { AttachmentProcessor } from "./email/AttachmentProcessor.js";
 import { ResendAdapter } from "./email/adapters/ResendAdapter.js";
 import { GenericSmtpAdapter } from "./email/adapters/GenericSmtpAdapter.js";
+import { SesAdapter, type SesAdapterConfig } from "./email/adapters/SesAdapter.js";
 import type { EmailProviderAdapter, GenericSmtpConfig } from "./email/types.js";
 
 /**
@@ -21,12 +22,15 @@ export class SmtpService {
   private prisma: PrismaClient | null = null;
   private masterKey: string;
 
-  constructor(envApiKey?: string, prisma?: PrismaClient, masterKey?: string) {
+  constructor(envApiKey?: string, prisma?: PrismaClient, masterKey?: string, sesConfig?: SesAdapterConfig) {
     this.envApiKey = envApiKey || null;
     this.prisma = prisma || null;
     this.masterKey = masterKey || "";
 
-    if (this.envApiKey) {
+    if (sesConfig) {
+      this.defaultAdapter = new SesAdapter(sesConfig);
+      console.log("[SMTP] Amazon SES inicializado com credenciais temporárias da task role");
+    } else if (this.envApiKey) {
       this.defaultAdapter = new ResendAdapter(this.envApiKey);
       console.log("[SMTP] ✅ Provedor Resend inicializado a partir de variável de ambiente");
     } else {
