@@ -3,11 +3,12 @@ import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import { privateKeyToAccount } from "viem/accounts";
 import { keccak256, recoverAddress, type Hex } from "viem";
-import { Keypair } from "@solana/web3.js";
+import { Keypair, PublicKey } from "@solana/web3.js";
 import { secp256k1 } from "@noble/curves/secp256k1";
 import {
   LocalEvmSigner,
   AwsKmsEvmSigner,
+  AwsKmsSolanaSigner,
   LocalSolanaSigner,
   EnvelopeSolanaSigner,
   SignerFactory,
@@ -122,6 +123,51 @@ test("LocalSolanaSigner signs and verifies Ed25519 detached signatures without l
   const json = signer.toJSON();
   assert.equal("secretKey" in json, false);
   assertNoPrivateMaterial(json, "LocalSolanaSigner.toJSON");
+});
+
+test("AwsKmsSolanaSigner signs Solana-compatible Ed25519 messages without exporting a keypair", async () => {
+  const ed25519 = crypto.generateKeyPairSync("ed25519");
+  const spkiDer = ed25519.publicKey.export({ format: "der", type: "spki" });
+  const calls: Array<{ operation: string; keyId: string; bytes?: number }> = [];
+  const transport = {
+    async getPublicKey(keyId: string) {
+      calls.push({ operation: "getPublicKey", keyId });
+      return spkiDer;
+    },
+    async signRaw(keyId: string, message: Uint8Array) {
+      calls.push({ operation: "signRaw", keyId, bytes: message.byteLength });
+      return crypto.sign(null, Buffer.from(message), ed25519.privateKey);
+    },
+  };
+
+  const keyId = "alias/your-solana-relayer-signer";
+  const signer = new AwsKmsSolanaSigner({ keyId, role: "relayer", transport });
+  const message = "MAIVW_SOLANA_KMS_ED25519_VECTOR";
+  const address = await signer.getAddress();
+  const signature = await signer.signMessage(message);
+
+  assert.equal(new PublicKey(address).toBase58(), address);
+  assert.equal(Buffer.from(signature, "base64").length, 64);
+  assert.equal(await signer.verify(message, signature), true);
+  assert.equal(await signer.verify(`${message}_tampered`, signature), false);
+  assert.deepEqual(calls, [
+    { operation: "getPublicKey", keyId },
+    { operation: "signRaw", keyId, bytes: Buffer.byteLength(message) },
+  ]);
+  assertNoPrivateMaterial(signer.toJSON(), "AwsKmsSolanaSigner.toJSON");
+
+  const factorySigner = SignerFactory.createSolanaRelayerSigner({
+    SOLANA_RELAYER_SIGNER_TYPE: "aws-kms",
+    SOLANA_RELAYER_KMS_KEY_ID: keyId,
+    SOLANA_RELAYER_KEYPAIR_PATH: undefined,
+    SOLANA_RELAYER_KEYPAIR_BASE64: undefined,
+  }, { awsKmsSolanaTransport: transport });
+  assert.ok(factorySigner instanceof AwsKmsSolanaSigner);
+
+  await assert.rejects(
+    signer.signMessage(new Uint8Array(4097)),
+    /exceeds 4096 bytes/,
+  );
 });
 
 test("EnvelopeSolanaSigner performs envelope encryption and signs on demand", async () => {

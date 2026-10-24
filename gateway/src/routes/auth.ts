@@ -44,6 +44,7 @@ interface AuthRouteOptions {
   kms: KeyManagementService;
   smtp?: SmtpService;
   registrationToken?: string;
+  firebaseAuthEnabled?: boolean;
   verifyIdentityToken?: typeof verifyFirebaseIdToken;
 }
 
@@ -162,6 +163,9 @@ export async function authRoutes(app: FastifyInstance, options: AuthRouteOptions
    * Autentica ou cadastra usuário via Google Sign-In (Firebase Auth)
    */
   app.post("/api/v1/auth/google", async (request, reply) => {
+    if (options.firebaseAuthEnabled !== true) {
+      return reply.status(404).send({ error: "Login social não está disponível neste ambiente" });
+    }
     const parse = z.object({ idToken: z.string().min(1).max(16384), registrationToken: z.string().max(1024).optional() }).safeParse(request.body);
     if (!parse.success) return reply.status(401).send({ error: "Token de identidade obrigatório" });
     let identity;

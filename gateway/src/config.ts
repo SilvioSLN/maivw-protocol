@@ -89,6 +89,11 @@ const EnvObjectSchema = z.object({
   SES_CONFIGURATION_SET: z.string().optional(),
   SES_FROM_EMAIL: z.string().email().optional(),
   ADMIN_REGISTRATION_TOKEN: z.string().min(32).optional(),
+  FIREBASE_AUTH_ENABLED: booleanFlag.default(false),
+  FIREBASE_PROJECT_ID: z.string().regex(/^[a-z][a-z0-9-]{4,29}$/).optional(),
+  FIREBASE_SERVICE_ACCOUNT_PATH: z.string().min(1).max(1024).optional(),
+  FIREBASE_SERVICE_ACCOUNT_JSON_BASE64: z.string().min(32).optional(),
+  FIREBASE_ALLOWED_PROVIDERS: z.string().default("google.com,github.com"),
   JWT_SECRET: z.string().min(16, "JWT_SECRET deve ser configurado no ambiente"),
   BASE_RPC_URL: httpUrl.default("http://localhost:8545"),
   BASE_WS_URL: optionalWsUrl,
@@ -114,6 +119,8 @@ const EnvObjectSchema = z.object({
   SOLANA_ASSET_MINT: solanaPublicKey.optional(),
   SOLANA_STANDARD_FEE_BASE_UNITS: z.coerce.bigint().min(0n).default(0n),
   SOLANA_RELAYER_PUBLIC_KEY: solanaPublicKey.optional(),
+  SOLANA_RELAYER_SIGNER_TYPE: z.enum(["local", "aws-kms"]).default("local"),
+  SOLANA_RELAYER_KMS_KEY_ID: z.string().min(1).max(2048).optional(),
   SOLANA_RELAYER_KEYPAIR_PATH: z.string().min(1).max(1024).optional(),
   SOLANA_RELAYER_KEYPAIR_BASE64: z.string().refine(validSolanaKeypairBase64, {
     message: "deve codificar um array JSON de 64 bytes",
@@ -152,6 +159,23 @@ export const EnvSchema = EnvObjectSchema.superRefine((config, context) => {
     .includes(config.MAIVW_RUNTIME_ROLE);
   const needsSolanaRelayerSigner = config.SOLANA_ENABLED && config.MULTICHAIN_RELAY_ENABLED
     && ["all-in-one", "relayer-worker"].includes(config.MAIVW_RUNTIME_ROLE);
+  const servesAuth = ["all-in-one", "gateway-api"].includes(config.MAIVW_RUNTIME_ROLE);
+  if (config.FIREBASE_AUTH_ENABLED && servesAuth) {
+    if (!config.FIREBASE_PROJECT_ID) add("FIREBASE_PROJECT_ID", "projeto explícito é obrigatório quando Firebase Auth está ativo");
+    if (!config.FIREBASE_SERVICE_ACCOUNT_PATH && !config.FIREBASE_SERVICE_ACCOUNT_JSON_BASE64) {
+      add("FIREBASE_SERVICE_ACCOUNT_JSON_BASE64", "credencial explícita é obrigatória quando Firebase Auth está ativo");
+    }
+    if (config.FIREBASE_SERVICE_ACCOUNT_PATH && config.FIREBASE_SERVICE_ACCOUNT_JSON_BASE64) {
+      add("FIREBASE_SERVICE_ACCOUNT_PATH", "configure somente uma origem de credencial Firebase");
+    }
+    const providers = config.FIREBASE_ALLOWED_PROVIDERS.split(",").map((value) => value.trim()).filter(Boolean);
+    if (providers.length === 0 || providers.some((value) => !["google.com", "github.com"].includes(value))) {
+      add("FIREBASE_ALLOWED_PROVIDERS", "somente google.com e github.com são suportados");
+    }
+    if (config.MAIVW_ENVIRONMENT !== "local" && !config.ADMIN_REGISTRATION_TOKEN) {
+      add("ADMIN_REGISTRATION_TOKEN", "cadastro social fora de local exige convite administrativo");
+    }
+  }
   if (config.MAIVW_RUNTIME_ROLE === "p2p-ingress") {
     if (!config.MTLS_STRICT_MODE) add("MTLS_STRICT_MODE", "p2p-ingress exige MTLS_STRICT_MODE=true");
     if (config.TRUST_PROXY) add("TRUST_PROXY", "p2p-ingress direto não aceita identidade por proxy/header");
@@ -163,8 +187,21 @@ export const EnvSchema = EnvObjectSchema.superRefine((config, context) => {
     if (needsSolanaRelayerSigner && !config.SOLANA_RELAYER_PUBLIC_KEY) {
       add("SOLANA_RELAYER_PUBLIC_KEY", "pubkey do relayer Solana é obrigatória para este papel");
     }
-    if (needsSolanaRelayerSigner && !config.SOLANA_RELAYER_KEYPAIR_PATH && !config.SOLANA_RELAYER_KEYPAIR_BASE64) {
+    if (needsSolanaRelayerSigner && config.SOLANA_RELAYER_SIGNER_TYPE === "local"
+      && !config.SOLANA_RELAYER_KEYPAIR_PATH && !config.SOLANA_RELAYER_KEYPAIR_BASE64) {
       add("SOLANA_RELAYER_KEYPAIR_PATH", "signer do relayer Solana é obrigatório");
+    }
+    if (needsSolanaRelayerSigner && config.SOLANA_RELAYER_SIGNER_TYPE === "aws-kms"
+      && !config.SOLANA_RELAYER_KMS_KEY_ID) {
+      add("SOLANA_RELAYER_KMS_KEY_ID", "signer AWS KMS Ed25519 do relayer Solana é obrigatório");
+    }
+    if (config.SOLANA_RELAYER_SIGNER_TYPE === "aws-kms"
+      && (config.SOLANA_RELAYER_KEYPAIR_PATH || config.SOLANA_RELAYER_KEYPAIR_BASE64)) {
+      add("SOLANA_RELAYER_SIGNER_TYPE", "signer AWS KMS não aceita keypair Solana local");
+    }
+    if (needsSolanaRelayerSigner && config.IS_CLOUD && config.MAIVW_ENVIRONMENT === "production"
+      && config.SOLANA_RELAYER_SIGNER_TYPE !== "aws-kms") {
+      add("SOLANA_RELAYER_SIGNER_TYPE", "Maivw Cloud production exige signer Solana AWS KMS não exportável");
     }
     if (config.SOLANA_RELAYER_KEYPAIR_BASE64 && config.SOLANA_RELAYER_PUBLIC_KEY
       && solanaKeypairPublicKey(config.SOLANA_RELAYER_KEYPAIR_BASE64) !== config.SOLANA_RELAYER_PUBLIC_KEY) {

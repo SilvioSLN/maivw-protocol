@@ -23,12 +23,10 @@ export function ed25519PublicKeyFromBytes(pubBytes32: Uint8Array): crypto.KeyObj
 
 export class LocalSolanaSigner implements ISigner {
   readonly metadata: SignerMetadata;
-  private readonly keypair: Keypair;
   private readonly privateKeyObj: crypto.KeyObject;
   private readonly publicKeyObj: crypto.KeyObject;
 
   constructor(keypair: Keypair, role: SignerKeyRole = "relayer", keyId?: string) {
-    this.keypair = keypair;
     const address = keypair.publicKey.toBase58();
 
     this.privateKeyObj = ed25519PrivateKeyFromSeed(keypair.secretKey.subarray(0, 32));
@@ -52,10 +50,6 @@ export class LocalSolanaSigner implements ISigner {
     const decoded = JSON.parse(Buffer.from(base64, "base64").toString("utf8"));
     const secretKey = Uint8Array.from(decoded);
     return LocalSolanaSigner.fromSecretKey(secretKey, role, keyId);
-  }
-
-  getKeypair(): Keypair {
-    return this.keypair;
   }
 
   async getAddress(): Promise<string> {

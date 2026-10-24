@@ -97,7 +97,9 @@ Não troque `MASTER_SECRET_KEY` em banco existente sem recifrar chaves e credenc
 | `SOLANA_ASSET_MINT` | Pubkey base58 | Endereço do Mint SPL (vazio quando nativo) |
 | `SOLANA_STANDARD_FEE_BASE_UNITS` | Unidades base | Taxa de registro padrão em lamports ou unidades mínimas do token |
 | `SOLANA_RELAYER_PUBLIC_KEY` | Obrigatória em `relayer-worker` e `all-in-one` com Solana e relay habilitados | Fee payer/assinante público do relayer |
-| `SOLANA_RELAYER_KEYPAIR_PATH` | Alternativa recomendada nos papéis de relayer | Caminho de segredo montado; nunca versionar o keypair |
+| `SOLANA_RELAYER_SIGNER_TYPE` | `local` | `local` para self-hosting ou `aws-kms` para Ed25519 não exportável; Maivw Cloud production exige `aws-kms` |
+| `SOLANA_RELAYER_KMS_KEY_ID` | Obrigatória com signer `aws-kms` | ID, ARN ou alias de chave `ECC_NIST_EDWARDS25519` com uso `SIGN_VERIFY` |
+| `SOLANA_RELAYER_KEYPAIR_PATH` | Alternativa local nos papéis de relayer | Caminho de segredo montado; nunca versionar o keypair |
 | `SOLANA_RELAYER_KEYPAIR_BASE64` | Alternativa para secret manager nos papéis de relayer | Array JSON de 64 bytes codificado em base64 |
 | `SOLANA_REORG_MARGIN_SLOTS` | `64` | Margem operacional do cluster |
 | `SOLANA_OBSERVER_START_SLOT` | Opcional | Slot inicial para backfill manual do indexador |
@@ -132,7 +134,11 @@ Não troque `MASTER_SECRET_KEY` em banco existente sem recifrar chaves e credenc
 | `LEGACY_WEBHOOK_SECRET` | Proteção do webhook legado; vazio desabilita a exigência no handler atual |
 | `ORACLE_AI_JUDGE_URL` | Endpoint opcional do juiz semântico remoto |
 | `ORACLE_AI_JUDGE_TOKEN` | Credencial do juiz remoto |
-| `FIREBASE_SERVICE_ACCOUNT_PATH` | Caminho da credencial no processo/container; montar arquivo separadamente, nunca no build público |
+| `FIREBASE_AUTH_ENABLED` | Ativa login social; desativado por padrão na Community Edition |
+| `FIREBASE_PROJECT_ID` | Projeto Firebase explícito usado para validar `aud` e `iss` |
+| `FIREBASE_SERVICE_ACCOUNT_PATH` | Opção local: caminho explícito da credencial no container |
+| `FIREBASE_SERVICE_ACCOUNT_JSON_BASE64` | Opção para secret manager: JSON da service account codificado em base64; não versionar |
+| `FIREBASE_ALLOWED_PROVIDERS` | Provedores aceitos pelo Gateway; padrão `google.com,github.com` |
 | `INGRESS_PROXY_ENABLED` | Leitura direta; somente string `true` ativa o proxy de ingresso |
 | `DEFAULT_SECONDARY_INGRESS_URL` | Rota secundária; código tem fallback remoto MAIVW |
 | `NODE_ENV` | Ambiente do processo; container usa `production`, sem significar validação de segurança concluída |
@@ -150,12 +156,6 @@ O processador de anexos também usa `NEXT_PUBLIC_GATEWAY_URL` como fallback. Par
 | `NEXT_PUBLIC_WEBMAIVW_URL` | Links do Dashboard para Webmail |
 | `NEXT_PUBLIC_DASHBOARD_URL` | Argumento previsto no Dockerfile; não implica uso por todas as telas |
 | `NEXT_PUBLIC_PAYMENT_API_URL` | Integração externa de pagamentos; serviço não incluído no Compose |
-| `NEXT_PUBLIC_FIREBASE_API_KEY` | Configuração pública do projeto Firebase |
-| `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` | Domínio de autenticação Firebase |
-| `NEXT_PUBLIC_FIREBASE_PROJECT_ID` | Projeto Firebase |
-| `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET` | Bucket Firebase |
-| `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID` | Identificador público Firebase |
-| `NEXT_PUBLIC_FIREBASE_APP_ID` | Identificador público da aplicação Firebase |
 | `NEXT_PUBLIC_DEFAULT_ORIGIN_NETWORK` | Rede de registro padrão no onboarding (`base`, `solana`, `arbitrum`, `polygon`; padrão `base`) |
 
-Mudanças de `NEXT_PUBLIC_*` exigem rebuild. A configuração pública Firebase não é a credencial de serviço do backend. O frontend exige configuração Firebase própria para login social; valores ausentes produzem erro de configuração, sem recorrer a um projeto compartilhado.
+Mudanças de `NEXT_PUBLIC_*` exigem rebuild. Firebase é a exceção: o WebMaivw lê `FIREBASE_PUBLIC_API_KEY`, `FIREBASE_PUBLIC_AUTH_DOMAIN`, `FIREBASE_PROJECT_ID`, `FIREBASE_PUBLIC_STORAGE_BUCKET`, `FIREBASE_PUBLIC_MESSAGING_SENDER_ID`, `FIREBASE_PUBLIC_APP_ID` e `FIREBASE_ALLOWED_HOSTS` em runtime por `GET /api/config/firebase`. Essa configuração é pública e não substitui a credencial de serviço do Gateway. Valores ausentes fazem o login social falhar fechado, sem recorrer a projeto compartilhado.

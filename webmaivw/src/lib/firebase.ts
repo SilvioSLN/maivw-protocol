@@ -1,20 +1,44 @@
-import { initializeApp, getApps, getApp } from "firebase/app";
-import { getAuth, GoogleAuthProvider, GithubAuthProvider } from "firebase/auth";
+import { initializeApp, getApps } from "firebase/app";
+import { getAuth, GoogleAuthProvider, GithubAuthProvider, type Auth } from "firebase/auth";
 
-const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-};
-
-if (!firebaseConfig.apiKey || !firebaseConfig.authDomain || !firebaseConfig.projectId || !firebaseConfig.appId) {
-  throw new Error("Login social não configurado neste nó. Use e-mail e senha ou solicite a configuração ao operador.");
+interface RuntimeFirebaseConfig {
+  enabled: boolean;
+  config?: {
+    apiKey: string;
+    authDomain: string;
+    projectId: string;
+    storageBucket?: string;
+    messagingSenderId?: string;
+    appId: string;
+  };
+  allowedHosts: string[];
+  error?: string;
 }
 
-export const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
-export const auth = getAuth(app);
+let authPromise: Promise<Auth> | null = null;
+
+export function getFirebaseAuth(): Promise<Auth> {
+  if (authPromise) return authPromise;
+  authPromise = (async () => {
+    const response = await fetch("/api/config/firebase", { cache: "no-store", credentials: "same-origin" });
+    const runtime = await response.json() as RuntimeFirebaseConfig;
+    if (!response.ok || !runtime.enabled || !runtime.config) {
+      throw new Error(runtime.error || "Login social não configurado neste ambiente.");
+    }
+    const hostname = window.location.hostname.toLowerCase();
+    if (!runtime.allowedHosts.includes(hostname)) {
+      throw new Error("Este domínio não está autorizado a iniciar login social.");
+    }
+    const appName = `maivw-${runtime.config.projectId}`;
+    const app = getApps().find((candidate) => candidate.name === appName)
+      || initializeApp(runtime.config, appName);
+    return getAuth(app);
+  })().catch((error) => {
+    authPromise = null;
+    throw error;
+  });
+  return authPromise;
+}
+
 export const googleProvider = new GoogleAuthProvider();
 export const githubProvider = new GithubAuthProvider();

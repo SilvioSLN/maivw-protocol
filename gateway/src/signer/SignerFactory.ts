@@ -5,12 +5,14 @@ import type { EnvConfig } from "../config.js";
 import { LocalEvmSigner } from "./LocalEvmSigner.js";
 import { GcpKmsEvmSigner } from "./GcpKmsEvmSigner.js";
 import { AwsKmsEvmSigner, type AwsKmsTransport } from "./AwsKmsEvmSigner.js";
+import { AwsKmsSolanaSigner, type AwsKmsSolanaTransport } from "./AwsKmsSolanaSigner.js";
 import { LocalSolanaSigner } from "./LocalSolanaSigner.js";
 import { EnvelopeSolanaSigner } from "./EnvelopeSolanaSigner.js";
 import type { ISigner, SignerKeyRole } from "./types.js";
 
 export interface SignerFactoryOptions {
   awsKmsTransport?: AwsKmsTransport;
+  awsKmsSolanaTransport?: AwsKmsSolanaTransport;
 }
 
 export class SignerFactory {
@@ -82,8 +84,28 @@ export class SignerFactory {
   }
 
   static createSolanaRelayerSigner(
-    config: Pick<EnvConfig, "SOLANA_RELAYER_KEYPAIR_PATH" | "SOLANA_RELAYER_KEYPAIR_BASE64">,
+    config: Pick<EnvConfig,
+      | "SOLANA_RELAYER_SIGNER_TYPE"
+      | "SOLANA_RELAYER_KMS_KEY_ID"
+      | "SOLANA_RELAYER_KEYPAIR_PATH"
+      | "SOLANA_RELAYER_KEYPAIR_BASE64"
+    >,
+    options?: SignerFactoryOptions,
   ): ISigner | undefined {
+    if (config.SOLANA_RELAYER_SIGNER_TYPE === "aws-kms") {
+      if (!config.SOLANA_RELAYER_KMS_KEY_ID) {
+        throw new Error("SOLANA_RELAYER_KMS_KEY_ID is required for the AWS KMS Solana signer");
+      }
+      if (!options?.awsKmsSolanaTransport) {
+        throw new Error("awsKmsSolanaTransport is required for the AWS KMS Solana signer");
+      }
+      return new AwsKmsSolanaSigner({
+        keyId: config.SOLANA_RELAYER_KMS_KEY_ID,
+        role: "relayer",
+        transport: options.awsKmsSolanaTransport,
+      });
+    }
+
     if (config.SOLANA_RELAYER_KEYPAIR_BASE64) {
       return LocalSolanaSigner.fromBase64(config.SOLANA_RELAYER_KEYPAIR_BASE64, "relayer");
     }

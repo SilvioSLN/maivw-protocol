@@ -26,4 +26,10 @@ if (mode !== "local") {
   }
 }
 
+// Firebase é entregue em runtime pelo endpoint server-side. Isso mantém a
+// imagem WebMaivw imutável entre staging e production.
+for (const legacy of Object.keys(process.env).filter((name) => name.startsWith("NEXT_PUBLIC_FIREBASE_"))) {
+  throw new Error(`${legacy} não deve ser incorporada no build; use FIREBASE_PUBLIC_* em runtime`);
+}
+
 console.log(`[CONFIG] WebMaivw validado para ${mode}.`);

@@ -25,7 +25,8 @@ test("baseline migration persists the complete multichain relay lifecycle", asyn
 
 test("gateway deploys versioned migrations instead of mutating schema with db push", async () => {
   const dockerfile = await readFile(dockerfileUrl, "utf8");
-  assert.match(dockerfile, /prisma migrate deploy/);
+  assert.match(dockerfile, /"prisma", "migrate", "deploy"/);
+  assert.match(dockerfile, /scripts\/with-database-url\.mjs/);
   assert.doesNotMatch(dockerfile, /prisma db push/);
 });
 
@@ -35,12 +36,13 @@ test("gateway isolates migrations from application runtime start (AWS-010)", asy
   // Migrator target exists and defines prisma migrate deploy as CMD
   assert.match(dockerfile, /FROM base AS migrator/);
   const migratorSection = dockerfile.split("FROM base AS migrator")[1]?.split("FROM base AS runner")[0] || "";
-  assert.match(migratorSection, /prisma migrate deploy/);
+  assert.match(migratorSection, /"prisma", "migrate", "deploy"/);
+  assert.match(migratorSection, /scripts\/with-database-url\.mjs/);
 
   // Runner target exists and starts the runtime WITHOUT running prisma migrate deploy
   assert.match(dockerfile, /FROM base AS runner/);
   const runnerSection = dockerfile.split("FROM base AS runner")[1] || "";
-  assert.doesNotMatch(runnerSection, /prisma migrate deploy/);
+  assert.doesNotMatch(runnerSection, /"prisma", "migrate", "deploy"/);
   assert.match(runnerSection, /npx tsx src\/runtime\.ts/);
 });
 
