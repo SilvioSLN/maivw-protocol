@@ -28,12 +28,71 @@ test("IS_CLOUD interprets string false as false and rejects ambiguous flags", ()
   assert.equal(EnvSchema.safeParse({ ...required, IS_CLOUD: "no" }).success, false);
 });
 
+test("Firebase Auth fails closed without project, credential, supported provider or Cloud invitation", () => {
+  const cloud = {
+    ...required,
+    MAIVW_ENVIRONMENT: "staging",
+    MAIVW_RUNTIME_ROLE: "gateway-api",
+    FIREBASE_AUTH_ENABLED: true,
+    ORACLE_SIGNER_TYPE: "aws-kms",
+    AWS_KMS_KEY_ID: "alias/maivw-staging-oracle-signer",
+  };
+  assert.equal(EnvSchema.safeParse(cloud).success, false);
+  assert.equal(EnvSchema.safeParse({
+    ...cloud,
+    FIREBASE_PROJECT_ID: "maivw-staging",
+    FIREBASE_SERVICE_ACCOUNT_JSON_BASE64: "a".repeat(32),
+    ADMIN_REGISTRATION_TOKEN: "i".repeat(32),
+    FIREBASE_ALLOWED_PROVIDERS: "password",
+  }).success, false);
+  assert.equal(EnvSchema.safeParse({
+    ...cloud,
+    FIREBASE_PROJECT_ID: "maivw-staging",
+    FIREBASE_SERVICE_ACCOUNT_JSON_BASE64: "a".repeat(32),
+    FIREBASE_SERVICE_ACCOUNT_PATH: "/keys/firebase.json",
+    ADMIN_REGISTRATION_TOKEN: "i".repeat(32),
+  }).success, false);
+  assert.equal(EnvSchema.safeParse({
+    ...cloud,
+    FIREBASE_PROJECT_ID: "maivw-staging",
+    FIREBASE_SERVICE_ACCOUNT_JSON_BASE64: "a".repeat(32),
+    ADMIN_REGISTRATION_TOKEN: "i".repeat(32),
+    FIREBASE_ALLOWED_PROVIDERS: "google.com,github.com",
+  }).success, true);
+});
+
 test("Solana deployment fails fast on partial RPC, WS, program, signer or commitment configuration", () => {
   assert.equal(EnvSchema.safeParse({ ...required, SOLANA_ENABLED: true }).success, false);
   assert.equal(EnvSchema.safeParse({ ...required, ...solanaConfig, SOLANA_COMMITMENT: "confirmed" }).success, false);
   assert.equal(EnvSchema.safeParse({ ...required, ...solanaConfig, SOLANA_RELAYER_KEYPAIR_BASE64: "invalid" }).success, false);
   assert.equal(EnvSchema.safeParse({ ...required, ...solanaConfig, SOLANA_OBSERVER_PAGE_SIZE: 1001 }).success, false);
   assert.equal(EnvSchema.safeParse({ ...required, ...solanaConfig, SOLANA_OBSERVER_POLL_INTERVAL_MS: 999 }).success, false);
+});
+
+test("Maivw Cloud production requires a non-exportable AWS KMS Solana relayer signer", () => {
+  const cloudRelayer = {
+    ...required,
+    ...solanaConfig,
+    MAIVW_ENVIRONMENT: "production",
+    MAIVW_RUNTIME_ROLE: "relayer-worker",
+    IS_CLOUD: true,
+    MULTICHAIN_RELAY_ENABLED: true,
+    BASE_REGISTRY_ADDRESS: "0x1111111111111111111111111111111111111111",
+    BASE_WS_URL: "wss://base.example/ws",
+  };
+
+  assert.equal(EnvSchema.safeParse(cloudRelayer).success, false);
+  assert.equal(EnvSchema.safeParse({
+    ...cloudRelayer,
+    SOLANA_RELAYER_SIGNER_TYPE: "aws-kms",
+    SOLANA_RELAYER_KMS_KEY_ID: "alias/maivw-production-solana-relayer-signer",
+    SOLANA_RELAYER_KEYPAIR_BASE64: undefined,
+  }).success, true);
+  assert.equal(EnvSchema.safeParse({
+    ...cloudRelayer,
+    SOLANA_RELAYER_SIGNER_TYPE: "aws-kms",
+    SOLANA_RELAYER_KMS_KEY_ID: "alias/maivw-production-solana-relayer-signer",
+  }).success, false);
 });
 
 test("Solana indexer needs network access but no transaction or oracle signer", () => {

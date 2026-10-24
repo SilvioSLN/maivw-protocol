@@ -38,6 +38,7 @@
     "db:migrate:status": "prisma migrate status",
     "db:migrate:check": "node --import tsx scripts/check-migration-policy.ts",
     "kms:address": "node --import tsx scripts/resolve-aws-kms-address.ts",
+    "kms:solana-address": "node --import tsx scripts/resolve-aws-kms-solana-address.ts",
     "test": "node --import tsx --test test/*.test.ts"
   },
   "dependencies": {

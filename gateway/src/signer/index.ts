@@ -2,6 +2,7 @@ export * from "./types.js";
 export * from "./sanitization.js";
 export * from "./LocalEvmSigner.js";
 export * from "./AwsKmsEvmSigner.js";
+export * from "./AwsKmsSolanaSigner.js";
 export * from "./GcpKmsEvmSigner.js";
 export * from "./LocalSolanaSigner.js";
 export * from "./EnvelopeSolanaSigner.js";

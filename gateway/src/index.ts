@@ -456,6 +456,7 @@ if (oracleWorkerEnabled) await disputeRoutes(app, {
 
 if (gatewayApiEnabled) await authRoutes(app, {
   registrationToken: config.ADMIN_REGISTRATION_TOKEN,
+  firebaseAuthEnabled: config.FIREBASE_AUTH_ENABLED,
   prisma,
   kms: required(kms, "KeyManagementService"),
   smtp: required(smtp, "SmtpService"),

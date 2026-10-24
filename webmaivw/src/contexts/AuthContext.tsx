@@ -172,7 +172,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const loginWithGoogle = async (registrationToken?: string): Promise<{ ok: boolean; error?: string; isNewUser?: boolean }> => {
     try {
       const { signInWithPopup } = await import("firebase/auth");
-      const { auth, googleProvider } = await import("@/lib/firebase");
+      const { getFirebaseAuth, googleProvider } = await import("@/lib/firebase");
+      const auth = await getFirebaseAuth();
 
       const result = await signInWithPopup(auth, googleProvider);
       const idToken = await result.user.getIdToken();
@@ -209,7 +210,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const loginWithGithub = async (registrationToken?: string): Promise<{ ok: boolean; error?: string; isNewUser?: boolean }> => {
     try {
       const { signInWithPopup } = await import("firebase/auth");
-      const { auth, githubProvider } = await import("@/lib/firebase");
+      const { getFirebaseAuth, githubProvider } = await import("@/lib/firebase");
+      const auth = await getFirebaseAuth();
 
       const result = await signInWithPopup(auth, githubProvider);
       const idToken = await result.user.getIdToken();

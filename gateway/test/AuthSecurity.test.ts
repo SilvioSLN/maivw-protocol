@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import Fastify from 'fastify';
 import { hashPassword, verifyPassword, NewPasswordSchema } from '../src/services/PasswordService.js';
+import { validateFirebaseIdentityClaims } from '../src/services/FirebaseAuthService.js';
 process.env.JWT_SECRET = 'test-secret-only-not-for-deployment';
 const { authRoutes } = await import('../src/routes/auth.js');
 const invitation = 'test-invitation-token-at-least-32-characters';
@@ -14,7 +15,7 @@ async function fixture(identity: any = null, existing: any = null, token?: strin
     emailAccount: {findFirst: async () => null}, domain: {findUnique: async () => null},
   };
   const app = Fastify();
-  await app.register(authRoutes, {prisma, kms: {} as any, registrationToken: token,
+  await app.register(authRoutes, {prisma, kms: {} as any, registrationToken: token, firebaseAuthEnabled: true,
     verifyIdentityToken: async () => { if (!identity) throw new Error('invalid'); return identity; }});
   return {app,writes};
 }
@@ -41,6 +42,31 @@ test('social login rejects missing, invalid, unverified and unsupported identiti
       assert.equal(writes.length,0);
     } finally { await app.close(); }
   }
+});
+test('Firebase claims are bound to the configured project, issuer and provider', () => {
+  const options = {projectId:'maivw-staging',allowedProviders:['google.com','github.com']};
+  const valid:any = {
+    aud:'maivw-staging', iss:'https://securetoken.google.com/maivw-staging',
+    email:'admin@example.com', email_verified:true, firebase:{sign_in_provider:'google.com'},
+  };
+  assert.equal(validateFirebaseIdentityClaims(valid,options),valid);
+  for (const invalid of [
+    {...valid,aud:'maivw-production'},
+    {...valid,iss:'https://securetoken.google.com/maivw-production'},
+    {...valid,email_verified:false},
+    {...valid,firebase:{sign_in_provider:'password'}},
+  ]) assert.throws(() => validateFirebaseIdentityClaims(invalid as any,options));
+});
+test('social login is fail-closed when Firebase is disabled for the edition', async () => {
+  const {app,writes} = await fixture({email:'admin@example.com',email_verified:true,firebase:{sign_in_provider:'google.com'}});
+  const disabled = Fastify();
+  const prisma:any = {user:{findUnique:async()=>null,create:async()=>{writes.push({});}},emailAccount:{findFirst:async()=>null}};
+  await disabled.register(authRoutes,{prisma,kms:{} as any,firebaseAuthEnabled:false,verifyIdentityToken:async()=>({} as any)});
+  try {
+    const response = await disabled.inject({method:'POST',url:'/api/v1/auth/google',payload:{idToken:'token'}});
+    assert.equal(response.statusCode,404);
+    assert.equal(writes.length,0);
+  } finally { await disabled.close(); await app.close(); }
 });
 test('social login trusts verified claims and enforces an operator invitation when configured', async () => {
   const identity = {email:'verified@example.com',email_verified:true,firebase:{sign_in_provider:'google.com'}};
