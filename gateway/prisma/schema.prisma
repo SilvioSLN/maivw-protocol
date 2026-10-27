@@ -851,6 +851,8 @@ model Message {
   isLegacy         Boolean  @default(false)
   isRead           Boolean  @default(false)
   isRevoked        Boolean  @default(false) // Sinaliza revogação on-chain pós-entrega
+  transportProvider String? // Provedor que aceitou o envio (não significa entrega final)
+  transportMessageId String? // Comprovante retornado pelo transporte
   revocationReason String? // Motivo da revogação (ex: Tag Spoofing ban)
   domainId         Int? // Domínio ao qual a mensagem pertence
   receivedAt       DateTime @default(now())

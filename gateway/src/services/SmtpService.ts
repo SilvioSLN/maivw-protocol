@@ -22,12 +22,14 @@ export class SmtpService {
   private prisma: PrismaClient | null = null;
   private masterKey: string;
 
-  constructor(envApiKey?: string, prisma?: PrismaClient, masterKey?: string, sesConfig?: SesAdapterConfig) {
+  constructor(envApiKey?: string, prisma?: PrismaClient, masterKey?: string, sesConfig?: SesAdapterConfig, private readonly adapters: { defaultAdapter?: EmailProviderAdapter; resend?: (key: string) => EmailProviderAdapter; smtp?: (config: GenericSmtpConfig) => EmailProviderAdapter } = {}) {
     this.envApiKey = envApiKey || null;
     this.prisma = prisma || null;
     this.masterKey = masterKey || "";
 
-    if (sesConfig) {
+    if (adapters.defaultAdapter) {
+      this.defaultAdapter = adapters.defaultAdapter;
+    } else if (sesConfig) {
       this.defaultAdapter = new SesAdapter(sesConfig);
       console.log("[SMTP] Amazon SES inicializado com credenciais temporárias da task role");
     } else if (this.envApiKey) {
@@ -49,6 +51,7 @@ export class SmtpService {
     fromName?: string,
     fromEmail?: string
   ): Promise<{ success: boolean; provider: string; messageId?: string; error?: string }> {
+    senderDomain = senderDomain.trim().toLowerCase();
     let activeAdapter: EmailProviderAdapter | null = this.defaultAdapter;
     let resolvedFromName = fromName;
     let resolvedFromEmail = fromEmail;
@@ -64,16 +67,8 @@ export class SmtpService {
           include: { domain: true },
         });
 
-        // Se não achou pelo senderDomain exato, busca a configuração mais recente ativa
-        if (!dbConfig) {
-          dbConfig = await this.prisma.smtpConfig.findFirst({
-            where: { isActive: true },
-            include: { domain: true },
-            orderBy: { updatedAt: "desc" },
-          });
-        }
-
         if (dbConfig) {
+          if (dbConfig.domain.domainName.toLowerCase() !== senderDomain || dbConfig.isActive === false) return { success: false, provider: "none", error: "SMTP tenant mismatch" };
           try {
             const decryptedKey = SmtpService.decryptApiKey(
               dbConfig.encryptedApiKey,
@@ -83,7 +78,7 @@ export class SmtpService {
             );
 
             if (decryptedKey && (decryptedKey.startsWith("re_") || dbConfig.provider === "resend")) {
-              activeAdapter = new ResendAdapter(decryptedKey);
+              activeAdapter = this.adapters.resend ? this.adapters.resend(decryptedKey) : new ResendAdapter(decryptedKey);
               if (!resolvedFromName && dbConfig.fromName) {
                 resolvedFromName = dbConfig.fromName;
               }
@@ -95,7 +90,7 @@ export class SmtpService {
               // Provedores SMTP (Google Workspace, Microsoft, Zoho, Hostinger, Locaweb, Umbler, cPanel, etc.)
               try {
                 const parsedSmtp = JSON.parse(decryptedKey);
-                activeAdapter = new GenericSmtpAdapter({
+                activeAdapter = (this.adapters.smtp || ((value: GenericSmtpConfig) => new GenericSmtpAdapter(value)))({
                   host: parsedSmtp.host || parsedSmtp.smtpHost,
                   port: Number(parsedSmtp.port || parsedSmtp.smtpPort) || 465,
                   secure: parsedSmtp.secure !== undefined ? parsedSmtp.secure : parsedSmtp.smtpSecure,
@@ -111,15 +106,15 @@ export class SmtpService {
                 });
                 console.log(`[SMTP] 🏢 Provedor ${dbConfig.provider.toUpperCase()} (SMTP) carregado para o domínio ${dbConfig.domain.domainName}`);
               } catch (parseErr) {
-                console.warn(`[SMTP] ⚠️ Formato de configuração SMTP inválido no banco:`, parseErr);
+                return { success: false, provider: "none", error: "Invalid SMTP configuration" };
               }
             }
           } catch (decryptErr: any) {
-            console.error(`[SMTP] ❌ Erro ao decriptar chave SMTP do banco:`, decryptErr.message);
+            return { success: false, provider: "none", error: "SMTP configuration unavailable" };
           }
         }
       } catch (dbErr: any) {
-        console.error(`[SMTP] ⚠️ Falha na busca de configuração SMTP no banco:`, dbErr.message);
+        return { success: false, provider: "none", error: "SMTP configuration unavailable" };
       }
     }
 
@@ -136,19 +131,7 @@ export class SmtpService {
     if (activeAdapter) {
       const sendResult = await activeAdapter.sendEmail(prepared);
 
-      if (sendResult.success) {
-        console.log("");
-        console.log("╔══════════════════════════════════════════════════════════════╗");
-        console.log(`║  ✅ [SMTP REAL] E-mail enviado com sucesso via ${sendResult.provider.toUpperCase()}!      ║`);
-        console.log("╠══════════════════════════════════════════════════════════════╣");
-        console.log(`║  De:      ${displayFrom}`);
-        console.log(`║  Para:    ${to}`);
-        console.log(`║  Assunto: ${subject}`);
-        console.log(`║  Anexos:  Nativos: ${prepared.nativeAttachments.length} | Links: ${prepared.largeAttachments.length}`);
-        console.log(`║  ID:      ${sendResult.messageId || "N/A"}`);
-        console.log("╚══════════════════════════════════════════════════════════════╝");
-        console.log("");
-      }
+      if (sendResult.success) console.log("[SMTP] Transport accepted message");
 
       return sendResult;
     }
