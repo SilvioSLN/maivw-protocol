@@ -25,8 +25,19 @@ export async function GET() {
     );
   }
 
+  const rawProviders = value("FIREBASE_PUBLIC_PROVIDERS");
+  const providers = rawProviders
+    ? rawProviders.split(",").map((p) => p.trim().toLowerCase()).filter(Boolean)
+    : ["google.com"];
+
   return NextResponse.json(
-    { enabled, config: enabled ? config : undefined, allowedHosts: enabled ? allowedHosts : [] },
+    {
+      enabled,
+      config: enabled ? config : undefined,
+      allowedHosts: enabled ? allowedHosts : [],
+      providers: enabled ? providers : [],
+    },
     { headers: { "Cache-Control": "no-store, max-age=0" } },
   );
 }
+
