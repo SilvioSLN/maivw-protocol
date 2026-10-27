@@ -209,9 +209,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const loginWithGithub = async (registrationToken?: string): Promise<{ ok: boolean; error?: string; isNewUser?: boolean }> => {
     try {
+      const { getFirebaseRuntimeConfig, getFirebaseAuth, githubProvider } = await import("@/lib/firebase");
+      const runtime = await getFirebaseRuntimeConfig();
+      if (!runtime.providers?.includes("github.com")) {
+        return { ok: false, error: "Login com GitHub não está habilitado neste ambiente." };
+      }
       const { signInWithPopup } = await import("firebase/auth");
-      const { getFirebaseAuth, githubProvider } = await import("@/lib/firebase");
       const auth = await getFirebaseAuth();
+
 
       const result = await signInWithPopup(auth, githubProvider);
       const idToken = await result.user.getIdToken();
