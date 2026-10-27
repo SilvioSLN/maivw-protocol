@@ -24,8 +24,8 @@ export const DEFAULT_QUEUE_POLICIES: Readonly<Record<StandardQueueName, RetryPol
     backoff: { type: "exponential", delayMs: 1000 },
   },
   [STANDARD_QUEUES.RELAYER_MIRROR]: {
-    maxAttempts: 5,
-    backoff: { type: "exponential", delayMs: 2000 },
+    maxAttempts: 20,
+    backoff: { type: "fixed", delayMs: 15000 },
   },
 };
 
@@ -59,3 +59,5 @@ export interface RelayerMirrorJobData {
   globalDomainEpoch?: string;
   originSequence?: string;
 }
+/** v1 durable reference. Legacy payload-only jobs must be quarantined, never acknowledged as success. */
+export interface RuntimeOperationJobData { version: 1; operationId: string; }

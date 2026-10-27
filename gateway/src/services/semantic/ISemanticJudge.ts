@@ -10,6 +10,7 @@ export interface SemanticJudgeVerdict {
   reason: string;
   confidence?: number;
   engine?: string;
+  degraded?: boolean;
 }
 
 export interface ISemanticJudge {

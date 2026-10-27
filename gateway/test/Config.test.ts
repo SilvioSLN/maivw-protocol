@@ -291,3 +291,14 @@ test("empty separated worker URLs preserve Community all-in-one configuration", 
   assert.equal(parsed.ORACLE_WORKER_INTERNAL_URL, undefined);
   assert.equal(parsed.MAIVW_RUNTIME_ROLE, "all-in-one");
 });
+
+test("real consumers are disabled by default and flags cannot enable another runtime role", () => {
+  const config = EnvSchema.parse(required);
+  assert.equal(config.MAIL_QUEUE_CONSUMER_ENABLED, false);
+  assert.equal(config.ORACLE_QUEUE_CONSUMER_ENABLED, false);
+  assert.equal(config.RELAYER_QUEUE_CONSUMER_ENABLED, false);
+  assert.equal(EnvSchema.safeParse({ ...required, MAIVW_RUNTIME_ROLE: "gateway-api", MAIL_QUEUE_CONSUMER_ENABLED: true }).success, false);
+  assert.equal(EnvSchema.safeParse({ ...required, RELAYER_QUEUE_CONSUMER_ENABLED: true }).success, false);
+  assert.equal(EnvSchema.safeParse({ ...required, IS_CLOUD: true, RELAYER_EVM_PRIVATE_KEY: generatePrivateKeyForConfigTest() }).success, false);
+});
+function generatePrivateKeyForConfigTest() { return `0x${"12".repeat(32)}`; }

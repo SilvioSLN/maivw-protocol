@@ -63,6 +63,15 @@ const EnvObjectSchema = z.object({
   CHAIN_ID: z.coerce.number().int().positive().default(31337),
   REDIS_URL: z.string().default("redis://localhost:6379"),
   QUEUE_DRIVER: z.enum(["bullmq", "memory"]).default("bullmq"),
+  MAIL_QUEUE_CONSUMER_ENABLED: booleanFlag.default(false),
+  ORACLE_QUEUE_CONSUMER_ENABLED: booleanFlag.default(false),
+  RELAYER_QUEUE_CONSUMER_ENABLED: booleanFlag.default(false),
+  EVM_ORIGIN_PROFILE_MODE: z.enum(["CURRENT", "LEGACY_V1"]).default("CURRENT"),
+  EVM_OBSERVER_START_BLOCK: z.coerce.bigint().min(0n).default(0n),
+  EVM_OBSERVER_MAX_BLOCKS: z.coerce.number().int().min(1).max(5000).default(200),
+  EVM_OBSERVER_POLL_INTERVAL_MS: z.coerce.number().int().min(1000).max(300000).default(5000),
+  RELAYER_EVM_KMS_KEY_ID: z.string().optional(),
+  RELAYER_EVM_PRIVATE_KEY: optionalEvmPrivateKey,
   QUEUE_CONCURRENCY: z.coerce.number().int().min(1).max(100).default(5),
   QUEUE_DEFAULT_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(20).default(3),
   QUEUE_DEFAULT_BACKOFF_MS: z.coerce.number().int().min(50).max(60000).default(1000),
@@ -161,6 +170,12 @@ const EnvObjectSchema = z.object({
 
 export const EnvSchema = EnvObjectSchema.superRefine((config, context) => {
   const add = (path: string, message: string) => context.addIssue({ code: "custom", path: [path], message });
+  for (const [flag, role] of [["MAIL_QUEUE_CONSUMER_ENABLED", "mail-worker"], ["ORACLE_QUEUE_CONSUMER_ENABLED", "oracle-worker"], ["RELAYER_QUEUE_CONSUMER_ENABLED", "relayer-worker"]] as const) {
+    if (config[flag] && !["all-in-one", role].includes(config.MAIVW_RUNTIME_ROLE)) add(flag, "consumer flag requires its owning runtime role");
+  }
+  if (config.RELAYER_QUEUE_CONSUMER_ENABLED && !config.MULTICHAIN_RELAY_ENABLED) add("RELAYER_QUEUE_CONSUMER_ENABLED", "relayer consumer requires multichain relay enabled");
+  if (config.RELAYER_EVM_KMS_KEY_ID && config.RELAYER_EVM_PRIVATE_KEY) add("RELAYER_EVM_KMS_KEY_ID", "configure only one relayer signer source");
+  if (config.IS_CLOUD && config.RELAYER_EVM_PRIVATE_KEY) add("RELAYER_EVM_PRIVATE_KEY", "Cloud requires an explicit non-exportable relayer signer");
   const needsOracleSigner = ["all-in-one", "gateway-api", "oracle-worker", "relayer-worker"]
     .includes(config.MAIVW_RUNTIME_ROLE);
   const needsSolanaRelayerSigner = config.SOLANA_ENABLED && config.MULTICHAIN_RELAY_ENABLED

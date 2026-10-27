@@ -296,6 +296,8 @@ model MultichainRelayJob {
 
   @@index([domainHash, globalDomainEpoch, originSequence])
   @@index([status, updatedAt])
+  queueDispatchExhausted Boolean @default(false)
+
 }
 
 model MultichainRelayReorg {
@@ -927,4 +929,24 @@ model DomainRouteRule {
   updatedAt     DateTime @updatedAt
 
   pool EndpointPool @relation(fields: [poolId], references: [id], onDelete: Cascade)
+}
+
+
+/// Durable operation ledger. Queue messages carry only id/version, never credentials.
+model RuntimeOperation {
+  id           String   @id @default(uuid())
+  operationKey String   @unique @db.Char(64)
+  kind         String
+  inputHash    String   @db.Char(64)
+  payload      Json
+  authority    Json
+  status       String   @default("PREPARED")
+  queueDispatchExhausted Boolean @default(false)
+  ownerToken   String?
+  checkpoint   Json?
+  result       Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([kind, status, updatedAt])
 }

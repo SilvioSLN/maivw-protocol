@@ -25,6 +25,7 @@ import type { KmsKeyMetadata } from "./GcpKmsAccount.js";
 
 export interface AwsKmsAccountOptions {
   keyId: string;
+  role?: "oracle" | "relayer";
   region?: string;
   client?: KMSClient;
 }
@@ -99,7 +100,7 @@ export class AwsKmsOracleSigner {
     const client = options.client ?? createKmsClient(options.region);
     this.signer = new AwsKmsEvmSigner({
       keyId: options.keyId,
-      role: "oracle",
+      role: options.role ?? "oracle",
       transport: new AwsSdkKmsTransport(client),
     });
   }

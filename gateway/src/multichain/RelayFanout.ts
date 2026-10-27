@@ -21,6 +21,7 @@ import type {
   RelayBroadcastAdapter,
   RelaySubmissionCoordinator,
   RelaySubmissionRow,
+  RelaySubmissionGate,
 } from "./RelaySubmission.js";
 
 export interface FanoutEvmDestination {
@@ -116,6 +117,7 @@ export class RelayFanoutService {
     private readonly submissions: SubmissionBoundary,
     private readonly attestationSigner: FanoutAttestationSigner,
     private readonly transactionSigner: PreparedRelayTransactionSigner,
+    private readonly gate?: RelaySubmissionGate,
   ) {}
 
   async execute(input: RelayFanoutInput): Promise<FanoutDestinationResult[]> {
@@ -139,6 +141,8 @@ export class RelayFanoutService {
 
     return Promise.all(input.destinations.map(async (destination): Promise<FanoutDestinationResult> => {
       try {
+        // Check before signing/advancing ATTESTED as well as at submission time.
+        await this.gate?.assertAllowed(destination.destinationId);
         const existing = await this.submissions.getByDestination(destination.destinationId);
         if (existing) return this.submitExisting(existing, destination, input.workerId, now);
 

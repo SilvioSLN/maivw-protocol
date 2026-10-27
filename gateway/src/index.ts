@@ -1,3 +1,9 @@
+import { startOperationOutbox } from "./runtime/operationOutbox.js";
+import { DurableOperations, OperationStateError } from "./runtime/durableOperations.js";
+import { MailOperations, DisputeOperations, operationReference, requireConfirmed } from "./runtime/operationHandlers.js";
+import { MailDispatchService } from "./services/MailDispatchService.js";
+import { createRuntimeRelayWorker } from "./runtime/relayWorker.js";
+import { startEvmIndexers } from "./runtime/evmIndexers.js";
 import { healthRoutes } from "./routes/health.js";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
@@ -160,6 +166,7 @@ if (routingPool) {
   });
 }
 if (eventListener) eventListener.start();
+const evmIndexers = hasLoop(profile, "evm-indexer") ? startEvmIndexers(config, prisma, ledger, () => app.log.error("EVM observer poll failed")) : undefined;
 
 const originCatalog = relayerWorkerEnabled ? new OriginCatalogService(prisma) : undefined;
 const relayJobs = relayerWorkerEnabled
@@ -170,7 +177,7 @@ const mirrorJobs = originCatalog && relayJobs
   : undefined;
 const solanaOriginNetwork = ledger.listAdapters()
   .map((adapter) => adapter.network)
-  .find((network): network is SolanaNetworkDefinition => network.family === "SOLANA" && network.capabilities.origin);
+  .find((network): network is SolanaNetworkDefinition => network.family === "SOLANA");
 const originOnboarding = gatewayApiEnabled && solanaOriginNetwork && solanaOriginNetwork.asset.kind === "SPL"
   ? new OriginOnboardingCoordinator(
       new OriginReservationService(
@@ -196,7 +203,7 @@ const multichainAlertCollector = relayerWorkerEnabled
 let solanaIndexer: SolanaRegistryIndexer | undefined;
 if (hasLoop(profile, "solana-indexer") && config.SOLANA_ENABLED
   && solanaOriginNetwork && config.SOLANA_RPC_URL && config.SOLANA_PROGRAM_ID) {
-  const indexerClient = new Web3SolanaIndexerClient(config.SOLANA_RPC_URL);
+  const indexerClient = new Web3SolanaIndexerClient(config.SOLANA_RPC_URL, config.SOLANA_GENESIS_HASH);
   solanaIndexer = new SolanaRegistryIndexer(prisma, indexerClient, indexerClient, {
     networkId: solanaOriginNetwork.networkId,
     programId: config.SOLANA_PROGRAM_ID,
@@ -214,50 +221,53 @@ if (hasLoop(profile, "solana-indexer") && config.SOLANA_ENABLED
     });
   });
 }
+const activeQueues = profile.queues.filter(queue => queue === "mail:send" ? config.MAIL_QUEUE_CONSUMER_ENABLED : queue === "oracle:dispute" ? config.ORACLE_QUEUE_CONSUMER_ENABLED : config.RELAYER_QUEUE_CONSUMER_ENABLED);
 const activeLoops = profile.loops.filter((loop) => loop !== "solana-indexer" || solanaIndexer !== undefined);
 
 // ============================================
 //  Durable Queues & Asynchronous Workers
 // ============================================
-if (hasQueue(profile, STANDARD_QUEUES.MAIL_SEND)) {
-  const mailQueue = createJobQueue<MailSendJobData>(STANDARD_QUEUES.MAIL_SEND, {
-    driver: config.QUEUE_DRIVER,
-    redisUrl: config.REDIS_URL,
-    defaultRetry: DEFAULT_QUEUE_POLICIES[STANDARD_QUEUES.MAIL_SEND],
-  });
-  mailQueue.process(async (job) => {
-    app.log.info({ jobId: job.id, recipient: job.data.recipient }, "Processing queued mail dispatch");
-    return { delivered: true, timestamp: new Date().toISOString() };
-  }, { concurrency: config.QUEUE_CONCURRENCY });
+const operations = new DurableOperations(prisma);
+const mailOperations = mailWorkerEnabled ? new MailOperations(prisma, operations, new MailDispatchService({
+  ledger, signer: required(signer, "SignatureService"), smtp: required(smtp, "SmtpService"),
+  senderDomain: config.SENDER_DOMAIN, prisma, kms, eventListener, stealth, routingPool, config, logger: app.log,
+})) : undefined;
+const disputeOperations = oracleWorkerEnabled ? new DisputeOperations(prisma, operations, {
+  ledger, signer: required(signer, "SignatureService"), oracle: required(oracle, "OracleService"),
+  reputation: required(reputation, "ReputationService"), reportService: oracleReportService, logger: app.log,
+}) : undefined;
+const relayWorker = config.RELAYER_QUEUE_CONSUMER_ENABLED && relayerWorkerEnabled
+  ? await createRuntimeRelayWorker(config, prisma, ledger) : undefined;
+async function operationHttp(run: () => Promise<import("./runtime/durableOperations.js").OperationResult>) {
+  try { return await run(); }
+  catch (error) { return { statusCode: error instanceof OperationStateError && error.code === "IDEMPOTENCY_CONFLICT" ? 409 : 503,
+    body: { error: error instanceof OperationStateError ? error.code : "Operation unavailable; reconcile before retrying" } }; }
 }
-
-if (hasQueue(profile, STANDARD_QUEUES.ORACLE_DISPUTE)) {
-  const oracleQueue = createJobQueue<OracleDisputeJobData>(STANDARD_QUEUES.ORACLE_DISPUTE, {
-    driver: config.QUEUE_DRIVER,
-    redisUrl: config.REDIS_URL,
-    defaultRetry: DEFAULT_QUEUE_POLICIES[STANDARD_QUEUES.ORACLE_DISPUTE],
-  });
-  oracleQueue.process(async (job) => {
-    app.log.info({ jobId: job.id, senderDomain: job.data.senderDomain }, "Processing queued oracle dispute evaluation");
-    return { evaluated: true, timestamp: new Date().toISOString() };
-  }, { concurrency: config.QUEUE_CONCURRENCY });
+const operationOutboxes: { stop(): void }[] = [];
+if (hasQueue(profile, STANDARD_QUEUES.MAIL_SEND) && config.MAIL_QUEUE_CONSUMER_ENABLED) {
+  const queue = createJobQueue(STANDARD_QUEUES.MAIL_SEND, { driver: config.QUEUE_DRIVER, redisUrl: config.REDIS_URL });
+  queue.process(async job => requireConfirmed(await required(mailOperations, "MailOperations").run(operationReference(job.data))), { concurrency: config.QUEUE_CONCURRENCY });
+  operationOutboxes.push(startOperationOutbox(prisma, "MAIL", queue, () => app.log.error("Mail outbox unavailable")));
 }
-
-if (hasQueue(profile, STANDARD_QUEUES.RELAYER_MIRROR)) {
-  const relayerQueue = createJobQueue<RelayerMirrorJobData>(STANDARD_QUEUES.RELAYER_MIRROR, {
-    driver: config.QUEUE_DRIVER,
-    redisUrl: config.REDIS_URL,
-    defaultRetry: DEFAULT_QUEUE_POLICIES[STANDARD_QUEUES.RELAYER_MIRROR],
-  });
-  relayerQueue.process(async (job) => {
-    app.log.info({ jobId: job.id, domain: job.data.domain }, "Processing queued multichain relay mirror");
-    return { mirrored: true, timestamp: new Date().toISOString() };
-  }, { concurrency: config.QUEUE_CONCURRENCY });
+if (hasQueue(profile, STANDARD_QUEUES.ORACLE_DISPUTE) && config.ORACLE_QUEUE_CONSUMER_ENABLED) {
+  const queue = createJobQueue(STANDARD_QUEUES.ORACLE_DISPUTE, { driver: config.QUEUE_DRIVER, redisUrl: config.REDIS_URL });
+  queue.process(async job => requireConfirmed(await required(disputeOperations, "DisputeOperations").run(operationReference(job.data))), { concurrency: config.QUEUE_CONCURRENCY });
+  operationOutboxes.push(startOperationOutbox(prisma, "DISPUTE", queue, () => app.log.error("Dispute outbox unavailable")));
+}
+if (hasQueue(profile, STANDARD_QUEUES.RELAYER_MIRROR) && config.RELAYER_QUEUE_CONSUMER_ENABLED) {
+  const queue = createJobQueue(STANDARD_QUEUES.RELAYER_MIRROR, { driver: config.QUEUE_DRIVER, redisUrl: config.REDIS_URL });
+  // Serialize the single pilot relayer; unresolved signed nonces gate new preparations.
+  queue.process(async job => {
+    try { return await required(relayWorker, "RelayWorker").run(operationReference(job.data)); }
+    catch (error) { throw new OperationStateError(error instanceof OperationStateError ? error.code : "RELAY_EXECUTION_FAILED"); }
+  }, { concurrency: 1 });
+  operationOutboxes.push(startOperationOutbox(prisma, "RELAY", queue, () => app.log.error("Relay outbox unavailable")));
 }
 
 const shutdownManager = new GracefulShutdownManager({
   app,
   pauseQueues: async () => {
+    for (const outbox of operationOutboxes) outbox.stop();
     await pauseAllQueues();
   },
   drainJobs: async (jobDrainTimeoutMs) => {
@@ -267,6 +277,7 @@ const shutdownManager = new GracefulShutdownManager({
     await closeAllQueues();
   },
   stopLoops: () => {
+    evmIndexers?.stop();
     solanaIndexer?.stop();
     eventListener?.stop();
     routingPool?.destroy();
@@ -285,9 +296,11 @@ if (process.env.NODE_ENV !== "test") {
 
 app.addHook("onClose", async () => {
   if (!shutdownManager.isShuttingDown()) {
+    for (const outbox of operationOutboxes) outbox.stop();
     await pauseAllQueues();
     await drainQueues(3000);
     await closeAllQueues();
+    evmIndexers?.stop();
     solanaIndexer?.stop();
     eventListener?.stop();
     routingPool?.destroy();
@@ -320,7 +333,7 @@ const roleNeedsBlockchain = profile.role === "all-in-one"
 await healthRoutes(app, {
   service: "maivw-gateway",
   role: profile.role,
-  activeComponents: [...profile.routeGroups, ...activeLoops, ...profile.queues],
+  activeComponents: [...profile.routeGroups, ...activeLoops, ...activeQueues],
   checks: {
     ...(roleNeedsBlockchain ? {
       blockchain: () => profile.role === "solana-indexer" && solanaOriginNetwork
@@ -459,6 +472,7 @@ if (mailWorkerEnabled) await sendRoutes(app, {
   stealth: required(stealth, "StealthRoutingService"),
   routingPool: required(routingPool, "RoutingPoolService"),
   config,
+  executeDurably: (input, authority, key) => operationHttp(() => required(mailOperations, "MailOperations").send(input, authority, key)),
 });
 
 if (p2pIngressEnabled) await inboxRoutes(app, {
@@ -478,6 +492,7 @@ if (oracleWorkerEnabled) await disputeRoutes(app, {
   reputation: required(reputation, "ReputationService"),
   reportService: required(oracleReportService, "OracleReportService"),
   authorizeReclaim: profile.role === "oracle-worker" ? authorizeOracleProof : undefined,
+  executeDurably: input => operationHttp(() => required(disputeOperations, "DisputeOperations").submit(input)),
 });
 
 if (gatewayApiEnabled) await authRoutes(app, {
@@ -581,7 +596,7 @@ try {
     role: profile.role,
     routeGroups: profile.routeGroups,
     loops: activeLoops,
-    queues: profile.queues,
+    queues: activeQueues,
     address: `${protocol}://${HOST}:${PORT}`,
   }, "MAIVW runtime started");
 } catch (err) {

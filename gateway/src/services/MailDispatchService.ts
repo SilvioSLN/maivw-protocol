@@ -39,6 +39,7 @@ export interface MailDispatchInput {
   payload: Record<string, unknown>;
   sender: { domain: string; mailboxEmail?: string };
   messageId?: string;
+  beforeTransport?: () => Promise<void>;
 }
 export interface MailDispatchResult { statusCode: number; body: Record<string, any>; }
 const result = (statusCode: number, body: Record<string, any>): MailDispatchResult => ({ statusCode, body });
@@ -353,6 +354,7 @@ export class MailDispatchService {
           );
 
           try {
+            await input.beforeTransport?.();
             response = await TlsCertService.dispatchP2PRequest(candidate.url, {
               method: "POST",
               headers,
@@ -482,6 +484,7 @@ export class MailDispatchService {
       // ============================================
       log.info(`[ROUTER] 📧 ${recipientDomain} NÃO está na rede MAIVW → Fallback SMTP`);
 
+      await input.beforeTransport?.();
       const smtpResult = await smtp.sendEmail(
         to,
         subject,

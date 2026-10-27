@@ -39,19 +39,20 @@ export class RemoteAiSemanticJudge implements ISemanticJudge {
 
       if (!res.ok) {
         console.warn(`[ORACLE-AI] Juiz remoto retornou status ${res.status}. Acionando fallback heurístico...`);
-        return this.fallbackJudge.judge(msgClass, text);
+        return { ...this.fallbackJudge.judge(msgClass, text), degraded: true };
       }
 
       const data = (await res.json()) as any;
+      if (typeof data.isSpoofed !== "boolean" || typeof data.reason !== "string" || data.reason.length > 4000) throw new Error("Invalid judge verdict");
       return {
-        isSpoofed: Boolean(data.isSpoofed),
+        isSpoofed: data.isSpoofed,
         reason: String(data.reason || "Veredito emitido pelo Tribunal de IA"),
         confidence: typeof data.confidence === "number" ? data.confidence : 0.95,
         engine: "remote-ai-llm",
       };
     } catch (err: any) {
-      console.warn(`[ORACLE-AI] Falha de comunicação com motor de IA remoto (${err.message}). Acionando fallback heurístico...`);
-      return this.fallbackJudge.judge(msgClass, text);
+      console.warn("[ORACLE-AI] Remote judge unavailable; degraded verdict cannot authorize punishment");
+      return { ...this.fallbackJudge.judge(msgClass, text), degraded: true };
     }
   }
 }
