@@ -43,7 +43,7 @@ test("gateway isolates migrations from application runtime start (AWS-010)", asy
   assert.match(dockerfile, /FROM base AS runner/);
   const runnerSection = dockerfile.split("FROM base AS runner")[1] || "";
   assert.doesNotMatch(runnerSection, /"prisma", "migrate", "deploy"/);
-  assert.match(runnerSection, /npx tsx src\/runtime\.ts/);
+  assert.match(runnerSection, /exec node scripts\/with-database-url\.mjs node --import tsx src\/runtime\.ts/);
 });
 
 test("gateway package.json exposes dedicated migration commands", async () => {

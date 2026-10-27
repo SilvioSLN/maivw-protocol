@@ -76,8 +76,16 @@ export class RoutingPoolService {
 
   private healthCheckInterval: NodeJS.Timeout | null = null;
   private isInitialized = false;
+  private stopped = false;
+  private pending = new Set<Promise<unknown>>();
+  private track(task: () => Promise<unknown>): void {
+    if (this.stopped) return;
+    const pending = task().catch(() => { console.error("[ROUTING-POOL] Background operation failed"); });
+    this.pending.add(pending);
+    void pending.finally(() => this.pending.delete(pending));
+  }
 
-  constructor(prisma: PrismaClient, redisUrl?: string) {
+  constructor(prisma: PrismaClient, redisUrl?: string, private readonly localIngress?: string) {
     this.prisma = prisma;
     this.initRedis(redisUrl);
   }
@@ -112,6 +120,7 @@ export class RoutingPoolService {
       });
 
       this.redisSub.connect().then(() => {
+        if (this.stopped) return;
         this.isRedisConnected = true;
         this.redisSub?.subscribe(REDIS_ROUTING_CHANNEL, (err: any) => {
           if (err) {
@@ -124,9 +133,7 @@ export class RoutingPoolService {
         this.redisSub?.on("message", (channel: string, message: string) => {
           if (channel === REDIS_ROUTING_CHANNEL) {
             console.log(`[ROUTING-POOL] 🔄 Hot-reload signal received from Redis: ${message}`);
-            this.loadCacheFromDb().catch((e) => {
-              console.error("[ROUTING-POOL] Error during Redis-triggered cache reload:", e);
-            });
+            this.track(() => this.loadCacheFromDb());
           }
         });
       }).catch((err: any) => {
@@ -163,6 +170,13 @@ export class RoutingPoolService {
     try {
       const count = await this.prisma.endpointPool.count();
       if (count === 0) {
+        if (this.localIngress) {
+          await this.prisma.endpointPool.create({ data: {
+            code: "default", name: "Community local", region: "LOCAL", isDefault: true, isActive: true,
+            nodes: { create: [{ name: "Local P2P", endpointUrl: this.localIngress, weight: 100, isActive: true, isHealthy: true }] },
+          } });
+          return;
+        }
         console.log("[ROUTING-POOL] 📦 Banco vazio de pools. Criando Pools e Nós P2P padrão da plataforma MAIVW...");
 
         const defaultPool = await this.prisma.endpointPool.create({
@@ -604,7 +618,7 @@ export class RoutingPoolService {
           // Se estiver não saudável ou sem checagem há mais de 60 segundos
           const shouldProbe = !node.isHealthy || !node.lastChecked || (Date.now() - node.lastChecked.getTime() > 60000);
           if (shouldProbe) {
-            this.probeNodeHealth(node).catch(() => {});
+            this.track(() => this.probeNodeHealth(node));
           }
         }
       }
@@ -676,12 +690,14 @@ export class RoutingPoolService {
     return this.domainRules;
   }
 
-  destroy(): void {
+  async destroy(): Promise<void> {
+    this.stopped = true;
     if (this.healthCheckInterval) {
       clearInterval(this.healthCheckInterval);
       this.healthCheckInterval = null;
     }
     this.redisSub?.disconnect();
     this.redisPub?.disconnect();
+    await Promise.all(this.pending);
   }
 }

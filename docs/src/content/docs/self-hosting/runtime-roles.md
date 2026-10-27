@@ -16,15 +16,16 @@ distribuída pode replicar e escalar cada papel de forma independente.
 | `gateway-api` | status, contas, configuração, onboarding, contatos, anexos, economia, stealth, routing e node | nenhum |
 | `p2p-ingress` | recebimento P2P em `/api/v1/inbox` | nenhum |
 | `mail-worker` | envio em `/api/v1/send` | verificação periódica do pool de roteamento |
-| `oracle-worker` | denúncias, julgamento e operações do oráculo | nenhum loop durável nesta etapa |
-| `relayer-worker` | solicitações e operações multichain | nenhum loop durável nesta etapa |
+| `oracle-worker` | denúncias, julgamento e operações do oráculo | consumer/outbox de disputas quando habilitado |
+| `relayer-worker` | solicitações e operações multichain | consumer/outbox de espelhamento quando habilitado |
 | `evm-indexer` | observa eventos do Registry EVM | observer EVM |
 | `solana-indexer` | indexa eventos finalizados do programa Solana | observer Solana |
 
 Os papéis `mail-worker`, `oracle-worker` e `relayer-worker` operam sobre filas
-duráveis (`mail:send`, `oracle:dispute` e `relayer:mirror`), suportando retentativas
-com backoff exponencial, Dead-Letter Queue (DLQ) e deduplicação idempotente
-pelo contrato unificado de `JobQueue`.
+duráveis (`mail:send`, `oracle:dispute` e `relayer:mirror`) quando suas flags são
+habilitadas. Por padrão, as três flags são false. Mail/oráculo usam backoff
+exponencial; relay usa 20 tentativas com intervalo fixo de 15s. DLQ e idempotência
+não autorizam repetir automaticamente um efeito externo incerto.
 
 ## Inicialização
 
@@ -47,8 +48,16 @@ docker run --env-file .env \
 
 O argumento do entrypoint e `MAIVW_RUNTIME_ROLE` devem coincidir. Uma
 divergência encerra o processo para evitar que uma task seja rotulada como um
-papel e execute outro. Todos usam a porta interna `3001`; em ECS, Kubernetes ou
-Compose separados, cada container recebe sua própria interface de rede.
+papel e execute outro. A porta padrão é `3001`, configurável por GATEWAY_PORT.
+Em bridge/Kubernetes, os containers têm interfaces próprias. Em ECS host-network,
+reserve portas distintas: mail 3101, oracle 3102, relayer 3103, EVM 3104 e Solana
+3105. O Gateway usa proxy por allowlist e exige a credencial original, além da
+chave interna no worker. URLs internas não são necessárias em all-in-one.
+
+O encerramento deixa readiness indisponível, pausa novos jobs, drena HTTP/jobs,
+aguarda polls e escritas de eventos em andamento e só então desconecta o banco.
+Compose concede 20s ao Gateway; o prazo padrão da aplicação é 15s. Um prazo
+excedido pode interromper uma operação: seu estado durável exige reconciliação.
 
 ## Saúde e roteamento
 

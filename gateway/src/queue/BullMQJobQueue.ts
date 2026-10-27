@@ -235,7 +235,7 @@ export class BullMQJobQueue<TData = any, TResult = any> implements JobQueue<TDat
 
   async pause(): Promise<void> {
     this.paused = true;
-    if (this.worker) await this.worker.pause();
+    if (this.worker) await this.worker.pause(true);
   }
 
   async resume(): Promise<void> {

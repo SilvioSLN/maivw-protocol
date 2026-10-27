@@ -1,4 +1,5 @@
 import { Connection, PublicKey } from "@solana/web3.js";
+import { startSerialPoller, type SerialPoller } from "../runtime/serialPoller.js";
 import { decodeSolanaDomainRecord } from "./FinalizedStateReader.js";
 import {
   DomainStateChangedDecoder,
@@ -115,8 +116,7 @@ export class SolanaRegistryAccountValidator implements SolanaEventValidator {
 /** Registry indexer: finalized scanner/backfill + deterministic decoder + account validation. */
 export class SolanaRegistryIndexer {
   private readonly observer: SolanaObserver;
-  private timer?: ReturnType<typeof setInterval>;
-  private running = false;
+  private poller?: SerialPoller;
   constructor(
     database: any,
     observerClient: SolanaObserverClient,
@@ -135,19 +135,13 @@ export class SolanaRegistryIndexer {
   }
 
   start(intervalMs: number, onError: (error: unknown) => void, onResult?: (result: SolanaPollResult) => void): void {
-    if (this.timer || !Number.isSafeInteger(intervalMs) || intervalMs < 1_000) throw new Error("intervalo do indexador inválido");
-    const tick = async () => {
-      if (this.running) return;
-      this.running = true;
-      try { onResult?.(await this.runOnce()); } catch (error) { onError(error); } finally { this.running = false; }
-    };
-    void tick();
-    this.timer = setInterval(tick, intervalMs);
-    this.timer.unref?.();
+    if (this.poller || !Number.isSafeInteger(intervalMs) || intervalMs < 1_000) throw new Error("intervalo do indexador inválido");
+    this.poller = startSerialPoller(async () => { onResult?.(await this.runOnce()); }, intervalMs, onError);
   }
 
-  stop(): void {
-    if (this.timer) clearInterval(this.timer);
-    this.timer = undefined;
+  async stop(): Promise<void> {
+    const poller = this.poller;
+    await poller?.stop();
+    this.poller = undefined;
   }
 }

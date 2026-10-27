@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 import type { JobQueue } from "../queue/types.js";
+import { startSerialPoller } from "./serialPoller.js";
 
 /** Recover prepared-but-not-started requests; never enqueue ambiguous external effects. */
 export async function enqueuePreparedOperations(db: PrismaClient, kind: "MAIL" | "DISPUTE" | "RELAY", queue: JobQueue,
@@ -20,11 +21,5 @@ export async function enqueuePreparedOperations(db: PrismaClient, kind: "MAIL" |
   return rows.length;
 }
 export function startOperationOutbox(db: PrismaClient, kind: "MAIL" | "DISPUTE" | "RELAY", queue: JobQueue, onError: () => void) {
-  let stopped = false, timer: ReturnType<typeof setTimeout> | undefined;
-  const poll = async () => {
-    try { await enqueuePreparedOperations(db, kind, queue); } catch { onError(); }
-    finally { if (!stopped) timer = setTimeout(poll, 5000); }
-  };
-  void poll();
-  return { stop() { stopped = true; clearTimeout(timer); } };
+  return startSerialPoller(async () => { await enqueuePreparedOperations(db, kind, queue); }, 5000, onError);
 }
