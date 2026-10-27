@@ -14,6 +14,8 @@ import { KeyManagementService } from "./services/KeyManagementService.js";
 import { sendRoutes } from "./routes/send.js";
 import { inboxRoutes } from "./routes/inbox.js";
 import { disputeRoutes } from "./routes/dispute.js";
+import { registerWorkerProxyRoutes, requireWorkerServiceKey } from "./runtime/workerProxy.js";
+import { getActiveAdmin, getCurrentUser } from "./routes/auth.js";
 import { authRoutes } from "./routes/auth.js";
 import { webhookRoutes } from "./routes/webhooks.js";
 import { settingsRoutes } from "./routes/settings.js";
@@ -100,6 +102,29 @@ const p2pIngressEnabled = hasRouteGroup(profile, "p2p-ingress");
 const mailWorkerEnabled = hasRouteGroup(profile, "mail-worker");
 const oracleWorkerEnabled = hasRouteGroup(profile, "oracle-worker");
 const relayerWorkerEnabled = hasRouteGroup(profile, "relayer-worker");
+if (["mail-worker", "oracle-worker", "relayer-worker"].includes(profile.role)) {
+  requireWorkerServiceKey(app, config.INTERNAL_SERVICE_KEY);
+}
+const oracleOperatorEmails = new Set(config.ORACLE_OPERATOR_EMAILS.split(",").map(email => email.trim().toLowerCase()).filter(Boolean));
+const authorizeOracleOperator = async (request: any) => {
+  const admin = await getActiveAdmin(request, prisma);
+  return Boolean(admin && oracleOperatorEmails.has(admin.email.toLowerCase()));
+};
+const authorizeOracleProof = async (request: any) => {
+  const user = await getCurrentUser(request, prisma);
+  const domain = (request.body as { domain?: string })?.domain;
+  return Boolean(user && typeof domain === "string" && await prisma.domain.findFirst({
+    where: { userId: user.id, domainName: domain.toLowerCase(), isVerified: true },
+  }));
+};
+if (profile.role === "gateway-api") await registerWorkerProxyRoutes(app, {
+  mailUrl: config.MAIL_WORKER_INTERNAL_URL,
+  oracleUrl: config.ORACLE_WORKER_INTERNAL_URL,
+  internalServiceKey: config.INTERNAL_SERVICE_KEY,
+  timeoutMs: config.WORKER_PROXY_TIMEOUT_MS,
+  bodyLimit: config.WORKER_PROXY_BODY_LIMIT_BYTES,
+  authorize: async (request, access) => access === "operator" ? authorizeOracleOperator(request) : authorizeOracleProof(request),
+});
 const needsSigner = gatewayApiEnabled || p2pIngressEnabled || mailWorkerEnabled || oracleWorkerEnabled;
 const needsSmtp = gatewayApiEnabled || mailWorkerEnabled;
 const needsKms = gatewayApiEnabled || mailWorkerEnabled;
@@ -452,6 +477,7 @@ if (oracleWorkerEnabled) await disputeRoutes(app, {
   oracle: required(oracle, "OracleService"),
   reputation: required(reputation, "ReputationService"),
   reportService: required(oracleReportService, "OracleReportService"),
+  authorizeReclaim: profile.role === "oracle-worker" ? authorizeOracleProof : undefined,
 });
 
 if (gatewayApiEnabled) await authRoutes(app, {
@@ -496,6 +522,7 @@ if (oracleWorkerEnabled) await oracleRoutes(app, {
   ledger,
   reportService: required(oracleReportService, "OracleReportService"),
   internalServiceKey: config.INTERNAL_SERVICE_KEY,
+  authorizeOperator: profile.role === "oracle-worker" ? authorizeOracleOperator : undefined,
 });
 
 if (gatewayApiEnabled) await stealthRoutes(app, {

@@ -14,6 +14,7 @@ interface DisputeRouteOptions {
   oracle: OracleService;
   reputation: ReputationService;
   reportService?: OracleReportService;
+  authorizeReclaim?: (request: any) => Promise<boolean>;
 }
 
 /**
@@ -161,6 +162,7 @@ export async function disputeRoutes(app: FastifyInstance, options: DisputeRouteO
 
   // Endpoint auxiliar para gerar prova de reciclagem de domínio banido (Fase 5)
   app.post("/api/v1/oracle/reclaim-proof", async (request, reply) => {
+    if (options.authorizeReclaim && !await options.authorizeReclaim(request)) return reply.code(403).send({ error: "Domain ownership required" });
     const body = request.body as any;
     const { domain, newPublicKey, requesterAddress } = body || {};
 

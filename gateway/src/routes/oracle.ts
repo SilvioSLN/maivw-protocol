@@ -8,13 +8,15 @@ interface OracleRouteOptions {
   ledger: LedgerService;
   reportService?: OracleReportService;
   internalServiceKey?: string;
+  authorizeOperator?: (request: any) => Promise<boolean>;
 }
 
 export async function oracleRoutes(app: FastifyInstance, options: OracleRouteOptions) {
   const { oracle, ledger, reportService } = options;
 
-  function requireOracleOperator(request: any, reply: any) {
-    if (options.internalServiceKey && request.headers["x-internal-service-key"] === options.internalServiceKey) return true;
+  async function requireOracleOperator(request: any, reply: any) {
+    if (options.internalServiceKey && request.headers["x-internal-service-key"] === options.internalServiceKey
+      && (!options.authorizeOperator || await options.authorizeOperator(request))) return true;
     reply.status(403).send({ error: "Operador interno do oráculo obrigatório" });
     return false;
   }
@@ -24,7 +26,7 @@ export async function oracleRoutes(app: FastifyInstance, options: OracleRouteOpt
    * Retorna os dados operacionais do Nó Oráculo IA
    */
   app.get("/api/v1/oracle/status", async (request, reply) => {
-    if (!requireOracleOperator(request, reply)) return;
+    if (!await requireOracleOperator(request, reply)) return;
     try {
       const oracleAddress = await ledger.getOracleNode();
       const client = ledger.getClient();
@@ -69,7 +71,7 @@ export async function oracleRoutes(app: FastifyInstance, options: OracleRouteOpt
    * Lista as denúncias em tempo real com métricas e estágios
    */
   app.get("/api/v1/oracle/reports", async (request, reply) => {
-    if (!requireOracleOperator(request, reply)) return;
+    if (!await requireOracleOperator(request, reply)) return;
     if (!reportService) {
       return { reports: [], metrics: {} };
     }
@@ -96,7 +98,7 @@ export async function oracleRoutes(app: FastifyInstance, options: OracleRouteOpt
    * Retorna os detalhes de uma denúncia específica
    */
   app.get("/api/v1/oracle/reports/:id", async (request, reply) => {
-    if (!requireOracleOperator(request, reply)) return;
+    if (!await requireOracleOperator(request, reply)) return;
     if (!reportService) {
       return reply.status(404).send({ error: "Report service not initialized" });
     }
@@ -113,7 +115,7 @@ export async function oracleRoutes(app: FastifyInstance, options: OracleRouteOpt
    * Injeta uma nova denúncia em tempo real no pipeline do tribunal
    */
   app.post("/api/v1/oracle/reports/simulate-incoming", async (request, reply) => {
-    if (!requireOracleOperator(request, reply)) return;
+    if (!await requireOracleOperator(request, reply)) return;
     if (!reportService) {
       return reply.status(500).send({ error: "Report service not available" });
     }
@@ -156,7 +158,7 @@ export async function oracleRoutes(app: FastifyInstance, options: OracleRouteOpt
    * Arbitragem do Conselho Humano no Nível 3 (Tier 3)
    */
   app.post("/api/v1/oracle/reports/:id/human-action", async (request, reply) => {
-    if (!requireOracleOperator(request, reply)) return;
+    if (!await requireOracleOperator(request, reply)) return;
     if (!reportService) {
       return reply.status(500).send({ error: "Report service not available" });
     }
@@ -188,7 +190,7 @@ export async function oracleRoutes(app: FastifyInstance, options: OracleRouteOpt
    * Simula um julgamento semântico no Tribunal Oráculo IA
    */
   app.post("/api/v1/oracle/simulate", async (request, reply) => {
-    if (!requireOracleOperator(request, reply)) return;
+    if (!await requireOracleOperator(request, reply)) return;
     const body = (request.body || {}) as {
       msgClass?: string;
       text?: string;
