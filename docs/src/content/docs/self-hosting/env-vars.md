@@ -52,6 +52,35 @@ O Compose local declara sua configuração diretamente e funciona sem `.env`. O 
 
 Não troque `MASTER_SECRET_KEY` em banco existente sem recifrar chaves e credenciais. Não há ferramenta de migração pronta para isso.
 
+## Workers separados e execução durável
+
+Community `all-in-one` não exige URLs internas, credenciais AWS, Firebase ou
+Cloudflare. O Compose local mantém filas consumidoras desativadas por padrão e
+atende envio/denúncia de forma síncrona, com persistência da operação no banco.
+
+| Variável | Padrão / exigência | Uso |
+| --- | --- | --- |
+| `MAIL_WORKER_INTERNAL_URL` | Ausente | Destino fixo do proxy de envio; vazio em all-in-one |
+| `ORACLE_WORKER_INTERNAL_URL` | Ausente | Destino fixo do proxy de denúncia/oráculo |
+| `RELAYER_WORKER_INTERNAL_URL` | Ausente | Endereço interno reservado ao relayer; não publica curingas |
+| `ORACLE_OPERATOR_EMAILS` | Vazio | Allowlist de operadores da plataforma; admin de tenant não basta |
+| `WORKER_PROXY_TIMEOUT_MS` | `15000` | Prazo do proxy; POST não é repetido automaticamente |
+| `WORKER_PROXY_BODY_LIMIT_BYTES` | `1048576` | Limite do corpo encaminhado e da resposta |
+| `MAIL_QUEUE_CONSUMER_ENABLED` | `false` | Ativa mail:send somente em mail-worker/all-in-one |
+| `ORACLE_QUEUE_CONSUMER_ENABLED` | `false` | Ativa oracle:dispute somente em oracle-worker/all-in-one |
+| `RELAYER_QUEUE_CONSUMER_ENABLED` | `false` | Exige espelhamento configurado e relayer-worker/all-in-one |
+| `EVM_ORIGIN_PROFILE_MODE` | `CURRENT` | ABI da origem; LEGACY_V1 exige seleção explícita |
+| `EVM_OBSERVER_START_BLOCK` | `0` | Ajustar ao bloco do deploy em rede pública; cursor persiste no banco |
+| `EVM_OBSERVER_MAX_BLOCKS` | `200` | Máximo de blocos por ciclo |
+| `EVM_OBSERVER_POLL_INTERVAL_MS` | `5000` | Intervalo entre ciclos concluídos, sem sobreposição |
+| `RELAYER_EVM_KMS_KEY_ID` | Ausente | Signer próprio do relayer EVM, não herdado do oráculo |
+| `RELAYER_EVM_PRIVATE_KEY` | Ausente | Alternativa local fora do Cloud; nunca registrar no Git |
+
+No driver BullMQ, Redis é obrigatório; não há fallback silencioso para memória.
+Jobs novos referenciam uma operação durável, sem carregar credenciais. Após efeito
+incerto, repetir o job não autoriza outro envio/punição; exige reconciliação.
+Uma mesma tentativa HTTP de envio deve reutilizar `Idempotency-Key`.
+
 ## Armazenamento de objetos e anexos
 
 | Variável | Padrão / exigência | Uso |

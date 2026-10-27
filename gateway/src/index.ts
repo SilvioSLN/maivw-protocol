@@ -10,7 +10,7 @@ import cors from "@fastify/cors";
 import type { Hex } from "viem";
 import { generatePrivateKey } from "viem/accounts";
 import { PrismaClient } from "@prisma/client";
-import { loadConfig } from "./config.js";
+import { loadConfig, isLocalDemoConfig } from "./config.js";
 import { LedgerService } from "./services/LedgerService.js";
 import { SignatureService } from "./services/SignatureService.js";
 import { SmtpService } from "./services/SmtpService.js";
@@ -158,7 +158,7 @@ const oracle = needsOracle ? await OracleService.create(config, ledger) : undefi
 const oracleReportService = oracleWorkerEnabled ? new OracleReportService() : undefined;
 const eventListener = hasLoop(profile, "evm-indexer") ? new EventListenerService(ledger, prisma) : undefined;
 const stealth = needsStealth ? new StealthRoutingService(prisma) : undefined;
-const routingPool = needsRouting ? new RoutingPoolService(prisma, config.REDIS_URL) : undefined;
+const routingPool = needsRouting ? new RoutingPoolService(prisma, config.REDIS_URL, isLocalDemoConfig(config) ? config.DEFAULT_P2P_ENDPOINT : undefined) : undefined;
 if (routingPool) {
   await routingPool.start({
     runHealthChecks: hasLoop(profile, "routing-health"),
@@ -243,7 +243,7 @@ async function operationHttp(run: () => Promise<import("./runtime/durableOperati
   catch (error) { return { statusCode: error instanceof OperationStateError && error.code === "IDEMPOTENCY_CONFLICT" ? 409 : 503,
     body: { error: error instanceof OperationStateError ? error.code : "Operation unavailable; reconcile before retrying" } }; }
 }
-const operationOutboxes: { stop(): void }[] = [];
+const operationOutboxes: { stop(): Promise<void> }[] = [];
 if (hasQueue(profile, STANDARD_QUEUES.MAIL_SEND) && config.MAIL_QUEUE_CONSUMER_ENABLED) {
   const queue = createJobQueue(STANDARD_QUEUES.MAIL_SEND, { driver: config.QUEUE_DRIVER, redisUrl: config.REDIS_URL });
   queue.process(async job => requireConfirmed(await required(mailOperations, "MailOperations").run(operationReference(job.data))), { concurrency: config.QUEUE_CONCURRENCY });
@@ -267,7 +267,7 @@ if (hasQueue(profile, STANDARD_QUEUES.RELAYER_MIRROR) && config.RELAYER_QUEUE_CO
 const shutdownManager = new GracefulShutdownManager({
   app,
   pauseQueues: async () => {
-    for (const outbox of operationOutboxes) outbox.stop();
+    await Promise.all(operationOutboxes.map(outbox => outbox.stop()));
     await pauseAllQueues();
   },
   drainJobs: async (jobDrainTimeoutMs) => {
@@ -276,11 +276,8 @@ const shutdownManager = new GracefulShutdownManager({
   closeQueues: async () => {
     await closeAllQueues();
   },
-  stopLoops: () => {
-    evmIndexers?.stop();
-    solanaIndexer?.stop();
-    eventListener?.stop();
-    routingPool?.destroy();
+  stopLoops: async () => {
+    await Promise.all([evmIndexers?.stop(), solanaIndexer?.stop(), eventListener?.stop(), routingPool?.destroy()]);
   },
   disconnectPrisma: async () => {
     await prisma.$disconnect();
@@ -296,14 +293,11 @@ if (process.env.NODE_ENV !== "test") {
 
 app.addHook("onClose", async () => {
   if (!shutdownManager.isShuttingDown()) {
-    for (const outbox of operationOutboxes) outbox.stop();
+    await Promise.all(operationOutboxes.map(outbox => outbox.stop()));
     await pauseAllQueues();
     await drainQueues(3000);
     await closeAllQueues();
-    evmIndexers?.stop();
-    solanaIndexer?.stop();
-    eventListener?.stop();
-    routingPool?.destroy();
+    await Promise.all([evmIndexers?.stop(), solanaIndexer?.stop(), eventListener?.stop(), routingPool?.destroy()]);
     await prisma.$disconnect();
   }
 });

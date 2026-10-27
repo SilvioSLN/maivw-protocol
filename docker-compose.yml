@@ -47,7 +47,7 @@ services:
     ports:
       - "127.0.0.1:53443:5432"
     volumes:
-      - ./data/postgres:/var/lib/postgresql/data
+      - postgres-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d maivw_reputation"]
       interval: 5s
@@ -61,7 +61,7 @@ services:
     ports:
       - "127.0.0.1:54443:6379"
     volumes:
-      - ./data/redis:/data
+      - redis-data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -83,6 +83,8 @@ services:
     restart: "no"
 
   gateway:
+    init: true
+    stop_grace_period: 20s
     build:
       context: ./gateway
       dockerfile: Dockerfile
@@ -92,13 +94,18 @@ services:
     security_opt:
       - no-new-privileges:true
     volumes:
-      - ./data/attachments:/app/data/attachments
-      - ./data/certs:/app/data/certs
+      - attachments-data:/app/data/attachments
+      - certs-data:/app/data/certs
       - deploy-output:/deploy-output:ro
     environment:
       MAIVW_EDITION: community
       MAIVW_ENVIRONMENT: local
       MAIVW_RUNTIME_ROLE: all-in-one
+      STORAGE_DRIVER: filesystem
+      QUEUE_DRIVER: ${QUEUE_DRIVER:-bullmq}
+      MAIL_QUEUE_CONSUMER_ENABLED: ${MAIL_QUEUE_CONSUMER_ENABLED:-false}
+      ORACLE_QUEUE_CONSUMER_ENABLED: ${ORACLE_QUEUE_CONSUMER_ENABLED:-false}
+      RELAYER_QUEUE_CONSUMER_ENABLED: "false"
       GATEWAY_PORT: "3001"
       GATEWAY_HOST: 0.0.0.0
       GATEWAY_PUBLIC_URL: ${NEXT_PUBLIC_GATEWAY_URL:-http://localhost:51443}
@@ -188,6 +195,10 @@ services:
         condition: service_healthy
 
 volumes:
+  postgres-data:
+  redis-data:
+  attachments-data:
+  certs-data:
   anvil-state:
   deploy-output:
 

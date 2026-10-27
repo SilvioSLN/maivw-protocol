@@ -84,6 +84,22 @@ test("Redis durable references survive restart; default retry, DLQ and replay ex
   } finally { await queue.close(); }
 });
 
+test("worker pause stops admission immediately while the explicit drain owns the active job", async () => {
+  let release!: () => void;
+  const blocked = new Promise<void>(resolve => { release = resolve; }); let active = false;
+  const queue = new BullMQJobQueue(`ret005:drain:${randomUUID()}`, { redisUrl: process.env.RET004_REDIS_URL! });
+  queue.process(async () => { active = true; await blocked; return { status: "CONFIRMED" }; }, { concurrency: 1 });
+  try {
+    const job = await queue.enqueue({ name: "drain", data: {} });
+    await waitFor(async () => active);
+    let paused = false; const pause = queue.pause().then(() => { paused = true; });
+    await new Promise(resolve => setTimeout(resolve, 100));
+    assert.equal(paused, true, "pause must not wait indefinitely for an external operation");
+    await pause; assert.equal((await queue.getMetrics()).active, 1);
+    release(); await waitFor(async () => (await queue.getJob(job.id))?.status === "completed");
+  } finally { release(); await queue.close(); }
+});
+
 test("outbox quarantines exhausted dispatches so they cannot starve newer operations", async () => {
   const id = await ops.prepare("MAIL", randomUUID(), {}, {});
   await db.runtimeOperation.update({ where: { id }, data: { createdAt: new Date(Date.now() - 120000) } });
@@ -169,5 +185,5 @@ test("separated EVM poller connects its persistent observer cursor to a controll
   try {
     await waitFor(async () => (await db.evmObserverCursor.findUnique({ where: { networkId: network.networkId } }))?.observedHead === 0n);
     assert.equal(loops.count, 1); assert.equal(errors, 0);
-  } finally { loops.stop(); await new Promise<void>(resolve => server.close(() => resolve())); }
+  } finally { await loops.stop(); await new Promise<void>(resolve => server.close(() => resolve())); }
 });

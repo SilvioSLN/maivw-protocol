@@ -18,6 +18,14 @@ export class EventListenerService {
   private unwatchList: Array<() => void> = [];
   private suspendedDomains: Set<string> = new Set();
   private deactivatedDomains: Set<string> = new Set();
+  private stopped = false;
+  private pending = new Set<Promise<void>>();
+  private track(task: () => Promise<void>): void {
+    if (this.stopped) return;
+    const pending = task().catch(() => { console.error("[EVENT-LISTENER] Background event failed"); });
+    this.pending.add(pending);
+    void pending.finally(() => this.pending.delete(pending));
+  }
 
   constructor(private ledger: LedgerService, private prisma?: PrismaClient) {
     this.client = ledger.getClient();
@@ -28,6 +36,7 @@ export class EventListenerService {
    * Inicia a escuta de eventos on-chain
    */
   start(): void {
+    this.stopped = false;
     if (!this.contractAddress) {
       console.warn("[EVENT-LISTENER] ⚠️ Endereço do contrato não configurado. Listener aguardando deploy.");
       return;
@@ -95,12 +104,12 @@ export class EventListenerService {
         address: this.contractAddress,
         abi: REGISTRY_ABI,
         eventName: "DomainDeactivated",
-        onLogs: async (logs) => {
+        onLogs: (logs) => this.track(async () => {
           for (const log of logs) {
             const { domain, timestamp } = log.args as { domain: string; timestamp: bigint };
             await this.handleDomainRevocation(domain, Number(timestamp));
           }
-        },
+        }),
       });
       this.unwatchList.push(unwatchDeactivated);
 
@@ -109,7 +118,7 @@ export class EventListenerService {
         address: this.contractAddress,
         abi: REGISTRY_ABI,
         eventName: "DomainSlashed",
-        onLogs: async (logs) => {
+        onLogs: (logs) => this.track(async () => {
           for (const log of logs) {
             const { domain, redistributed, burned } = log.args as {
               domain: string;
@@ -123,7 +132,7 @@ export class EventListenerService {
             );
             await this.handleDomainRevocation(domain);
           }
-        },
+        }),
       });
       this.unwatchList.push(unwatchSlashed);
 
@@ -208,11 +217,13 @@ export class EventListenerService {
   /**
    * Para os listeners ao encerrar o servidor
    */
-  stop(): void {
+  async stop(): Promise<void> {
+    this.stopped = true;
     for (const unwatch of this.unwatchList) {
       unwatch();
     }
     this.unwatchList = [];
+    await Promise.all(this.pending);
     console.log("[EVENT-LISTENER] ⏹️ Listeners de eventos encerrados.");
   }
 }
