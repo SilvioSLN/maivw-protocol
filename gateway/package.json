@@ -60,7 +60,7 @@
     "resend": "^6.28.1",
     "uuid": "^11.1.0",
     "viem": "^2.30.5",
-    "zod": "^3.25.67"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/jsonwebtoken": "^9.0.10",
