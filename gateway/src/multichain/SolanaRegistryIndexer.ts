@@ -29,8 +29,11 @@ function slotNumber(value: bigint): number {
 /** Production RPC adapter shared by the scanner and finalized account validator. */
 export class Web3SolanaIndexerClient implements SolanaObserverClient, SolanaIndexerAccountClient {
   private readonly connection: Connection;
-  constructor(rpcUrl: string) { this.connection = new Connection(rpcUrl, "finalized"); }
-  async getSlot() { return BigInt(await this.connection.getSlot("finalized")); }
+  constructor(rpcUrl: string, private readonly expectedGenesisHash?: string) { this.connection = new Connection(rpcUrl, "finalized"); }
+  async getSlot() {
+    if (this.expectedGenesisHash && await this.connection.getGenesisHash() !== this.expectedGenesisHash) throw new Error("Solana indexer genesis mismatch");
+    return BigInt(await this.connection.getSlot("finalized"));
+  }
   async getSignaturesForAddress(input: { address: string; before?: string; until?: string; limit: number; commitment: "finalized" }): Promise<readonly SolanaSignatureInfo[]> {
     const rows = await this.connection.getSignaturesForAddress(new PublicKey(input.address), {
       before: input.before, until: input.until, limit: input.limit,

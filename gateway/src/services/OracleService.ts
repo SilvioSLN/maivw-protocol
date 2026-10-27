@@ -170,7 +170,8 @@ export class OracleService {
    */
   async executeSlashing(
     domain: string,
-    reporters: Address[]
+    reporters: Address[],
+    onBroadcast?: (hash: Hash) => Promise<void>
   ): Promise<{ txHash: Hash; success: boolean }> {
     const contractAddress = this.ledgerService.getContractAddress();
     if (!contractAddress) {
@@ -188,30 +189,17 @@ export class OracleService {
       `[ORACLE] Executing slashing on-chain for domain "${domain}" with ${sortedReporters.length} sorted reporter(s)...`
     );
 
-    try {
-      const txHash = await this.walletClient.writeContract({
-        account: this.account,
-        address: contractAddress,
-        abi: REGISTRY_ABI,
-        functionName: "slashDomain",
-        args: [domain, sortedReporters],
-      });
-
-      console.log(`[ORACLE] Slashing transaction broadcasted: ${txHash}`);
-      this.ledgerService.deactivateDemoDomain(domain);
-      return { txHash, success: true };
-    } catch (err: any) {
-      console.warn(`[ORACLE] On-chain slashDomain reverted or simulated for "${domain}": ${err.message}`);
-      this.ledgerService.deactivateDemoDomain(domain);
-      const simulatedHash = keccak256(
-        encodePacked(
-          ["string", "address", "uint256"],
-          [domain, sortedReporters[0] || "0x0000000000000000000000000000000000000000", BigInt(Date.now())]
-        )
-      );
-      console.log(`[ORACLE] [DEMO/FALLBACK] Slashing atestado com hash simulado: ${simulatedHash}`);
-      return { txHash: simulatedHash as Hash, success: true };
-    }
+    const txHash = await this.walletClient.writeContract({
+      account: this.account, address: contractAddress, abi: REGISTRY_ABI,
+      functionName: "slashDomain", args: [domain, sortedReporters],
+    });
+    await onBroadcast?.(txHash);
+    const receipt = await this.ledgerService.getClient().waitForTransactionReceipt({
+      hash: txHash, confirmations: this.config.CHAIN_ID === 31337 ? 1 : 2, timeout: 60000,
+    });
+    if (receipt.status !== "success") throw new Error("Slashing transaction reverted");
+    this.ledgerService.deactivateDemoDomain(domain);
+    return { txHash, success: true };
   }
 
   /**
@@ -219,7 +207,8 @@ export class OracleService {
    */
   async executeWarning(
     providerDomain: string,
-    subIdentity: string
+    subIdentity: string,
+    onBroadcast?: (hash: Hash) => Promise<void>
   ): Promise<{ txHash: Hash; success: boolean }> {
     const contractAddress = this.ledgerService.getContractAddress();
     if (!contractAddress) {
@@ -239,14 +228,15 @@ export class OracleService {
         args: [providerDomain, subIdentity],
       });
 
-      console.log(`[ORACLE] Warning ticket transaction broadcasted: ${txHash}`);
+      await onBroadcast?.(txHash);
+      const receipt = await this.ledgerService.getClient().waitForTransactionReceipt({
+        hash: txHash, confirmations: this.config.CHAIN_ID === 31337 ? 1 : 2, timeout: 60000,
+      });
+      if (receipt.status !== "success") throw new Error("Warning transaction reverted");
       return { txHash, success: true };
     } catch (err) {
-      console.error(
-        `[ORACLE] Error issuing warning ticket for "${providerDomain}":`,
-        err
-      );
-      throw err;
+      console.error("[ORACLE] Warning action not confirmed; reconciliation may be required");
+      throw new Error("Warning action not confirmed");
     }
   }
 

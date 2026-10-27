@@ -241,7 +241,7 @@ export class KeyManagementService {
   /**
    * Valida uma API Key a partir do Bearer token fornecido no header HTTP.
    */
-  async validateApiKey(plainApiKey: string): Promise<{ domainId: number; domainName: string; keyName: string } | null> {
+  async validateApiKey(plainApiKey: string): Promise<{ domainId: number; domainName: string; keyName: string; apiKeyId: number } | null> {
     if (!plainApiKey || (!plainApiKey.startsWith("maivw_live_") && !plainApiKey.startsWith("maivw_test_"))) {
       return null;
     }
@@ -269,6 +269,7 @@ export class KeyManagementService {
       domainId: record.domainId,
       domainName: record.domain.domainName,
       keyName: record.name,
+      apiKeyId: record.id,
     };
   }
 }

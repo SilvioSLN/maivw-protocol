@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { Queue, Worker, type Job as BullJob, type ConnectionOptions } from "bullmq";
 import type {
   DeadLetterQueue,
@@ -14,21 +14,23 @@ import type {
 
 function parseRedisConnection(redisUrl?: string): ConnectionOptions {
   if (!redisUrl) {
-    return { host: "127.0.0.1", port: 6379, maxRetriesPerRequest: null, lazyConnect: true };
+    throw new Error("Explicit Redis connection required");
   }
   try {
     const parsed = new URL(redisUrl);
+    if (!["redis:", "rediss:"].includes(parsed.protocol)) throw new Error("Redis scheme required");
     return {
       host: parsed.hostname || "127.0.0.1",
       port: parsed.port ? parseInt(parsed.port, 10) : 6379,
       password: parsed.password || undefined,
       username: parsed.username || undefined,
+      ...(parsed.protocol === "rediss:" ? { tls: {} } : {}),
       maxRetriesPerRequest: null,
       lazyConnect: true,
-      enableOfflineQueue: false,
+      connectTimeout: 5000,
     };
   } catch {
-    return { host: "127.0.0.1", port: 6379, maxRetriesPerRequest: null, lazyConnect: true };
+    throw new Error("Invalid Redis connection");
   }
 }
 
@@ -55,12 +57,14 @@ class BullMqDlq<TData> implements DeadLetterQueue<TData> {
     const job = await this.dlqQueue.getJob(id);
     if (!job) return false;
     const record = this.mapToDlqRecord(job);
-    await job.remove();
+    const existing = await this.mainQueue.replayFailed(record.originalJobId);
+    if (existing) { await job.remove(); return true; }
     await this.mainQueue.enqueue({
       name: record.name,
       data: record.data,
       id: record.originalJobId,
     });
+    await job.remove();
     return true;
   }
 
@@ -94,6 +98,8 @@ export class BullMQJobQueue<TData = any, TResult = any> implements JobQueue<TDat
   private readonly dlqQueue: Queue;
   private readonly connection: ConnectionOptions | any;
   private worker?: Worker;
+  private readonly wireName: string;
+  private readonly defaultRetry: RetryPolicy;
   private paused = false;
   private closed = false;
 
@@ -105,8 +111,10 @@ export class BullMQJobQueue<TData = any, TResult = any> implements JobQueue<TDat
       defaultRetry?: RetryPolicy;
     },
   ) {
+    this.defaultRetry = options?.defaultRetry ?? { maxAttempts: 3, backoff: { type: "exponential", delayMs: 1000 } };
     this.connection = options?.connection ?? parseRedisConnection(options?.redisUrl);
     const sanitizedName = name.replace(/:/g, "-");
+    this.wireName = sanitizedName;
     const dlqName = `${sanitizedName}-dlq`;
 
     this.queue = new Queue(sanitizedName, { connection: this.connection });
@@ -123,10 +131,11 @@ export class BullMQJobQueue<TData = any, TResult = any> implements JobQueue<TDat
   async enqueue(options: EnqueueOptions<TData>): Promise<JobRecord<TData, TResult>> {
     if (this.closed) throw new Error(`Queue "${this.name}" is closed`);
 
-    const jobId = options.idempotencyKey ?? options.id ?? randomUUID();
-    const maxAttempts = options.retry?.maxAttempts ?? 3;
-    const backoffType = options.retry?.backoff?.type ?? "exponential";
-    const backoffDelay = options.retry?.backoff?.delayMs ?? 1000;
+    const logicalId = options.idempotencyKey ?? options.id ?? randomUUID();
+    const jobId = this.wireId(logicalId);
+    const maxAttempts = options.retry?.maxAttempts ?? this.defaultRetry.maxAttempts;
+    const backoffType = options.retry?.backoff?.type ?? this.defaultRetry.backoff?.type ?? "exponential";
+    const backoffDelay = options.retry?.backoff?.delayMs ?? this.defaultRetry.backoff?.delayMs ?? 1000;
 
     const bullJob = await this.queue.add(
       options.name,
@@ -154,7 +163,7 @@ export class BullMQJobQueue<TData = any, TResult = any> implements JobQueue<TDat
     if (this.worker) throw new Error(`Processor already registered for queue "${this.name}"`);
 
     this.worker = new Worker(
-      this.name,
+      this.wireName,
       async (bullJob) => {
         const record = this.mapToJobRecord(bullJob, bullJob.data?.__idempotencyKey);
         record.status = "active";
@@ -197,7 +206,7 @@ export class BullMQJobQueue<TData = any, TResult = any> implements JobQueue<TDat
   }
 
   async getJob(id: string): Promise<JobRecord<TData, TResult> | null> {
-    const bullJob = await this.queue.getJob(id);
+    const bullJob = await this.queue.getJob(this.wireId(id));
     if (!bullJob) return null;
     return this.mapToJobRecord(bullJob, bullJob.data?.__idempotencyKey);
   }
@@ -226,13 +235,11 @@ export class BullMQJobQueue<TData = any, TResult = any> implements JobQueue<TDat
 
   async pause(): Promise<void> {
     this.paused = true;
-    await this.queue.pause();
     if (this.worker) await this.worker.pause();
   }
 
   async resume(): Promise<void> {
     this.paused = false;
-    await this.queue.resume();
     if (this.worker) this.worker.resume();
   }
 
@@ -245,6 +252,15 @@ export class BullMQJobQueue<TData = any, TResult = any> implements JobQueue<TDat
     if (this.worker) await this.worker.close();
     await this.queue.close();
     await this.dlqQueue.close();
+  }
+
+  private wireId(id: string) { return id.includes(":") ? createHash("sha256").update(id).digest("hex") : id; }
+  async replayFailed(id: string): Promise<boolean> {
+    const job = await this.queue.getJob(this.wireId(id));
+    if (!job) return false;
+    if (await job.getState() !== "failed") throw new Error("Only failed jobs may be replayed from DLQ");
+    await job.retry("failed", { resetAttemptsMade: true });
+    return true;
   }
 
   private mapToJobRecord(bullJob: BullJob, idempotencyKey?: string): JobRecord<TData, TResult> {

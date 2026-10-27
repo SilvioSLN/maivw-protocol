@@ -257,7 +257,7 @@ test("JobQueue: standard queue contracts and role ownership are mapped", () => {
 
   assert.equal(DEFAULT_QUEUE_POLICIES["mail:send"].maxAttempts, 3);
   assert.equal(DEFAULT_QUEUE_POLICIES["oracle:dispute"].maxAttempts, 3);
-  assert.equal(DEFAULT_QUEUE_POLICIES["relayer:mirror"].maxAttempts, 5);
+  assert.equal(DEFAULT_QUEUE_POLICIES["relayer:mirror"].maxAttempts, 20);
 });
 
 test("JobQueue: QueueFactory manages instances and supports typed queues", async () => {

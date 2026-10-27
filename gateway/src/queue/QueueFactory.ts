@@ -28,7 +28,8 @@ export function createJobQueue<TData = any, TResult = any>(
 
   let queue: JobQueue<TData, TResult>;
 
-  if (driver === "bullmq" && options?.redisUrl) {
+  if (driver === "bullmq") {
+    if (!options?.redisUrl) throw new Error("BullMQ requires an explicit Redis URL; in-memory fallback refused");
     queue = new BullMQJobQueue<TData, TResult>(name, {
       redisUrl: options.redisUrl,
       defaultRetry,
