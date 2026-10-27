@@ -284,3 +284,10 @@ test("queue driver validates options and defaults to bullmq", () => {
   assert.equal(defaultParsed.QUEUE_DRIVER, "bullmq");
   assert.equal(defaultParsed.QUEUE_CONCURRENCY, 5);
 });
+
+test("empty separated worker URLs preserve Community all-in-one configuration", () => {
+  const parsed = EnvSchema.parse({ ...required, MAIL_WORKER_INTERNAL_URL: "", ORACLE_WORKER_INTERNAL_URL: "", RELAYER_WORKER_INTERNAL_URL: "" });
+  assert.equal(parsed.MAIL_WORKER_INTERNAL_URL, undefined);
+  assert.equal(parsed.ORACLE_WORKER_INTERNAL_URL, undefined);
+  assert.equal(parsed.MAIVW_RUNTIME_ROLE, "all-in-one");
+});
