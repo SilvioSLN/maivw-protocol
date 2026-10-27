@@ -40,4 +40,4 @@ USER node
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD wget -qO- http://127.0.0.1:3000/ || exit 1
 
-CMD ["pnpm", "run", "start"]
+CMD ["node", "node_modules/next/dist/bin/next", "start", "--port", "3000"]
