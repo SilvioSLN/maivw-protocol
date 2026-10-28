@@ -1,4 +1,5 @@
 "use client";
+import { runtimePublicValue } from "@/lib/runtime-public-config";
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
@@ -89,7 +90,7 @@ const ORIGIN_NETWORK_OPTIONS: OriginNetworkOption[] = [
 ];
 
 function resolveDefaultOriginNetwork(): OriginNetworkKey {
-  const envVal = (process.env.NEXT_PUBLIC_DEFAULT_ORIGIN_NETWORK || "base").toLowerCase().trim();
+  const envVal = (runtimePublicValue('NEXT_PUBLIC_DEFAULT_ORIGIN_NETWORK') || "base").toLowerCase().trim();
   if (envVal === "solana") return "solana";
   if (envVal === "arbitrum" || envVal === "421614") return "arbitrum";
   if (envVal === "polygon" || envVal === "80002") return "polygon";
@@ -238,7 +239,7 @@ export default function OnboardingPage() {
 
   const isCloudInstallation = Boolean(
     nodeMode?.isCloud ||
-    process.env.NEXT_PUBLIC_IS_CLOUD === "true" ||
+    runtimePublicValue('NEXT_PUBLIC_IS_CLOUD') === "true" ||
     (nodeMode === null &&
       typeof window !== "undefined" &&
       (window.location.hostname.includes("cloud.maivw.com") || window.location.hostname === "app.maivw.com"))
@@ -413,7 +414,7 @@ export default function OnboardingPage() {
         return "http://localhost:3003";
       }
     }
-    return (process.env.NEXT_PUBLIC_PAYMENT_API_URL || "http://localhost:3003").replace(/\/+$/, "");
+    return (runtimePublicValue('NEXT_PUBLIC_PAYMENT_API_URL') || "http://localhost:3003").replace(/\/+$/, "");
   };
 
   const getExplorerInfo = (chainId: number, txHash: string) => {
@@ -432,7 +433,7 @@ export default function OnboardingPage() {
     if (chainId === 31337) {
       return {
         name: "Anvil Local",
-        url: process.env.NEXT_PUBLIC_RPC_URL || "http://localhost:55443",
+        url: runtimePublicValue('NEXT_PUBLIC_RPC_URL') || "http://localhost:55443",
       };
     }
     return {

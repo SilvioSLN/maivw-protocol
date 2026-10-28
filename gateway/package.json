@@ -40,7 +40,8 @@
     "kms:address": "node --import tsx scripts/resolve-aws-kms-address.ts",
     "kms:solana-address": "node --import tsx scripts/resolve-aws-kms-solana-address.ts",
     "test:runtime-operations": "node --import tsx scripts/test-runtime-operations.ts",
-    "test": "node --import tsx --test test/*.test.ts"
+    "test": "node --import tsx --test test/*.test.ts",
+    "test:cloud": "node --import tsx --test test/cloud/*.test.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.0.1",

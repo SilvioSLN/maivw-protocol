@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { LedgerWriteGate } from '../src/multichain/LedgerWriteGate.js';
+import { LedgerWriteGate } from '../../src/multichain/LedgerWriteGate.js';
 
 const ROOT_DIR = resolve(process.cwd(), '../..');
 const LEDGER_MANIFEST_PATH = resolve(ROOT_DIR, 'releases/production/ledger-manifest.json');
@@ -73,7 +73,7 @@ test('AWS-049: Bloqueio fail-closed de writes em mainnets pendentes de auditoria
   // Tentativa de escrita em qualquer mainnet deve falhar categoricamente
   for (const m of mainnets) {
     assert.throws(
-      () => gate.attemptWrite(m.id, { action: 'registerMirror' }),
+      () => gate.assertCanWrite(m.id),
       (err: any) => {
         return err.code === 'MAINNET_WRITES_DISABLED' && err.status === 'DISABLED_PENDING_AUDIT_AND_FUNDING';
       },
@@ -82,8 +82,7 @@ test('AWS-049: Bloqueio fail-closed de writes em mainnets pendentes de auditoria
   }
 
   // Testnet canario permite escrita apenas em testes isolados
-  const canWriteSepolia = gate.attemptWrite('base-sepolia', { action: 'testMirror' });
-  assert.strictEqual(canWriteSepolia.success, true);
+  assert.doesNotThrow(() => gate.assertCanWrite('evm:84532'));
 });
 
 // -----------------------------------------------------------------------------

@@ -1028,8 +1028,8 @@ export class EvmLedgerAdapter implements LedgerAdapter {
    * Desativa um espelho on-chain via transação assinada pela carteira do Oráculo
    */
   async deactivateMirror(domain: string, targetChainId?: number): Promise<string> {
-    const effectiveNetworkId = targetChainId ? `evm:${targetChainId}` : this.networkId;
-    defaultLedgerWriteGate.assertCanWrite(effectiveNetworkId);
+    if (targetChainId !== undefined && targetChainId !== this.config.CHAIN_ID) throw new Error("Mirror deactivation target differs from adapter network");
+    defaultLedgerWriteGate.assertCanWrite(this.networkId);
     const address = this.getContractAddress();
     if (!address) {
       throw new Error("[LEDGER] Contract address not available for mirror deactivation");

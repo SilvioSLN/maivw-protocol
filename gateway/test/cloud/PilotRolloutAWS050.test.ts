@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const manifestPath = path.resolve(__dirname, '../../../releases/production/pilot-rollout-manifest.json');
+const manifestPath = path.resolve(__dirname, '../../../../releases/production/pilot-rollout-manifest.json');
 
 test('AWS-050: Manifesto declarativo de coortes e capacidade nominal de 1 a 100 clientes', () => {
     assert.strictEqual(fs.existsSync(manifestPath), true, 'Manifesto pilot-rollout-manifest.json deve existir');

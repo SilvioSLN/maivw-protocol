@@ -11,7 +11,7 @@ import { inboxRoutes } from '../src/routes/inbox.js';
 import { attachmentRoutes } from '../src/routes/attachments.js';
 import { S3CompatibleStorageAdapter } from '../src/storage/S3CompatibleStorageAdapter.js';
 import { FilesystemStorageAdapter } from '../src/storage/FilesystemStorageAdapter.js';
-import { inspectCertificate } from '../../../scripts/aws-cloud-bootstrap/check-p2p-certificate-expiry.mjs';
+import { inspectCertificate } from '../scripts/inspect-certificate.mjs';
 
 // Setup Mock Peer Keys
 const peerAPrivKey = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80' as Hex;

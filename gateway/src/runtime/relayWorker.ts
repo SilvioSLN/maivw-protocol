@@ -14,6 +14,8 @@ import { RelayFanoutService, type FanoutDestination, type PreparedRelayTransacti
 import { PrismaRelayJobRepository, MultichainRelayJobService } from "../multichain/MultichainRelayJob.js";
 import { createPrismaRelaySubmissionCoordinator, type RelayBroadcastAdapter } from "../multichain/RelaySubmission.js";
 import { PrismaRelayCircuitBreakerRepository, RelayCircuitBreakerService, RelayCircuitSubmissionGate } from "../multichain/RelayCircuitBreaker.js";
+import { defaultLedgerWriteGate } from "../multichain/LedgerWriteGate.js";
+import { policyBoundBroadcaster, policyBoundSigner } from "../multichain/PolicyBoundSubmission.js";
 import { OperationStateError } from "./durableOperations.js";
 
 function base58(bytes: Uint8Array): string {
@@ -69,8 +71,9 @@ export async function createRuntimeRelayWorker(config: EnvConfig, db: PrismaClie
     if (await c.getGenesisHash() !== network.genesisHash) throw new Error("Relay genesis mismatch");
     return { network, evm: undefined, solana: c };
   }
-  const broadcaster = (id: string): RelayBroadcastAdapter => ({
+  const broadcaster = (id: string): RelayBroadcastAdapter => policyBoundBroadcaster(id, {
     broadcast: async ({ signedPayload: payload }) => {
+      defaultLedgerWriteGate.assertCanWrite(id, "broadcast");
       const c = await client(id);
       const transactionId = c.network.family === "EVM"
         ? await c.evm.sendRawTransaction({ serializedTransaction: payload as Hex })
@@ -97,6 +100,7 @@ export async function createRuntimeRelayWorker(config: EnvConfig, db: PrismaClie
     },
   });
   const transactionSigner: PreparedRelayTransactionSigner = { sign: async input => {
+    defaultLedgerWriteGate.assertCanWrite(input.networkId, "sign");
     const c = await client(input.networkId);
     if (input.family === "EVM") {
       if (c.network.family !== "EVM") throw new Error("Signer family mismatch");
@@ -126,7 +130,12 @@ export async function createRuntimeRelayWorker(config: EnvConfig, db: PrismaClie
     const bytes = tx.serialize();
     return { signedPayload: toHex(bytes), transactionId: base58(tx.signature!) };
   } };
-  const fanout = new RelayFanoutService(jobs, submissions, attestor, adapters.transactionSigner ?? transactionSigner, gate);
+  const approvedSigner: PreparedRelayTransactionSigner = policyBoundSigner({ sign: async input => {
+    defaultLedgerWriteGate.assertCanWrite(input.networkId, "sign");
+    await client(input.networkId);
+    return (adapters.transactionSigner ?? transactionSigner).sign(input);
+  } });
+  const fanout = new RelayFanoutService(jobs, submissions, attestor, approvedSigner, gate);
   return { async run(jobId: string) {
     const job = await db.multichainRelayJob.findUnique({ where: { id: jobId } });
     if (!job || ["ORPHANED", "COMPENSATION_REQUIRED", "RECONCILE"].includes(job.status)) throw new Error("Relay job requires reconciliation");
@@ -160,6 +169,7 @@ export async function createRuntimeRelayWorker(config: EnvConfig, db: PrismaClie
     for (const row of await repository.listDestinations(job.id)) {
       const network = networks.get(row.destinationNetworkId);
       if (!network || network.registryId.toLowerCase() !== row.destinationRegistryId.toLowerCase()) throw new Error("Destination not configured");
+      defaultLedgerWriteGate.assertCanWrite(String(network.networkId), "fanout");
       const common = { destinationId: row.id, networkId: String(network.networkId), networkHash: hashNetworkId(network.networkId), adapter: broadcaster(network.networkId) };
       destinations.push(network.family === "EVM" ? { ...common, family: "EVM", mirrorRegistry: network.registryAddress }
         : { ...common, family: "SOLANA", programId: network.programId, relayer: await getSolSigner().getAddress() });

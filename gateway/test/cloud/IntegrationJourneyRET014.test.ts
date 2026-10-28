@@ -1,3 +1,4 @@
+// Controlled local suite: no remote checkout, blockchain broadcast, TLS handshake or recovery is certified by this result.
 import test from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
@@ -5,16 +6,16 @@ import Fastify from "fastify";
 import type { Hex, Address } from "viem";
 import { privateKeyToAccount, generatePrivateKey } from "viem/accounts";
 
-import { SignatureService } from "../src/services/SignatureService.js";
-import { TlsCertService } from "../src/services/TlsCertService.js";
-import { HeuristicSemanticJudge } from "../src/services/semantic/HeuristicSemanticJudge.js";
-import { S3CompatibleStorageAdapter } from "../src/storage/S3CompatibleStorageAdapter.js";
-import { createChallenge, validChallenge } from "../src/services/OnboardingChallenge.js";
+import { SignatureService } from "../../src/services/SignatureService.js";
+import { TlsCertService } from "../../src/services/TlsCertService.js";
+import { HeuristicSemanticJudge } from "../../src/services/semantic/HeuristicSemanticJudge.js";
+import { S3CompatibleStorageAdapter } from "../../src/storage/S3CompatibleStorageAdapter.js";
+import { createChallenge, validChallenge } from "../../src/services/OnboardingChallenge.js";
 
 // Payment components (supports monorepo cloud/payment and standalone protocol - R10)
-import { loadPaymentComponents } from "./helpers/PaymentTestDouble.js";
+import { loadCloudPaymentComponents } from "../helpers/CloudPaymentComponents.js";
 
-const { InMemoryPaymentRepository, OrderStore, signJwtToken } = await loadPaymentComponents();
+const { InMemoryPaymentRepository, OrderStore, signJwtToken } = await loadCloudPaymentComponents();
 
 // -----------------------------------------------------------------------------
 // Test Constants and Fixtures
@@ -219,7 +220,7 @@ test("RET-014: Jornada controlada completa com rastreamento estrito de IDs e sem
     };
   });
 
-  const { inboxRoutes } = await import("../src/routes/inbox.js");
+  const { inboxRoutes } = await import("../../src/routes/inbox.js");
   await inboxRoutes(appInbox, {
     ledger: mockLedger,
     signer: signerA,

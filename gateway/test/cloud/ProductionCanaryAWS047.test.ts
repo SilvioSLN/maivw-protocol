@@ -4,9 +4,9 @@ import crypto from "node:crypto";
 import { readFileSync, existsSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
-import { SignatureService } from "../src/services/SignatureService.js";
+import { SignatureService } from "../../src/services/SignatureService.js";
 
-const root = resolve(import.meta.dirname, "../../..");
+const root = resolve(import.meta.dirname, "../../../..");
 const prodManifestPath = join(root, "releases/production/release-manifest.json");
 const stagingManifestPath = join(root, "releases/staging/release-manifest.json");
 const changePlanPath = join(root, "releases/production/change-plan-manifest.json");

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const manifestPath = path.resolve(__dirname, '../../../releases/production/operations-manifest.json');
+const manifestPath = path.resolve(__dirname, '../../../../releases/production/operations-manifest.json');
 
 test('AWS-051: Integridade declarativa do manifesto de operacoes e catalogo de runbooks', () => {
     assert.strictEqual(fs.existsSync(manifestPath), true, 'Manifesto operations-manifest.json deve existir');

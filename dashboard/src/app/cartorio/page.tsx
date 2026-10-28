@@ -1,4 +1,5 @@
 "use client";
+import { runtimePublicValue } from "@/lib/runtime-public-config";
 
 import { useEffect, useState, useCallback } from "react";
 import { Navigation } from "@/components/Navigation";
@@ -48,8 +49,8 @@ export default function CartorioPage() {
   const [health, setHealth] = useState<ServiceHealth>({ gateway: "loading", blockchain: "loading" });
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
-  const gatewayUrl = (process.env.NEXT_PUBLIC_GATEWAY_URL || "http://localhost:51443").replace(/\/+$/, "");
-  const chainId = process.env.NEXT_PUBLIC_CHAIN_ID || "84532";
+  const gatewayUrl = (runtimePublicValue('NEXT_PUBLIC_GATEWAY_URL') || "http://localhost:51443").replace(/\/+$/, "");
+  const chainId = runtimePublicValue('NEXT_PUBLIC_CHAIN_ID') || "84532";
   const chainName = chainId === "84532" ? "Base Sepolia" : chainId === "31337" ? "Anvil Local" : `Chain ${chainId}`;
 
   // Carrega status básico da rede
@@ -359,7 +360,7 @@ export default function CartorioPage() {
 
             <div style={{ display: "flex", gap: "1rem", justifyContent: "center", flexWrap: "wrap" }}>
               <a
-                href={`${(process.env.NEXT_PUBLIC_WEBMAIVW_URL || "http://localhost:52443").replace(/\/+$/, "")}/admin`}
+                href={`${(runtimePublicValue('NEXT_PUBLIC_WEBMAIVW_URL') || "http://localhost:52443").replace(/\/+$/, "")}/admin`}
                 target="_blank"
                 rel="noreferrer"
                 className="btn btn-primary"
