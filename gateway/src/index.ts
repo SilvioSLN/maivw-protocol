@@ -135,7 +135,7 @@ const needsSigner = gatewayApiEnabled || p2pIngressEnabled || mailWorkerEnabled 
 const needsSmtp = gatewayApiEnabled || mailWorkerEnabled;
 const needsKms = gatewayApiEnabled || mailWorkerEnabled;
 const needsReputation = gatewayApiEnabled || p2pIngressEnabled || oracleWorkerEnabled;
-const needsOracle = gatewayApiEnabled || oracleWorkerEnabled || relayerWorkerEnabled;
+const needsOracle = gatewayApiEnabled || oracleWorkerEnabled;
 const needsRouting = gatewayApiEnabled || p2pIngressEnabled || mailWorkerEnabled || hasLoop(profile, "routing-health");
 const needsStealth = gatewayApiEnabled || p2pIngressEnabled || mailWorkerEnabled;
 
@@ -553,7 +553,7 @@ if (gatewayApiEnabled) await contactsRoutes(app, {
 
 if (relayerWorkerEnabled) await multiChainRoutes(app, {
   ledger,
-  oracle: required(oracle, "OracleService"),
+  oracle,
   prisma,
   internalServiceKey: config.INTERNAL_SERVICE_KEY,
   mirrorJobs: required(mirrorJobs, "MultichainMirrorJobCoordinator"),
