@@ -22,7 +22,7 @@ import {
 
 interface MultiChainRouteOptions {
   ledger: LedgerService;
-  oracle: OracleService;
+  oracle?: OracleService;
   prisma: PrismaClient;
   internalServiceKey?: string;
   multichainStatus?: MultichainStatusService;
@@ -35,7 +35,7 @@ interface MultiChainRouteOptions {
 }
 
 export async function multiChainRoutes(app: FastifyInstance, options: MultiChainRouteOptions) {
-  const { ledger, oracle, prisma } = options;
+  const { ledger, prisma } = options;
   const multichainStatus = options.multichainStatus
     ?? new MultichainStatusService(new OriginCatalogService(prisma), ledger);
   const jobQuery = options.jobQuery ?? new MultichainJobQuery(prisma);

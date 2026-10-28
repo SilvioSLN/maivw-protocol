@@ -176,7 +176,7 @@ export const EnvSchema = EnvObjectSchema.superRefine((config, context) => {
   if (config.RELAYER_QUEUE_CONSUMER_ENABLED && !config.MULTICHAIN_RELAY_ENABLED) add("RELAYER_QUEUE_CONSUMER_ENABLED", "relayer consumer requires multichain relay enabled");
   if (config.RELAYER_EVM_KMS_KEY_ID && config.RELAYER_EVM_PRIVATE_KEY) add("RELAYER_EVM_KMS_KEY_ID", "configure only one relayer signer source");
   if (config.IS_CLOUD && config.RELAYER_EVM_PRIVATE_KEY) add("RELAYER_EVM_PRIVATE_KEY", "Cloud requires an explicit non-exportable relayer signer");
-  const needsOracleSigner = ["all-in-one", "gateway-api", "oracle-worker", "relayer-worker"]
+  const needsOracleSigner = ["all-in-one", "gateway-api", "oracle-worker"]
     .includes(config.MAIVW_RUNTIME_ROLE);
   const needsSolanaRelayerSigner = config.SOLANA_ENABLED && config.MULTICHAIN_RELAY_ENABLED
     && ["all-in-one", "relayer-worker"].includes(config.MAIVW_RUNTIME_ROLE);
@@ -292,8 +292,8 @@ export function environmentSafetyErrors(config: EnvConfig): string[] {
   const localNetwork = isLocalDemoConfig(config);
   const requiresPrimaryEvm = config.MAIVW_RUNTIME_ROLE !== "solana-indexer";
 
-  if (config.MAIVW_RUNTIME_ROLE === "solana-indexer" && !config.SOLANA_ENABLED) {
-    errors.push("MAIVW_RUNTIME_ROLE=solana-indexer exige SOLANA_ENABLED=true");
+  if (config.MAIVW_RUNTIME_ROLE === "solana-indexer" && config.MAIVW_ENVIRONMENT === "production" && !config.SOLANA_ENABLED) {
+    errors.push("MAIVW_RUNTIME_ROLE=solana-indexer exige SOLANA_ENABLED=true em produção");
   }
   if (config.MAIVW_RUNTIME_ROLE === "relayer-worker" && !config.MULTICHAIN_RELAY_ENABLED) {
     errors.push("MAIVW_RUNTIME_ROLE=relayer-worker exige MULTICHAIN_RELAY_ENABLED=true");
@@ -331,7 +331,7 @@ export function environmentSafetyErrors(config: EnvConfig): string[] {
     errors.push("DEPLOYER_PRIVATE_KEY usa a conta pública #0 do Anvil");
   }
   for (const [name, value] of [
-    ["GATEWAY_PUBLIC_URL", config.GATEWAY_PUBLIC_URL],
+    ["GATEWAY_PUBLIC_URL", ["all-in-one", "gateway-api", "p2p-ingress"].includes(config.MAIVW_RUNTIME_ROLE) ? config.GATEWAY_PUBLIC_URL : undefined],
     ["MAIVW_ORACLE_URL", ["all-in-one", "gateway-api"].includes(config.MAIVW_RUNTIME_ROLE) ? config.MAIVW_ORACLE_URL : undefined],
     ["DEFAULT_P2P_ENDPOINT", config.DEFAULT_P2P_ENDPOINT],
     ["RPC_URL", requiresPrimaryEvm ? config.RPC_URL : undefined],
