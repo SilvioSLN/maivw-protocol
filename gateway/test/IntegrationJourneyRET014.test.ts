@@ -11,10 +11,10 @@ import { HeuristicSemanticJudge } from "../src/services/semantic/HeuristicSemant
 import { S3CompatibleStorageAdapter } from "../src/storage/S3CompatibleStorageAdapter.js";
 import { createChallenge, validChallenge } from "../src/services/OnboardingChallenge.js";
 
-// Payment imports from cloud/payment
-import { InMemoryPaymentRepository } from "../../../cloud/payment/src/services/PaymentRepository.js";
-import { OrderStore } from "../../../cloud/payment/src/services/OrderStore.js";
-import { signJwtToken } from "../../../cloud/payment/src/utils/auth.js";
+// Payment components (supports monorepo cloud/payment and standalone protocol - R10)
+import { loadPaymentComponents } from "./helpers/PaymentTestDouble.js";
+
+const { InMemoryPaymentRepository, OrderStore, signJwtToken } = await loadPaymentComponents();
 
 // -----------------------------------------------------------------------------
 // Test Constants and Fixtures
