@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { LedgerWriteGate } from '../src/multichain/LedgerWriteGate.js';
 
 const ROOT_DIR = resolve(process.cwd(), '../..');
 const LEDGER_MANIFEST_PATH = resolve(ROOT_DIR, 'releases/production/ledger-manifest.json');
@@ -66,30 +67,7 @@ test('AWS-049: Bloqueio fail-closed de writes em mainnets pendentes de auditoria
     assert.strictEqual(m.auditRequirements.externalSmartContractAudit || m.auditRequirements.externalProgramAudit, 'PENDING_EXECUTION');
   }
 
-  // Simulacao de guardiao de submissao on-chain fail-closed
-  class LedgerWriteGate {
-    private manifest: any;
-
-    constructor(manifest: any) {
-      this.manifest = manifest;
-    }
-
-    public attemptWrite(networkId: string, _payload: any) {
-      const net = this.manifest.networks.find((n: any) => n.id === networkId);
-      if (!net) {
-        throw new Error(`UNKNOWN_NETWORK: Rede ${networkId} nao cadastrada.`);
-      }
-      if (!net.writesEnabled || net.readOnly) {
-        const error: any = new Error(`MAINNET_WRITES_DISABLED: Operacoes de escrita na rede ${net.name} estao desabilitadas.`);
-        error.code = 'MAINNET_WRITES_DISABLED';
-        error.networkId = networkId;
-        error.status = net.status;
-        throw error;
-      }
-      return { success: true, txHash: '0x1234567890abcdef' };
-    }
-  }
-
+  // Guardiao de submissao on-chain fail-closed do runtime (R07)
   const gate = new LedgerWriteGate(ledgerManifest);
 
   // Tentativa de escrita em qualquer mainnet deve falhar categoricamente

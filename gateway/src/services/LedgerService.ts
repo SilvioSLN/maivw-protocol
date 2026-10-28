@@ -2,6 +2,7 @@ import { decodeEventLog, parseAbi, createPublicClient, createWalletClient, http,
 import { privateKeyToAccount } from "viem/accounts";
 import { foundry } from "viem/chains";
 import { MIRROR_REGISTRY_V2_ABI, REGISTRY_ABI, type EnvConfig } from "../config.js";
+import { defaultLedgerWriteGate } from "../multichain/LedgerWriteGate.js";
 import { hashNetworkId } from "../multichain/AttestationCodec.js";
 import {
   evmRegistryId,
@@ -60,7 +61,7 @@ export interface MultichainNetworkDescriptor {
 }
 
 /**
- * LedgerService — Serviço de leitura e interação com o Smart Contract MAIVWRegistry
+ * LedgerService - Serviço de leitura e interação com o Smart Contract MAIVWRegistry
  */
 export class EvmLedgerAdapter implements LedgerAdapter {
   readonly family = "EVM" as const;
@@ -726,6 +727,7 @@ export class EvmLedgerAdapter implements LedgerAdapter {
    * Executa recarga de caução (Top-Up) para reativar ou fortalecer provedor (Fase 13)
    */
   async topUpBalance(domain: string, amountEth: string = "1"): Promise<{ txHash: string; newBalance: bigint }> {
+    defaultLedgerWriteGate.assertCanWrite(this.networkId);
     const address = this.ensureContract();
     const account = privateKeyToAccount(this.config.DEPLOYER_PRIVATE_KEY as `0x${string}`);
     const walletClient = createWalletClient({
@@ -754,6 +756,7 @@ export class EvmLedgerAdapter implements LedgerAdapter {
    * Atualiza a URL do endpoint P2P do domínio no Smart Contract
    */
   async updateEndpoint(domain: string, newEndpoint: string): Promise<string> {
+    defaultLedgerWriteGate.assertCanWrite(this.networkId);
     const address = this.ensureContract();
     const account = privateKeyToAccount(this.config.DEPLOYER_PRIVATE_KEY as `0x${string}`);
     const walletClient = createWalletClient({
@@ -818,6 +821,7 @@ export class EvmLedgerAdapter implements LedgerAdapter {
       return "0xdemo_tls_fingerprint_updated";
     }
 
+    defaultLedgerWriteGate.assertCanWrite(this.networkId);
     const address = this.ensureContract();
     const account = privateKeyToAccount(this.config.DEPLOYER_PRIVATE_KEY as `0x${string}`);
     const walletClient = createWalletClient({
@@ -846,6 +850,7 @@ export class EvmLedgerAdapter implements LedgerAdapter {
     publicKey: Address,
     tier: number = 1
   ): Promise<string> {
+    defaultLedgerWriteGate.assertCanWrite(this.networkId);
     const address = this.ensureContract();
     const account = privateKeyToAccount(this.config.DEPLOYER_PRIVATE_KEY as `0x${string}`);
     const walletClient = createWalletClient({
@@ -1023,6 +1028,8 @@ export class EvmLedgerAdapter implements LedgerAdapter {
    * Desativa um espelho on-chain via transação assinada pela carteira do Oráculo
    */
   async deactivateMirror(domain: string, targetChainId?: number): Promise<string> {
+    const effectiveNetworkId = targetChainId ? `evm:${targetChainId}` : this.networkId;
+    defaultLedgerWriteGate.assertCanWrite(effectiveNetworkId);
     const address = this.getContractAddress();
     if (!address) {
       throw new Error("[LEDGER] Contract address not available for mirror deactivation");

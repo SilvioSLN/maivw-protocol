@@ -22,9 +22,10 @@ import {
   HeuristicSemanticJudge,
   RemoteAiSemanticJudge,
 } from "./semantic/index.js";
+import { defaultLedgerWriteGate } from "../multichain/LedgerWriteGate.js";
 
 /**
- * OracleService — O Juiz Automatizado e Nó Oráculo do MAIVW (Fases 5, 7 e 8)
+ * OracleService - O Juiz Automatizado e Nó Oráculo do MAIVW (Fases 5, 7 e 8)
  * 
  * Responsável por:
  * 1. Moderação semântica determinística (Juiz IA / Mock LLM)
@@ -166,6 +167,24 @@ export class OracleService {
   }
 
   /**
+   * Valida se operacoes de escrita no ledger estao liberadas (fail-closed)
+   */
+  private assertLedgerWritesAllowed(operation: string): void {
+    const chainIdMap: Record<number, string> = {
+      1: "ethereum",
+      137: "polygon",
+      8453: "base",
+      42161: "arbitrum",
+      84532: "base-sepolia",
+      80002: "amoy",
+      421614: "arbitrum-sepolia",
+      31337: "local",
+    };
+    const networkId = chainIdMap[this.config.CHAIN_ID] || (this.config.CHAIN_ID === 31337 ? "local" : "unknown");
+    defaultLedgerWriteGate.assertWriteAllowed(networkId, operation);
+  }
+
+  /**
    * Executa a punição on-chain (Slashing) confiscando o stake e distribuindo recompensa aos repórteres.
    */
   async executeSlashing(
@@ -188,6 +207,9 @@ export class OracleService {
     console.log(
       `[ORACLE] Executing slashing on-chain for domain "${domain}" with ${sortedReporters.length} sorted reporter(s)...`
     );
+
+    // Guardiao fail-closed de escrita em mainnets (R07)
+    this.assertLedgerWritesAllowed("slashDomain");
 
     const txHash = await this.walletClient.writeContract({
       account: this.account, address: contractAddress, abi: REGISTRY_ABI,
@@ -219,6 +241,9 @@ export class OracleService {
       `[ORACLE] Issuing warning ticket for provider "${providerDomain}" and subIdentity "${subIdentity}"...`
     );
 
+    // Guardiao fail-closed de escrita em mainnets (R07)
+    this.assertLedgerWritesAllowed("issueWarningTicket");
+
     try {
       const txHash = await this.walletClient.writeContract({
         account: this.account,
@@ -235,6 +260,7 @@ export class OracleService {
       if (receipt.status !== "success") throw new Error("Warning transaction reverted");
       return { txHash, success: true };
     } catch (err) {
+      if ((err as any)?.code === "MAINNET_WRITES_DISABLED") throw err;
       console.error("[ORACLE] Warning action not confirmed; reconciliation may be required");
       throw new Error("Warning action not confirmed");
     }
@@ -256,6 +282,9 @@ export class OracleService {
     console.log(
       `[ORACLE] Registering intent batch on-chain for ${senderDomain} (${messageClass}): ${merkleRoot}`
     );
+
+    // Guardiao fail-closed de escrita em mainnets (R07)
+    this.assertLedgerWritesAllowed("registerIntentBatch");
 
     return await this.walletClient.writeContract({
       account: this.account,
@@ -598,6 +627,8 @@ export class OracleService {
     console.log(
       `[ORACLE] Registering ${domain} on-chain at ${contractAddress} (Chain: ${targetChainId || this.config.CHAIN_ID}) with fee ${standardFeeWei} wei...`
     );
+
+    defaultLedgerWriteGate.assertCanWrite(`evm:${targetChainId || this.config.CHAIN_ID}`);
 
     return await client.writeContract({
       account: this.account,
