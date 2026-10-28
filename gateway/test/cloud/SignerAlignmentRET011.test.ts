@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { parseAbi, encodeFunctionData, decodeFunctionData, isAddress } from "viem";
-import { assertNoPrivateMaterial } from "../src/signer/index.js";
+import { assertNoPrivateMaterial } from "../../src/signer/index.js";
 
 const ABI = parseAbi([
   "function owner() view returns (address)",

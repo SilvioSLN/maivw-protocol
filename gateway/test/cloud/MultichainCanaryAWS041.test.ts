@@ -10,20 +10,20 @@ import {
   evmRegistryId,
   solanaRegistryId,
   type CanonicalDomainState,
-} from "../src/multichain/NetworkModel.js";
+} from "../../src/multichain/NetworkModel.js";
 import {
   OriginCatalogError,
   OriginCatalogService,
   catalogDomainHash,
   verifyOriginAuditChain,
   type ActivateOriginInput,
-} from "../src/multichain/OriginCatalog.js";
+} from "../../src/multichain/OriginCatalog.js";
 import {
   RelayFanoutService,
   type FanoutDestination,
   type PreparedRelayTransactionSigner,
-} from "../src/multichain/RelayFanout.js";
-import { createAttestationSigner } from "../src/multichain/AttestationSigner.js";
+} from "../../src/multichain/RelayFanout.js";
+import { createAttestationSigner } from "../../src/multichain/AttestationSigner.js";
 import {
   RelaySubmissionCoordinator,
   RelaySubmissionError,
@@ -31,7 +31,7 @@ import {
   type RelaySubmissionRow,
   type RelaySubmissionStore,
   type SubmissionAttemptInput,
-} from "../src/multichain/RelaySubmission.js";
+} from "../../src/multichain/RelaySubmission.js";
 import {
   MultichainRelayJobService,
   type RelayDestinationRow,
@@ -39,29 +39,29 @@ import {
   type RelayJobRow,
   type RelayStatus,
   type RelayTransitionInput,
-} from "../src/multichain/MultichainRelayJob.js";
+} from "../../src/multichain/MultichainRelayJob.js";
 import {
   RelayReorgError,
   RelayReorgService,
   type RelayCompensationRow,
   type RelayReorgRepository,
   type RelayReorgRow,
-} from "../src/multichain/RelayReorg.js";
+} from "../../src/multichain/RelayReorg.js";
 import {
   MultichainReconciliationService,
   type ReconciliationFindingRow,
   type ReconciliationRepository,
   type ReconciliationRunRow,
-} from "../src/multichain/MultichainReconciliation.js";
+} from "../../src/multichain/MultichainReconciliation.js";
 import {
   RelayCircuitBreakerService,
   type RelayCircuitBreakerRow,
   type RelayCircuitEventRow,
   type RelayCircuitBreakerRepository,
-} from "../src/multichain/RelayCircuitBreaker.js";
-import { MultichainAlertService } from "../src/multichain/MultichainAlerts.js";
+} from "../../src/multichain/RelayCircuitBreaker.js";
+import { MultichainAlertService } from "../../src/multichain/MultichainAlerts.js";
 
-import { hashNetworkId } from "../src/multichain/AttestationCodec.js";
+import { hashNetworkId } from "../../src/multichain/AttestationCodec.js";
 
 // =============================================================================
 // Constantes e Utilitários de Teste Multichain

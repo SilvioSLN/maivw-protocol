@@ -1,4 +1,5 @@
 "use client";
+import { runtimePublicValue } from "@/lib/runtime-public-config";
 
 import React, { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
@@ -753,7 +754,7 @@ function AdminConsole() {
     typeof window !== "undefined" &&
     (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
       ? "http://localhost:3003"
-      : process.env.NEXT_PUBLIC_PAYMENT_API_URL || "http://localhost:3003";
+      : runtimePublicValue('NEXT_PUBLIC_PAYMENT_API_URL') || "http://localhost:3003";
 
   const handleOpenMirrorPayment = (net: MultiChainNetwork) => {
     setPendingMirrorTargetNet(net);
@@ -2824,7 +2825,7 @@ print(res.json())`}
                               <a
                                 href={
                                   currentDomain.explorerUrl ||
-                                  `https://sepolia.basescan.org/address/${process.env.NEXT_PUBLIC_REGISTRY_CONTRACT_ADDRESS || "0x0000000000000000000000000000000000000000"}`
+                                  `https://sepolia.basescan.org/address/${runtimePublicValue('NEXT_PUBLIC_REGISTRY_CONTRACT_ADDRESS') || "0x0000000000000000000000000000000000000000"}`
                                 }
                                 target="_blank"
                                 rel="noreferrer"

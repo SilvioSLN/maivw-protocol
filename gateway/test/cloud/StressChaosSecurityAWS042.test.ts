@@ -1,3 +1,4 @@
+// Controlled local suite: no remote checkout, blockchain broadcast, TLS handshake or recovery is certified by this result.
 import test from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
@@ -6,9 +7,9 @@ import Fastify from "fastify";
 import type { Hex, Address } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 
-import { SignatureService, type EnvelopeV2Payload } from "../src/services/SignatureService.js";
-import { TlsCertService } from "../src/services/TlsCertService.js";
-import { S3CompatibleStorageAdapter } from "../src/storage/S3CompatibleStorageAdapter.js";
+import { SignatureService, type EnvelopeV2Payload } from "../../src/services/SignatureService.js";
+import { TlsCertService } from "../../src/services/TlsCertService.js";
+import { S3CompatibleStorageAdapter } from "../../src/storage/S3CompatibleStorageAdapter.js";
 import {
   RelayCircuitBreakerError,
   RelayCircuitBreakerService,
@@ -17,9 +18,9 @@ import {
   type RelayCircuitEventRow,
   type RelayCircuitScope,
   type RelayCircuitSignal,
-} from "../src/multichain/RelayCircuitBreaker.js";
-import { InMemoryJobQueue } from "../src/queue/InMemoryJobQueue.js";
-import type { JobRecord, QueueMetrics } from "../src/queue/types.js";
+} from "../../src/multichain/RelayCircuitBreaker.js";
+import { InMemoryJobQueue } from "../../src/queue/InMemoryJobQueue.js";
+import type { JobRecord, QueueMetrics } from "../../src/queue/types.js";
 
 // =============================================================================
 // Helper: Memória em Repo para Circuit Breaker
@@ -130,7 +131,7 @@ test("AWS-042: Suíte Integrada de Carga, Caos, Recuperação e Segurança", asy
       timestamp: new Date().toISOString(),
       metrics,
     });
-    console.log(`[AUDIT AWS-042] ${stage.padEnd(45)} ->`, JSON.stringify(metrics));
+    console.log(`[CONTROLLED FIXTURE AWS-042] ${stage.padEnd(45)} ->`, JSON.stringify(metrics));
   };
 
   // ===========================================================================
@@ -574,55 +575,55 @@ test("AWS-042: Suíte Integrada de Carga, Caos, Recuperação e Segurança", asy
   const disasterRecoveryMetrics = [
     {
       resource: "RDS PostgreSQL Snapshot Restore",
-      measuredRtoSeconds: 429.15,
+      fixtureRtoSeconds: 429.15,
       contractRtoLimitSeconds: 1800,
-      measuredRpoSeconds: 7208,
+      fixtureRpoSeconds: 7208,
       contractRpoLimitSeconds: 86400,
       status: "APPROVED",
     },
     {
       resource: "S3 Versioned Object Recovery",
-      measuredRtoSeconds: 2.84,
+      fixtureRtoSeconds: 2.84,
       contractRtoLimitSeconds: 60,
-      measuredRpoSeconds: 0,
+      fixtureRpoSeconds: 0,
       contractRpoLimitSeconds: 0,
       status: "APPROVED",
     },
     {
       resource: "SSM Secret Rotation (Internal Key)",
-      measuredRtoSeconds: 7.13,
+      fixtureRtoSeconds: 7.13,
       contractRtoLimitSeconds: 300,
-      measuredRpoSeconds: 0,
+      fixtureRpoSeconds: 0,
       contractRpoLimitSeconds: 0,
       status: "APPROVED",
     },
     {
       resource: "P2P TLS Certificate Rollout and Rollback",
-      measuredRtoSeconds: 163.57,
+      fixtureRtoSeconds: 163.57,
       contractRtoLimitSeconds: 300,
-      measuredRpoSeconds: 0,
+      fixtureRpoSeconds: 0,
       contractRpoLimitSeconds: 0,
       status: "APPROVED",
     },
     {
       resource: "EC2 Graviton Host Stop and Start",
-      measuredRtoSeconds: 206.89,
+      fixtureRtoSeconds: 206.89,
       contractRtoLimitSeconds: 600,
-      measuredRpoSeconds: 0,
+      fixtureRpoSeconds: 0,
       contractRpoLimitSeconds: 0,
       status: "APPROVED",
     },
   ];
 
   for (const m of disasterRecoveryMetrics) {
-    assert.ok(m.measuredRtoSeconds <= m.contractRtoLimitSeconds, `${m.resource}: RTO deve estar abaixo da meta contratual`);
-    assert.ok(m.measuredRpoSeconds <= m.contractRpoLimitSeconds, `${m.resource}: RPO deve estar abaixo da meta contratual`);
+    assert.ok(m.fixtureRtoSeconds <= m.contractRtoLimitSeconds, `${m.resource}: RTO deve estar abaixo da meta contratual`);
+    assert.ok(m.fixtureRpoSeconds <= m.contractRpoLimitSeconds, `${m.resource}: RPO deve estar abaixo da meta contratual`);
   }
 
   recordAudit("DISASTER_RECOVERY_RTO_RPO_AUDIT", {
     totalScenariosAudited: disasterRecoveryMetrics.length,
     scenarios: disasterRecoveryMetrics,
-    complianceStatus: "100%_APPROVED",
+    complianceStatus: "CONTROLLED_EXPECTATIONS_ONLY",
   });
 
   // 3.2 Isolamento Estrito de Tenants e Proteção contra "Noisy Neighbor"

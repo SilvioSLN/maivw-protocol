@@ -1,3 +1,5 @@
+import { serializeRuntimePublicConfig } from "@/lib/runtime-public-config";
+export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
@@ -15,6 +17,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="pt-BR" className="dark">
+      <head><script id="maivw-public-config" dangerouslySetInnerHTML={{ __html: serializeRuntimePublicConfig() }} /></head>
       <body className="antialiased bg-slate-50 text-slate-900 dark:bg-[#090d16] dark:text-[#f8fafc] transition-colors duration-200">
         <ThemeProvider>
           <AuthProvider>

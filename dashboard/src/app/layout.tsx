@@ -1,3 +1,5 @@
+import { serializeRuntimePublicConfig } from "@/lib/runtime-public-config";
+export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import "./globals.css";
 
@@ -14,6 +16,7 @@ export default function RootLayout({
   return (
     <html lang="pt-BR">
       <head>
+        <script id="maivw-public-config" dangerouslySetInnerHTML={{ __html: serializeRuntimePublicConfig() }} />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link

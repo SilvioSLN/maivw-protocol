@@ -7,10 +7,10 @@ import Fastify from 'fastify';
 import type { Hex, Address } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 
-import { TlsCertService } from '../src/services/TlsCertService.js';
-import { SignatureService } from '../src/services/SignatureService.js';
-import { inboxRoutes } from '../src/routes/inbox.js';
-import { inspectCertificate } from '../../../scripts/aws-cloud-bootstrap/check-p2p-certificate-expiry.mjs';
+import { TlsCertService } from '../../src/services/TlsCertService.js';
+import { SignatureService } from '../../src/services/SignatureService.js';
+import { inboxRoutes } from '../../src/routes/inbox.js';
+import { inspectCertificate } from '../../../../scripts/aws-cloud-bootstrap/check-p2p-certificate-expiry.mjs';
 
 const ROOT_DIR = resolve(process.cwd(), '../..');
 const EDGE_MANIFEST_PATH = resolve(ROOT_DIR, 'infra/cloudflare/cloudflare-edge-manifest.json');

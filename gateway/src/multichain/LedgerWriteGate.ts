@@ -7,13 +7,13 @@
  */
 
 import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { DEFAULT_LEDGER_POLICY } from "./DefaultLedgerPolicy.js";
 
 export interface LedgerNetworkConfig {
   id: string;
   name: string;
-  category: "mainnet" | "testnet_canary" | "local_test";
+  chainId?: number;
+  genesisHash?: string;
   writesEnabled: boolean;
   readOnly: boolean;
   status: string;
@@ -21,7 +21,7 @@ export interface LedgerNetworkConfig {
 
 export interface LedgerManifestConfig {
   version: string;
-  enforceStrictSeparation: boolean;
+  enforceStrictSeparation?: boolean;
   networks: LedgerNetworkConfig[];
 }
 
@@ -55,109 +55,29 @@ export class LedgerWriteGate {
   private manifest: LedgerManifestConfig;
 
   constructor(manifestOrPath?: LedgerManifestConfig | string) {
-    if (typeof manifestOrPath === "object" && manifestOrPath !== null) {
-      this.manifest = manifestOrPath;
-    } else if (typeof manifestOrPath === "string") {
-      this.manifest = this.loadManifestFromPath(manifestOrPath);
-    } else {
-      this.manifest = this.discoverManifest();
-    }
-  }
-
-  private loadManifestFromPath(filePath: string): LedgerManifestConfig {
-    try {
-      const raw = fs.readFileSync(filePath, "utf-8");
-      return JSON.parse(raw);
-    } catch {
-      return this.getDefaultFallbackManifest();
-    }
-  }
-
-  private discoverManifest(): LedgerManifestConfig {
-    try {
-      const __filename = fileURLToPath(import.meta.url);
-      const __dirname = path.dirname(__filename);
-      // Procurar em releases/production/ledger-manifest.json a partir de protocol/gateway/src/multichain
-      const candidates = [
-        path.resolve(__dirname, "../../../../releases/production/ledger-manifest.json"),
-        path.resolve(__dirname, "../../../releases/production/ledger-manifest.json"),
-        path.resolve(process.cwd(), "releases/production/ledger-manifest.json"),
-      ];
-
-      for (const candidate of candidates) {
-        if (fs.existsSync(candidate)) {
-          const raw = fs.readFileSync(candidate, "utf-8");
-          return JSON.parse(raw);
-        }
+    const configured = manifestOrPath ?? process.env.MAIVW_LEDGER_POLICY_FILE;
+    const manifest = typeof configured === "string"
+      ? JSON.parse(fs.readFileSync(configured, "utf8"))
+      : configured ?? (process.env.MAIVW_LEDGER_POLICY_JSON ? JSON.parse(process.env.MAIVW_LEDGER_POLICY_JSON) : DEFAULT_LEDGER_POLICY);
+    if (!manifest || !Array.isArray(manifest.networks) || !manifest.networks.length) throw new Error("Invalid ledger write policy");
+    const identities = new Set<string>();
+    for (const n of manifest.networks) {
+      if (typeof n.id !== "string" || typeof n.name !== "string" || typeof n.writesEnabled !== "boolean" || typeof n.readOnly !== "boolean") throw new Error("Invalid ledger network policy");
+      for (const identity of [n.id, n.chainId ? `evm:${n.chainId}` : null, n.genesisHash ? `solana:${n.genesisHash}` : null].filter(Boolean)) {
+        if (identities.has(identity)) throw new Error("Duplicate ledger policy identity");
+        identities.add(identity);
       }
-    } catch {
-      // Fallback para protecao estrita
     }
-
-    return this.getDefaultFallbackManifest();
-  }
-
-  private getDefaultFallbackManifest(): LedgerManifestConfig {
-    return {
-      version: "1.0.0",
-      enforceStrictSeparation: true,
-      networks: [
-        { id: "polygon", name: "Polygon PoS Mainnet", category: "mainnet", writesEnabled: false, readOnly: true, status: "DISABLED_PENDING_AUDIT_AND_FUNDING" },
-        { id: "solana-mainnet", name: "Solana Mainnet-Beta", category: "mainnet", writesEnabled: false, readOnly: true, status: "DISABLED_PENDING_AUDIT_AND_FUNDING" },
-        { id: "base", name: "Base Mainnet", category: "mainnet", writesEnabled: false, readOnly: true, status: "DISABLED_PENDING_AUDIT_AND_FUNDING" },
-        { id: "ethereum", name: "Ethereum Mainnet", category: "mainnet", writesEnabled: false, readOnly: true, status: "DISABLED_PENDING_AUDIT_AND_FUNDING" },
-        { id: "base-sepolia", name: "Base Sepolia Testnet", category: "testnet_canary", writesEnabled: true, readOnly: false, status: "ACTIVE_CANARY" },
-        { id: "amoy", name: "Polygon Amoy Testnet", category: "testnet_canary", writesEnabled: true, readOnly: false, status: "ACTIVE_CANARY" },
-        { id: "solana-devnet", name: "Solana Devnet", category: "testnet_canary", writesEnabled: true, readOnly: false, status: "ACTIVE_CANARY" },
-        { id: "local", name: "Foundry Local", category: "local_test", writesEnabled: true, readOnly: false, status: "ACTIVE_LOCAL" },
-      ],
-    };
+    this.manifest = structuredClone(manifest);
   }
 
   public getNetwork(networkId: string): LedgerNetworkConfig | undefined {
-    const raw = String(networkId).trim().toLowerCase();
-    const stripped = raw.replace(/^evm:/, "");
-
-    // 1. Direct match on id
-    let net = this.manifest.networks.find((n: any) => n.id.toLowerCase() === raw || n.id.toLowerCase() === stripped);
-    if (net) return net;
-
-    // 2. Chain ID match if numeric
-    const numericChainId = Number(stripped);
-    if (!Number.isNaN(numericChainId) && numericChainId > 0) {
-      net = this.manifest.networks.find((n: any) => n.chainId === numericChainId);
-      if (net) return net;
-    }
-
-    // 3. Known aliases
-    const aliases: Record<string, string> = {
-      base: "base-mainnet",
-      polygon: "polygon-mainnet",
-      arbitrum: "arbitrum-one",
-      "arbitrum-mainnet": "arbitrum-one",
-      ethereum: "ethereum-mainnet",
-      solana: "solana-mainnet",
-      amoy: "polygon-amoy",
-    };
-    if (aliases[raw] || aliases[stripped]) {
-      const aliasTarget = aliases[raw] || aliases[stripped];
-      net = this.manifest.networks.find((n: any) => n.id.toLowerCase() === aliasTarget);
-      if (net) return net;
-    }
-
-    // 4. Local test networks (Anvil, Foundry, Hardhat)
-    if (raw === "local" || stripped === "local" || stripped === "31337" || stripped === "1337" || raw === "anvil" || raw === "hardhat") {
-      return {
-        id: "local",
-        name: "Local Testnet (Anvil)",
-        category: "local_test",
-        writesEnabled: true,
-        readOnly: false,
-        status: "ACTIVE_LOCAL",
-      };
-    }
-
-    return undefined;
+    const raw = String(networkId).trim();
+    // Genesis hashes are case-sensitive. Never lowercase Solana identities.
+    if (raw.startsWith("solana:")) return this.manifest.networks.find(n => `solana:${n.genesisHash}` === raw);
+    const aliases: Record<string, string> = { base: "base-mainnet", polygon: "polygon-mainnet", arbitrum: "arbitrum-one", "arbitrum-mainnet": "arbitrum-one", ethereum: "ethereum-mainnet", solana: "solana-mainnet", amoy: "polygon-amoy", anvil: "local", hardhat: "local" };
+    const normalized = aliases[raw.toLowerCase()] ?? raw.toLowerCase();
+    return this.manifest.networks.find(n => n.id === normalized || (n.chainId !== undefined && (`evm:${n.chainId}` === normalized || String(n.chainId) === normalized)));
   }
 
   public isWriteAllowed(networkId: string): boolean {
@@ -180,13 +100,7 @@ export class LedgerWriteGate {
     this.assertWriteAllowed(networkId, operation);
   }
 
-  public attemptWrite(networkId: string, _payload?: any): { success: boolean; txHash: string } {
-    this.assertWriteAllowed(networkId);
-    return {
-      success: true,
-      txHash: "0x" + "1".repeat(64),
-    };
-  }
+
 }
 
 export const defaultLedgerWriteGate = new LedgerWriteGate();

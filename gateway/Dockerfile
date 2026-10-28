@@ -12,6 +12,7 @@ COPY prisma/ prisma/
 RUN npx prisma generate
 COPY src/ src/
 COPY scripts/with-database-url.mjs scripts/with-database-url.mjs
+COPY scripts/migrate-runtime-database.mjs scripts/migrate-runtime-database.mjs
 
 # Prepare runtime directories and set ownership for non-root node user
 RUN mkdir -p /app/data/attachments /app/data/certs && \

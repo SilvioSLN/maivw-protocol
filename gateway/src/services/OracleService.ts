@@ -170,18 +170,7 @@ export class OracleService {
    * Valida se operacoes de escrita no ledger estao liberadas (fail-closed)
    */
   private assertLedgerWritesAllowed(operation: string): void {
-    const chainIdMap: Record<number, string> = {
-      1: "ethereum",
-      137: "polygon",
-      8453: "base",
-      42161: "arbitrum",
-      84532: "base-sepolia",
-      80002: "amoy",
-      421614: "arbitrum-sepolia",
-      31337: "local",
-    };
-    const networkId = chainIdMap[this.config.CHAIN_ID] || (this.config.CHAIN_ID === 31337 ? "local" : "unknown");
-    defaultLedgerWriteGate.assertWriteAllowed(networkId, operation);
+    defaultLedgerWriteGate.assertWriteAllowed(`evm:${this.config.CHAIN_ID}`, operation);
   }
 
   /**
@@ -593,11 +582,14 @@ export class OracleService {
     adminKey?: Address,
     deadline?: bigint
   ): Promise<Hash> {
+    let effectiveChainId = this.config.CHAIN_ID;
+    if (targetChainId !== undefined && ![this.config.CHAIN_ID, 421614, 80002].includes(targetChainId)) throw new Error("Registration target is not configured");
     let contractAddress = this.ledgerService.getContractAddress();
     let client: any = this.walletClient;
     let standardFeeWei = 100000000000000n; // 0.0001 ETH padrão
 
     if (targetChainId === 421614 && this.config.ARBITRUM_REGISTRY_ADDRESS) {
+      effectiveChainId = 421614;
       contractAddress = this.config.ARBITRUM_REGISTRY_ADDRESS as Address;
       standardFeeWei = 100000000000000n; // 0.0001 ETH
       client = createWalletClient({
@@ -606,6 +598,7 @@ export class OracleService {
         account: this.account,
       });
     } else if (targetChainId === 80002 && this.config.POLYGON_REGISTRY_ADDRESS) {
+      effectiveChainId = 80002;
       contractAddress = this.config.POLYGON_REGISTRY_ADDRESS as Address;
       standardFeeWei = 100000000000000000n; // 0.1 POL no Amoy
       client = createWalletClient({
@@ -628,7 +621,8 @@ export class OracleService {
       `[ORACLE] Registering ${domain} on-chain at ${contractAddress} (Chain: ${targetChainId || this.config.CHAIN_ID}) with fee ${standardFeeWei} wei...`
     );
 
-    defaultLedgerWriteGate.assertCanWrite(`evm:${targetChainId || this.config.CHAIN_ID}`);
+    if (targetChainId !== undefined && targetChainId !== effectiveChainId) throw new Error("Registration target has no configured registry");
+    defaultLedgerWriteGate.assertCanWrite(`evm:${effectiveChainId}`);
 
     return await client.writeContract({
       account: this.account,

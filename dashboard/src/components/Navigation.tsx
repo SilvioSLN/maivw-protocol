@@ -1,4 +1,5 @@
 "use client";
+import { runtimePublicValue } from "@/lib/runtime-public-config";
 
 import React from "react";
 import Link from "next/link";
@@ -105,7 +106,7 @@ export function Navigation({ contractAddress }: NavigationProps) {
 
       <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
         <a
-          href={`${(process.env.NEXT_PUBLIC_WEBMAIVW_URL || "http://localhost:52443").replace(/\/+$/, "")}/admin`}
+          href={`${(runtimePublicValue('NEXT_PUBLIC_WEBMAIVW_URL') || "http://localhost:52443").replace(/\/+$/, "")}/admin`}
           target="_blank"
           rel="noreferrer"
           style={{
