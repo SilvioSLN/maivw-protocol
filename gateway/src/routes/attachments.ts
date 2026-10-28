@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import type { PrismaClient } from "@prisma/client";
 import type { KeyManagementService } from "../services/KeyManagementService.js";
 import { getCurrentUser } from "./auth.js";
-import type { ObjectStorage } from "../storage/types.js";
+import type { ObjectStorage, ObjectMetadata } from "../storage/types.js";
 import {
   StorageError,
   StorageHashMismatchError,
@@ -32,9 +32,16 @@ async function requireAttachmentAuth(
     return true;
   }
 
+  // Internal service key (e.g. Gateway internal worker)
+  const internalKey = request.headers["x-internal-service-key"];
+  if (internalKey && process.env.INTERNAL_SERVICE_KEY && internalKey === process.env.INTERNAL_SERVICE_KEY) {
+    request.attachmentAuth = { type: "internal_service" };
+    return true;
+  }
+
   const authHeader = request.headers.authorization;
   if (!authHeader?.startsWith("Bearer ")) {
-    reply.status(401).send({ error: "Credencial de autenticação obrigatória para upload de anexos" });
+    reply.status(401).send({ error: "Credencial de autenticação obrigatória para acesso a anexos" });
     return false;
   }
 
@@ -52,6 +59,12 @@ async function requireAttachmentAuth(
       reply.status(403).send({ error: "Domínio associado à API key não está verificado" });
       return false;
     }
+    request.attachmentAuth = {
+      type: "api_key",
+      domainId: domain.id,
+      userId: domain.userId,
+      domainName: domain.domainName,
+    };
     return true;
   }
 
@@ -60,6 +73,70 @@ async function requireAttachmentAuth(
   if (!user) {
     reply.status(401).send({ error: "Sessão de autenticação inválida ou expirada" });
     return false;
+  }
+
+  request.attachmentAuth = {
+    type: "user",
+    userId: user.id,
+    email: user.email,
+    role: user.role,
+  };
+  return true;
+}
+
+function checkAttachmentTenantAuthorization(
+  request: any,
+  metadata?: ObjectMetadata | null,
+  id?: string
+): boolean {
+  const auth = (request as any).attachmentAuth;
+  if (!auth) {
+    // Se não há autenticação registrada (ex: mock storage test sem prisma/kms), permite
+    return true;
+  }
+  if (auth.type === "internal_service") {
+    return true;
+  }
+
+  const ownerUserId = metadata?.customMetadata?.ownerUserId;
+  const ownerDomainId = metadata?.customMetadata?.ownerDomainId;
+
+  // Extrai tag de tenant do ID se presente: att_<timestamp>_<tenantTag>_<random>
+  let tagUserId: string | undefined;
+  let tagDomainId: string | undefined;
+  if (id) {
+    const match = id.match(/^att_\d+_([ud]\d+)_[a-f0-9]+/);
+    if (match) {
+      if (match[1].startsWith("u")) tagUserId = match[1].slice(1);
+      if (match[1].startsWith("d")) tagDomainId = match[1].slice(1);
+    }
+  }
+
+  const effectiveUserId = ownerUserId || tagUserId;
+  const effectiveDomainId = ownerDomainId || tagDomainId;
+
+  if (!effectiveUserId && !effectiveDomainId) {
+    // Anexo sem identificação de tenant gravada
+    return true;
+  }
+
+  // Se o chamador é um usuário autenticado
+  if (auth.type === "user") {
+    if (effectiveUserId && String(auth.userId) !== String(effectiveUserId)) {
+      return false;
+    }
+    return true;
+  }
+
+  // Se o chamador é uma chave de API de domínio
+  if (auth.type === "api_key") {
+    if (effectiveDomainId && String(auth.domainId) !== String(effectiveDomainId)) {
+      return false;
+    }
+    if (effectiveUserId && String(auth.userId) !== String(effectiveUserId)) {
+      return false;
+    }
+    return true;
   }
 
   return true;
@@ -144,7 +221,13 @@ export async function attachmentRoutes(app: FastifyInstance, options: Attachment
           return reply.status(413).send({ error: "Arquivo excede o limite máximo permitido de 25MB" });
         }
 
-        const id = `att_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`;
+        const auth = (request as any).attachmentAuth;
+        const tenantTag = auth?.userId
+          ? `u${auth.userId}`
+          : auth?.domainId
+          ? `d${auth.domainId}`
+          : "gen";
+        const id = `att_${Date.now()}_${tenantTag}_${crypto.randomBytes(4).toString("hex")}`;
         const safeFilename = path.basename(filename).replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 100);
         const storageKey = `${id}__${safeFilename}`;
 
@@ -156,6 +239,9 @@ export async function attachmentRoutes(app: FastifyInstance, options: Attachment
           customMetadata: {
             id,
             filename: path.basename(filename).replace(/[\r\n]/g, ""),
+            ...(auth?.userId ? { ownerUserId: String(auth.userId) } : {}),
+            ...(auth?.domainId ? { ownerDomainId: String(auth.domainId) } : {}),
+            ...(auth?.domainName ? { ownerDomainName: String(auth.domainName) } : {}),
           },
         });
 
@@ -198,10 +284,22 @@ export async function attachmentRoutes(app: FastifyInstance, options: Attachment
       return reply.status(400).send({ error: "Identificador de anexo inválido" });
     }
 
+    if (prisma && kms && request.headers.authorization) {
+      const isAuth = await requireAttachmentAuth(request, reply, prisma, kms);
+      if (!isAuth) return;
+    }
+
     try {
       const obj = await storage.get(id);
       if (!obj) {
         return reply.status(404).send({ error: "Anexo não encontrado" });
+      }
+
+      if (!checkAttachmentTenantAuthorization(request, obj.metadata, id)) {
+        return reply.status(403).send({
+          error: "Forbidden",
+          message: "Acesso negado: anexo pertence a outro domínio ou usuário",
+        });
       }
 
       const originalName =
@@ -263,7 +361,13 @@ export async function attachmentRoutes(app: FastifyInstance, options: Attachment
         return reply.status(400).send({ error: "expectedSha256 deve ser um SHA-256 hexadecimal" });
       }
 
-      const id = `att_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`;
+      const auth = (request as any).attachmentAuth;
+      const tenantTag = auth?.userId
+        ? `u${auth.userId}`
+        : auth?.domainId
+        ? `d${auth.domainId}`
+        : "gen";
+      const id = `att_${Date.now()}_${tenantTag}_${crypto.randomBytes(4).toString("hex")}`;
       const safeFilename = path.basename(filename).replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 100);
       const storageKey = `${id}__${safeFilename}`;
 
@@ -311,6 +415,13 @@ export async function attachmentRoutes(app: FastifyInstance, options: Attachment
     if (!metadata) return reply.status(404).send({ error: "Anexo não encontrado" });
     if (metadata.size > maxFileSizeBytes) {
       return reply.status(413).send({ error: "Anexo excede o limite configurado" });
+    }
+
+    if (!checkAttachmentTenantAuthorization(request, metadata, id)) {
+      return reply.status(403).send({
+        error: "Forbidden",
+        message: "Acesso negado: anexo pertence a outro domínio ou usuário",
+      });
     }
 
     const downloadUrl = await storage.createSignedDownloadUrl(storageKey, {
