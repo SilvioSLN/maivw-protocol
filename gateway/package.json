@@ -48,7 +48,7 @@
     "@google-cloud/kms": "^6.2.1",
     "@aws-sdk/client-kms": "^3.920.0",
     "@prisma/client": "^5.22.0",
-    "@solana/web3.js": "^1.98.4",
+    "@solana/web3.js": "^3.1.1",
     "@aws-sdk/client-sesv2": "^3.920.0",
     "asn1.js": "^5.4.1",
     "bullmq": "^5.52.3",
@@ -60,7 +60,7 @@
     "merkletreejs": "^0.4.1",
     "nodemailer": "^10.0.11",
     "resend": "^6.28.1",
-    "uuid": "^11.1.0",
+    "uuid": "^14.0.3",
     "viem": "^2.30.5",
     "zod": "^4.6.7"
   },
