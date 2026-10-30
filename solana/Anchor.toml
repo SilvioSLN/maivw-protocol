@@ -7,10 +7,9 @@ package_manager = "npm"
 resolution = true
 skip-lint = false
 
+# Default localnet placeholder Program ID. Before deploying to Devnet or Mainnet,
+# generate your own program keypair and run `anchor keys sync`.
 [programs.localnet]
-maivw_registry = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
-
-[programs.devnet]
 maivw_registry = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
 
 [provider]

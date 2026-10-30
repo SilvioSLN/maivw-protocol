@@ -15,7 +15,7 @@ async function main(): Promise<void> {
 
   // Validação Solana
   assert.equal(solanaDeployment.cluster, "devnet");
-  assert.equal(solanaDeployment.programId, "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS");
+  assert.match(solanaDeployment.programId, /^[1-9A-HJ-NP-Za-km-z]{32,44}$/, "Valid Solana programId must be configured");
   assert.ok(solanaDeployment.registrationLookupTable, "Address lookup table must be configured");
   assert.ok(solanaDeployment.roles.authority, "Authority must be configured");
   assert.ok(solanaDeployment.roles.guardian, "Guardian must be configured");

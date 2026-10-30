@@ -214,9 +214,9 @@ A política econômica do MVP está definida em [Economia do Registry Solana](/a
 - Conflito de origem detectado aciona circuit breaker; o sistema não escolhe automaticamente um vencedor.
 - A governança de cada rede pode pausar seu Registry, mas não alterar a origem de um domínio em outra rede.
 
-## Demonstração prática dos dois sentidos (Devnet e Testnets EVM - SM-080)
+## Demonstração prática dos dois sentidos (Devnet e Testnets EVM)
 
-O protocolo implementa e valida em testnets públicas o registro canônico com espelhamento bidirecional completo em quatro redes:
+O protocolo suporta e valida em testnets públicas o registro canônico com espelhamento bidirecional completo em quatro redes configuradas pelo próprio operador em `.env.testnet`:
 - **Solana Devnet** (`solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG`)
 - **Base Sepolia** (`evm:84532`)
 - **Arbitrum Sepolia** (`evm:421614`)
@@ -224,48 +224,38 @@ O protocolo implementa e valida em testnets públicas o registro canônico com e
 
 ### 1. Sentido Solana (Origem) → Mirrors EVM
 
-Neste fluxo, o registrante escolhe a Solana como rede de origem canônica do domínio `s-example-run.test`:
-1. **Registro na Origem (Solana Devnet)**: O programa `Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS` cria o `DomainRecord` com `record_kind = ORIGIN`, chaves nativas Ed25519 e custódia de taxas/stake via SPL Token mint `11111111111111111111111111111111111111111111`.
-   - **Transação**: `1111111111111111111111111111111111111111111111111111111111111111` (Slot 511928971)
-   - **Custos**: 170.509 Compute Units (62,1% abaixo do limite de 450.000 CU), 1.046 bytes (15,1% abaixo da MTU IPv6 de 1.232 bytes).
-2. **Fan-out e Atestação**: O observador Solana detecta a finalização do slot e emite `StateAttestationV1`. Neste ensaio a assinatura usou a chave local isolada configurada para testnet; o backend KMS possui testes próprios, mas não foi o signer desta evidência.
+Neste fluxo, o registrante escolhe a Solana como rede de origem canônica de um domínio (por exemplo, `origin-example.test`):
+1. **Registro na Origem (Solana Devnet)**: O programa `maivw_registry` implantado pelo operador (`SOLANA_PROGRAM_ID`) cria o `DomainRecord` com `record_kind = ORIGIN`, chaves nativas Ed25519 e custódia de taxas/stake via SPL Token mint (`SOLANA_ASSET_MINT`).
+   - **Envelope de execução**: Utiliza Address Lookup Table (ALT) para transações versionadas v0 abaixo da MTU IPv6 de 1.232 bytes (~1.046 bytes e ~170k Compute Units, bem abaixo do orçamento de 450.000 CU).
+2. **Fan-out e Atestação**: O observador Solana detecta a finalização do slot e emite `StateAttestationV1` assinada pelo signer configurado do operador (local em Testnet ou KMS).
 3. **Criação de Mirrors nos Contratos EVM**:
-   - **Base Sepolia**: `registerMirrorV2` na transação `0x0000000000000000000000000000000000000000000000000000000000000000` (bloco 48218698, gas 365.886).
-   - **Arbitrum Sepolia**: `registerMirrorV2` na transação `0x0000000000000000000000000000000000000000000000000000000000000000` (bloco 319944942, gas 366.010).
-   - **Polygon Amoy**: `registerMirrorV2` na transação `0x0000000000000000000000000000000000000000000000000000000000000000` (bloco 50383141, gas 407.046).
+   - **Base Sepolia, Arbitrum Sepolia e Polygon Amoy**: O relayer submete `registerMirrorV2` nos proxies `MAIVWMirrorRegistryV2` implantados pelo operador em cada rede destino.
 4. **Preservação de Chaves**: A chave operacional Ed25519 de 32 bytes é gravada no storage EVM com `keyType = ED25519_SOLANA_PUBKEY` (algoritmo 2). Nenhuma derivação sintética de endereço EVM é aplicada.
 
 ### 2. Sentido EVM (Origem) → Mirror Solana
 
 Neste fluxo, o domínio é registrado canonicamente numa rede EVM e espelhado na Solana:
-1. **Origens EVM registradas**:
-   - **Base Sepolia**: `registerCompany` na transação `0x0000000000000000000000000000000000000000000000000000000000000000` (bloco 48218701, gas 377.162).
-   - **Arbitrum Sepolia**: `registerCompany` na transação `0x0000000000000000000000000000000000000000000000000000000000000000` (bloco 319944947, gas 378.986).
-   - **Polygon Amoy**: `registerCompany` na transação `0x0000000000000000000000000000000000000000000000000000000000000000` (bloco 50383146, gas 367.035).
-2. **Espelhamento no Programa Solana**:
-   - Base Sepolia → Solana mirror (`register_mirror`): `1111111111111111111111111111111111111111111111111111111111111111` (slot 511929031).
-   - Arbitrum Sepolia → Solana mirror (`register_mirror`): `1111111111111111111111111111111111111111111111111111111111111111` (slot 511929056).
-   - Polygon Amoy → Solana mirror (`register_mirror`): `1111111111111111111111111111111111111111111111111111111111111111` (slot 511929112).
+1. **Origens EVM registradas**: O titular executa `registerCompany` no contrato canônico `MAIVWRegistry` da rede EVM escolhida (Base Sepolia, Arbitrum Sepolia ou Polygon Amoy).
+2. **Espelhamento no Programa Solana**: Após confirmação finalizada na rede de origem, o relayer constrói a instrução `register_mirror` precedida pela verificação secp256k1 nativa e cria o `DomainRecord` espelhado na Solana.
 3. **Preservação de Chaves**: O endereço secp256k1 EVM de 20 bytes é armazenado no `DomainRecord` Solana como `KeyDescriptor` com `algorithm = 1` (`SECP256K1_EVM_ADDRESS`).
 
 ### 3. Roteiro de Demonstração e Verificação (Demo Flow)
 
-Para reproduzir ou auditar o estado consolidado de um domínio em todas as redes:
+Para executar sua própria bateria em Testnet (usando suas credenciais e contratos em `.env.testnet`, `contracts/deployments/testnets.json` e `solana/deployments/devnet.json`) e auditar o estado consolidado:
 
 ```bash
-# 1. Auditar a evidência pública reproduzível da execução
-jq '{status,domains,steps,computeUnits}' \
-  protocol/evidence/sm-080/example-run.json
+# 1. Executar o ensaio E2E no seu próprio ambiente Testnet (gera evidência local ignorada pelo Git)
+npm --prefix protocol/gateway run testnet:e2e:sm080
 
-# 2. Em um Gateway com catálogo/indexadores configurados, consultar a visão real
-curl -s http://localhost:3001/api/v1/multichain/status/s-example-run.test | jq .
+# 2. Em um Gateway com catálogo/indexadores configurados, consultar a visão consolidada
+curl -s http://localhost:3001/api/v1/multichain/status/origin-example.test | jq .
 ```
 
 ```bash
 # 3. Exercitar localmente a lógica de reconciliação (estados sintéticos)
 npm --prefix protocol/gateway run test:sm086
 
-# 4. Gerar o relatório de prontidão e seus gates pendentes
+# 4. Gerar o relatório local de prontidão e seus gates pendentes
 npm --prefix protocol/gateway run test:sm087
 ```
 
