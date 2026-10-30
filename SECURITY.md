@@ -22,12 +22,13 @@ The MAIVW Protocol team takes security issues seriously. If you discover a vulne
 
 2. **Security Contact**:
    If Private Vulnerability Reporting is unavailable, send an encrypted or direct email to:
-   - **Email**: `security@maivw.com` (or maintainer contact: `silviosln@gmail.com`)
-   - **Subject**: `[SECURITY VULNERABILITY] MAIVW Protocol - <brief summary>`
+    - **Email**: `security@maivw.com` (or maintainer contact: `silvio@maivw.com`)
+    - **Subject**: `[SECURITY VULNERABILITY] MAIVW Protocol - <brief summary>`
 
 ### What to Include in Your Report
 
 To help us triage and resolve the issue quickly, please provide:
+
 - A clear description of the vulnerability and its potential impact.
 - The affected component(s) (`gateway`, `contracts`, `solana`, `p2p`, `auth`, `storage`, etc.).
 - Step-by-step reproduction instructions or a minimal Proof of Concept (PoC).
@@ -42,6 +43,7 @@ To help us triage and resolve the issue quickly, please provide:
 ### Safe Harbor
 
 Security research conducted in good faith according to this policy is considered authorized. We will not initiate legal action against researchers who:
+
 - Give us reasonable time to remediate before public disclosure.
 - Do not access, modify, or delete user or tenant data without explicit authorization.
 - Do not disrupt services or execute Denial of Service (DoS) attacks against live deployments.
