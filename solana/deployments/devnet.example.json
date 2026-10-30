@@ -1,0 +1,40 @@
+{
+  "cluster": "devnet",
+  "genesisHash": "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+  "networkId": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+  "networkHash": "0x2a05891bf143fb61d641b920b873f625fc5ea73d8e65e2c013b2924a3f21faa1",
+  "programId": "CHANGE_ME_SOLANA_PROGRAM_ID",
+  "programDataAddress": "CHANGE_ME_PROGRAM_DATA_ADDRESS",
+  "upgradeAuthority": "CHANGE_ME_UPGRADE_AUTHORITY_PUBKEY",
+  "registryConfig": "CHANGE_ME_REGISTRY_CONFIG_PDA",
+  "registrationLookupTable": "CHANGE_ME_ADDRESS_LOOKUP_TABLE",
+  "roles": {
+    "authority": "CHANGE_ME_AUTHORITY_PUBKEY",
+    "guardian": "CHANGE_ME_GUARDIAN_PUBKEY",
+    "oracleKey": "CHANGE_ME_ORACLE_ED25519_PUBKEY",
+    "attestationSigner": "CHANGE_ME_0x_ATTESTATION_SIGNER_ADDRESS",
+    "treasury": "CHANGE_ME_TREASURY_PUBKEY",
+    "founder": "CHANGE_ME_FOUNDER_PUBKEY"
+  },
+  "asset": {
+    "kind": "SPL",
+    "symbol": "MAIVW",
+    "decimals": 9,
+    "mint": "CHANGE_ME_SPL_MINT_ADDRESS",
+    "tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+    "initialSupplyBaseUnits": "1000000000000000",
+    "deployerTokenAccount": "CHANGE_ME_DEPLOYER_TOKEN_ACCOUNT"
+  },
+  "economics": {
+    "standardFee": "1000000",
+    "providerFee": "5000000",
+    "mirrorFee": "3000000",
+    "slashDelaySeconds": "172800",
+    "recoveryDelaySeconds": "259200",
+    "tiers": [
+      { "requiredStake": "10000000", "dailyLimit": "50000", "penaltyPerStrike": "500000" },
+      { "requiredStake": "100000000", "dailyLimit": "1000000", "penaltyPerStrike": "500000" },
+      { "requiredStake": "1000000000", "dailyLimit": "1000000000", "penaltyPerStrike": "500000" }
+    ]
+  }
+}

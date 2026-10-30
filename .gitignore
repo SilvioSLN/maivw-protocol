@@ -60,3 +60,10 @@ coverage/
 /data/
 /backups/
 /discart/
+
+# Operator deployments & local execution evidence (keep *.example.json templates only)
+contracts/deployments/*.json
+!contracts/deployments/*.example.json
+solana/deployments/*.json
+!solana/deployments/*.example.json
+evidence/

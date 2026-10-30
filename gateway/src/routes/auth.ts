@@ -687,8 +687,20 @@ export async function authRoutes(app: FastifyInstance, options: AuthRouteOptions
       orderBy: { createdAt: "desc" },
     });
 
-    const solanaProgramId = process.env.SOLANA_PROGRAM_ID || "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS";
-    const evmRegistryAddress = process.env.BASE_REGISTRY_ADDRESS || process.env.REGISTRY_CONTRACT_ADDRESS || "0x0000000000000000000000000000000000000000";
+    const solanaProgramId = (process.env.SOLANA_PROGRAM_ID || "").trim();
+    const solanaExplorerBase = (process.env.SOLANA_EXPLORER_URL || "https://explorer.solana.com").replace(/\/+$/, "");
+    const solanaClusterQuery = (process.env.SOLANA_EXPLORER_CLUSTER_QUERY || "cluster=devnet").trim();
+    const evmRegistryAddress = (process.env.BASE_REGISTRY_ADDRESS || process.env.REGISTRY_CONTRACT_ADDRESS || "").trim();
+    const chainId = Number(process.env.CHAIN_ID || 84532);
+    const evmExplorerBase = chainId === 8453
+      ? "https://basescan.org"
+      : chainId === 421614
+        ? "https://sepolia.arbiscan.io"
+        : chainId === 80002
+          ? "https://amoy.polygonscan.com"
+          : chainId === 84532
+            ? "https://sepolia.basescan.org"
+            : "";
 
     return {
       domains: domains.map((d) => {
@@ -699,10 +711,20 @@ export async function authRoutes(app: FastifyInstance, options: AuthRouteOptions
           || (Boolean(d.walletVault?.publicKey) && !d.walletVault!.publicKey.startsWith("0x"));
 
         const originFamily: "SOLANA" | "EVM" = isSolana ? "SOLANA" : "EVM";
-        const originNetworkName = isSolana ? "Solana Devnet" : "Base Sepolia";
+        const originNetworkName = isSolana
+          ? "Solana Devnet"
+          : chainId === 31337
+            ? "Anvil Local"
+            : chainId === 8453
+              ? "Base"
+              : "Base Sepolia";
         const explorerUrl = isSolana
-          ? `https://explorer.solana.com/address/${solanaProgramId}?cluster=devnet`
-          : `https://sepolia.basescan.org/address/${evmRegistryAddress}`;
+          ? (solanaProgramId
+              ? `${solanaExplorerBase}/address/${solanaProgramId}${solanaClusterQuery ? `?${solanaClusterQuery}` : ""}`
+              : undefined)
+          : (evmRegistryAddress && evmExplorerBase
+              ? `${evmExplorerBase}/address/${evmRegistryAddress}`
+              : undefined);
 
         return {
           id: d.id,

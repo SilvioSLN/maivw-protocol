@@ -1,5 +1,5 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { dirname, relative, resolve } from "node:path";
 import assert from "node:assert/strict";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { hexToBytes, keccak256, stringToHex } from "viem";
@@ -40,8 +40,18 @@ const LIMITS = {
   },
 };
 
+function latestSm080Path(): string {
+  const dir = resolve(protocolRoot, "evidence/sm-080");
+  const candidates = readdirSync(dir)
+    .filter((name) => name.endsWith(".json"))
+    .map((name) => ({ path: resolve(dir, name), data: JSON.parse(readFileSync(resolve(dir, name), "utf8")) }))
+    .sort((a, b) => String(b.data.executedAt ?? "").localeCompare(String(a.data.executedAt ?? "")));
+  assert.ok(candidates[0], "Local SM-080 evidence file is required in evidence/sm-080/");
+  return candidates[0].path;
+}
+
 async function main(): Promise<void> {
-  const sm080LatestPath = resolve(protocolRoot, "evidence/sm-080/example-run.json");
+  const sm080LatestPath = latestSm080Path();
   const sm080Data = JSON.parse(readFileSync(sm080LatestPath, "utf8")) as Sm080Evidence;
   const solanaDeployment = JSON.parse(readFileSync(resolve(protocolRoot, "solana/deployments/devnet.json"), "utf8"));
 
@@ -137,7 +147,7 @@ async function main(): Promise<void> {
     schemaVersion: 1,
     task: "SM-082",
     runId,
-    baselineEvidence: "evidence/sm-080/example-run.json",
+    baselineEvidence: relative(protocolRoot, sm080LatestPath),
     evaluatedAt: new Date().toISOString(),
     status: "PASS",
     criteria: "Limites e custos possuem margem e orçamento operacional",

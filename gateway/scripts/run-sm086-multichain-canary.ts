@@ -1,5 +1,5 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { dirname, relative, resolve } from "node:path";
 import assert from "node:assert/strict";
 import { keccak256, padHex, stringToHex, type Hex } from "viem";
 import type { CanonicalDomainState } from "../src/multichain/FinalizedStateReader.js";
@@ -29,8 +29,14 @@ class MemoryReconciliationRepository implements ReconciliationRepository {
 }
 
 async function main(): Promise<void> {
-  const sm080Path = resolve(protocolRoot, "evidence/sm-080/example-run.json");
-  const sm080 = JSON.parse(readFileSync(sm080Path, "utf8"));
+  const dir = resolve(protocolRoot, "evidence/sm-080");
+  const candidates = readdirSync(dir)
+    .filter((name) => name.endsWith(".json"))
+    .map((name) => ({ path: resolve(dir, name), data: JSON.parse(readFileSync(resolve(dir, name), "utf8")) }))
+    .sort((a, b) => String(b.data.executedAt ?? "").localeCompare(String(a.data.executedAt ?? "")));
+  assert.ok(candidates[0], "Local SM-080 evidence file is required in evidence/sm-080/");
+  const sm080Path = candidates[0].path;
+  const sm080 = candidates[0].data;
   assert.equal(sm080.status, "PASS");
 
   const repo = new MemoryReconciliationRepository();
@@ -139,7 +145,7 @@ async function main(): Promise<void> {
     schemaVersion: 1,
     task: "SM-086",
     runId,
-    baselineEvidence: "evidence/sm-080/example-run.json",
+    baselineEvidence: relative(protocolRoot, sm080Path),
     evaluatedAt: new Date().toISOString(),
     status: "SIMULATION_PASS_LIVE_CANARY_PENDING",
     criteria: "Reconciliação do conjunto canário validada contra leituras on-chain atuais",

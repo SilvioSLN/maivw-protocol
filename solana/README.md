@@ -17,9 +17,12 @@ de mirrors externos somente leitura.
 
 ## Devnet
 
-O deployment público corrente está registrado em `deployments/devnet.json`. O
-manifesto contém somente endereços, parâmetros econômicos e assinaturas públicas;
-RPCs autenticados e keypairs permanecem nos arquivos locais ignorados pelo Git.
+Copie o template `deployments/devnet.example.json` para `deployments/devnet.json`
+(ignorado pelo Git) para registrar o deployment próprio do seu ambiente. Antes de
+compilar e publicar um novo programa em Devnet ou Mainnet, gere seu próprio keypair
+de programa e sincronize `declare_id!` e `Anchor.toml` com `anchor keys sync`.
+RPCs autenticados, manifestos de deploy do operador e keypairs permanecem nos
+arquivos locais ignorados pelo Git.
 
 Depois do deploy do programa e do mint SPL, inicialize ou audite o PDA canônico
 com `npm run solana:init:registry` no diretório `gateway`. O comando carrega

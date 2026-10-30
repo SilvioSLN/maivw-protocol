@@ -28,8 +28,7 @@ function latestEvidence(task: string): { path: string; value: any } {
 
 async function main(): Promise<void> {
   // 1. Verify dependencies SM-080 and SM-087
-  const sm080Path = resolve(protocolRoot, "evidence/sm-080/example-run.json");
-  const sm080 = JSON.parse(readFileSync(sm080Path, "utf8"));
+  const { path: sm080Path, value: sm080 } = latestEvidence("SM-080");
   assert.equal(sm080.status, "PASS", "SM-080 must be PASS");
 
   const { path: sm087Path, value: sm087 } = latestEvidence("SM-087");
@@ -46,19 +45,18 @@ async function main(): Promise<void> {
 
   // Check 1: Solana-origin explained
   const hasSolanaOrigin = archDoc.includes("Sentido Solana (Origem) → Mirrors EVM") &&
-    archDoc.includes("s-example-run.test") &&
-    archDoc.includes("1111111111111111111111111111111111111111111111111111111111111111");
+    archDoc.includes("registerMirrorV2");
   checks.push({
     file: "architecture/multichain-origin-and-mirroring.md",
     section: "Solana Origin Demonstration",
     passed: hasSolanaOrigin,
-    notes: "Demonstrates Solana origin registration and fan-out to Base, Arbitrum, Polygon with verified TX hashes",
+    notes: "Demonstrates Solana origin registration and fan-out to Base, Arbitrum, Polygon",
   });
 
   // Check 2: EVM-origin explained
   const hasEvmOrigin = archDoc.includes("Sentido EVM (Origem) → Mirror Solana") &&
-    archDoc.includes("0x0000000000000000000000000000000000000000000000000000000000000000") &&
-    archDoc.includes("1111111111111111111111111111111111111111111111111111111111111111");
+    archDoc.includes("registerCompany") &&
+    archDoc.includes("register_mirror");
   checks.push({
     file: "architecture/multichain-origin-and-mirroring.md",
     section: "EVM Origin Demonstration",
@@ -79,8 +77,7 @@ async function main(): Promise<void> {
 
   // Check 4: Demo flow & CLI instructions
   const hasDemoFlow = archDoc.includes("Roteiro de Demonstração e Verificação (Demo Flow)") &&
-    archDoc.includes("protocol/evidence/sm-080/example-run.json") &&
-    archDoc.includes("curl -s http://localhost:3001/api/v1/multichain/status/s-example-run.test") &&
+    archDoc.includes("/api/v1/multichain/status/") &&
     archDoc.includes("test:sm086") &&
     archDoc.includes("test:sm087");
   checks.push({

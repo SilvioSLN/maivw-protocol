@@ -2809,31 +2809,32 @@ print(res.json())`}
                             </div>
 
                             {currentDomain.originFamily === "SOLANA" ? (
-                              <a
-                                href={
-                                  currentDomain.explorerUrl ||
-                                  "https://explorer.solana.com/address/Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS?cluster=devnet"
-                                }
-                                target="_blank"
-                                rel="noreferrer"
-                                className="px-3.5 py-1.5 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-300 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition shrink-0 self-start sm:self-auto"
-                              >
-                                <span>Ver no Solana Explorer</span>
-                                <ExternalLink className="w-3.5 h-3.5" />
-                              </a>
+                              currentDomain.explorerUrl ? (
+                                <a
+                                  href={currentDomain.explorerUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="px-3.5 py-1.5 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-300 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition shrink-0 self-start sm:self-auto"
+                                >
+                                  <span>Ver no Solana Explorer</span>
+                                  <ExternalLink className="w-3.5 h-3.5" />
+                                </a>
+                              ) : null
                             ) : (
-                              <a
-                                href={
-                                  currentDomain.explorerUrl ||
-                                  `https://sepolia.basescan.org/address/${runtimePublicValue('NEXT_PUBLIC_REGISTRY_CONTRACT_ADDRESS') || "0x0000000000000000000000000000000000000000"}`
-                                }
-                                target="_blank"
-                                rel="noreferrer"
-                                className="px-3.5 py-1.5 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-blue-300 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition shrink-0 self-start sm:self-auto"
-                              >
-                                <span>Ver no BaseScan</span>
-                                <ExternalLink className="w-3.5 h-3.5" />
-                              </a>
+                              (currentDomain.explorerUrl || runtimePublicValue('NEXT_PUBLIC_REGISTRY_CONTRACT_ADDRESS')) ? (
+                                <a
+                                  href={
+                                    currentDomain.explorerUrl ||
+                                    `https://sepolia.basescan.org/address/${runtimePublicValue('NEXT_PUBLIC_REGISTRY_CONTRACT_ADDRESS')}`
+                                  }
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="px-3.5 py-1.5 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-blue-300 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition shrink-0 self-start sm:self-auto"
+                                >
+                                  <span>Ver no BaseScan</span>
+                                  <ExternalLink className="w-3.5 h-3.5" />
+                                </a>
+                              ) : null
                             )}
                           </div>
 
@@ -2989,7 +2990,7 @@ print(res.json())`}
                                       status: "ACTIVE_PRIMARY",
                                       isActive: true,
                                       isOrigin: true,
-                                      explorerUrl: currentDomain.explorerUrl || "https://explorer.solana.com/address/Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS?cluster=devnet",
+                                      explorerUrl: currentDomain.explorerUrl,
                                     },
                                     {
                                       id: 84532,
@@ -3000,7 +3001,9 @@ print(res.json())`}
                                       status: "NOT_MIRRORED",
                                       isActive: false,
                                       isOrigin: false,
-                                      explorerUrl: "https://sepolia.basescan.org/address/0x0000000000000000000000000000000000000000",
+                                      explorerUrl: runtimePublicValue('NEXT_PUBLIC_REGISTRY_CONTRACT_ADDRESS')
+                                        ? `https://sepolia.basescan.org/address/${runtimePublicValue('NEXT_PUBLIC_REGISTRY_CONTRACT_ADDRESS')}`
+                                        : undefined,
                                     },
                                     {
                                       id: 421614,
@@ -3033,7 +3036,9 @@ print(res.json())`}
                                       status: "ACTIVE_PRIMARY",
                                       isActive: true,
                                       isOrigin: true,
-                                      explorerUrl: "https://sepolia.basescan.org/address/0x0000000000000000000000000000000000000000",
+                                      explorerUrl: currentDomain.explorerUrl || (runtimePublicValue('NEXT_PUBLIC_REGISTRY_CONTRACT_ADDRESS')
+                                        ? `https://sepolia.basescan.org/address/${runtimePublicValue('NEXT_PUBLIC_REGISTRY_CONTRACT_ADDRESS')}`
+                                        : undefined),
                                     },
                                     {
                                       id: "solana-devnet",
@@ -3044,7 +3049,6 @@ print(res.json())`}
                                       status: "NOT_MIRRORED",
                                       isActive: false,
                                       isOrigin: false,
-                                      explorerUrl: "https://explorer.solana.com/address/Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS?cluster=devnet",
                                     },
                                     {
                                       id: 421614,

@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "environment": "testnets",
+  "deployedAt": "1970-01-01T00:00:00.000Z",
+  "deployer": "CHANGE_ME_0x_DEPLOYER_ADDRESS",
+  "deployments": {
+    "baseSepolia": {
+      "chainId": 84532,
+      "implementation": "CHANGE_ME_0x_IMPLEMENTATION_ADDRESS",
+      "proxy": "CHANGE_ME_0x_PROXY_ADDRESS",
+      "legacyRegistry": "CHANGE_ME_0x_CANONICAL_REGISTRY_ADDRESS",
+      "owner": "CHANGE_ME_0x_OWNER_ADDRESS",
+      "guardian": "CHANGE_ME_0x_GUARDIAN_ADDRESS",
+      "oracleNode": "CHANGE_ME_0x_ORACLE_ADDRESS",
+      "legacyRegistrySchema": "EIP712_V2"
+    },
+    "arbitrumSepolia": {
+      "chainId": 421614,
+      "implementation": "CHANGE_ME_0x_IMPLEMENTATION_ADDRESS",
+      "proxy": "CHANGE_ME_0x_PROXY_ADDRESS",
+      "legacyRegistry": "CHANGE_ME_0x_CANONICAL_REGISTRY_ADDRESS",
+      "owner": "CHANGE_ME_0x_OWNER_ADDRESS",
+      "guardian": "CHANGE_ME_0x_GUARDIAN_ADDRESS",
+      "oracleNode": "CHANGE_ME_0x_ORACLE_ADDRESS",
+      "legacyRegistrySchema": "EIP712_V2"
+    },
+    "polygonAmoy": {
+      "chainId": 80002,
+      "implementation": "CHANGE_ME_0x_IMPLEMENTATION_ADDRESS",
+      "proxy": "CHANGE_ME_0x_PROXY_ADDRESS",
+      "legacyRegistry": "CHANGE_ME_0x_CANONICAL_REGISTRY_ADDRESS",
+      "owner": "CHANGE_ME_0x_OWNER_ADDRESS",
+      "guardian": "CHANGE_ME_0x_GUARDIAN_ADDRESS",
+      "oracleNode": "CHANGE_ME_0x_ORACLE_ADDRESS",
+      "legacyRegistrySchema": "EIP712_V2"
+    }
+  }
+}
