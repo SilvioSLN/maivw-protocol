@@ -140,7 +140,7 @@ test("AwsKmsSolanaSigner signs Solana-compatible Ed25519 messages without export
     },
   };
 
-  const keyId = "alias/your-solana-relayer-signer";
+  const keyId = "alias/demo-staging-solana-relayer-signer";
   const signer = new AwsKmsSolanaSigner({ keyId, role: "relayer", transport });
   const message = "MAIVW_SOLANA_KMS_ED25519_VECTOR";
   const address = await signer.getAddress();

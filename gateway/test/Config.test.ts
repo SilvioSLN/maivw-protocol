@@ -35,7 +35,7 @@ test("Firebase Auth fails closed without project, credential, supported provider
     MAIVW_RUNTIME_ROLE: "gateway-api",
     FIREBASE_AUTH_ENABLED: true,
     ORACLE_SIGNER_TYPE: "aws-kms",
-    AWS_KMS_KEY_ID: "alias/your-oracle-evm-signer",
+    AWS_KMS_KEY_ID: "alias/demo-staging-oracle-signer",
   };
   assert.equal(EnvSchema.safeParse(cloud).success, false);
   assert.equal(EnvSchema.safeParse({
@@ -149,7 +149,7 @@ test("signing roles fail closed while non-signing workers do not inherit oracle 
     ...withoutOracle,
     MAIVW_RUNTIME_ROLE: "gateway-api",
     ORACLE_SIGNER_TYPE: "aws-kms",
-    AWS_KMS_KEY_ID: "alias/your-oracle-evm-signer",
+    AWS_KMS_KEY_ID: "alias/demo-staging-oracle-signer",
   }).success, true);
 });
 
